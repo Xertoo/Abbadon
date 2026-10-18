@@ -238,7 +238,7 @@ export function loadProfile(defaultName?: string, defaultAvatar?: string): UserP
           totalListenedSeconds: parsed.totalListenedSeconds || 0,
           tracksListenedCount: parsed.tracksListenedCount || 0,
           appearOffline: Boolean(parsed.appearOffline),
-          shareWithDiscord: parsed.shareWithDiscord !== undefined ? Boolean(parsed.shareWithDiscord) : true,
+          shareWithDiscord: parsed.shareWithDiscord !== undefined ? Boolean(parsed.shareWithDiscord) : false,
         };
       }
     }
@@ -257,7 +257,7 @@ export function loadProfile(defaultName?: string, defaultAvatar?: string): UserP
     totalListenedSeconds: 0,
     tracksListenedCount: 0,
     appearOffline: false,
-    shareWithDiscord: true,
+    shareWithDiscord: false,
   };
   saveProfile(profile);
   return profile;

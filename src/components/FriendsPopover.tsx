@@ -791,15 +791,19 @@ export function FriendsPopover({
                     <span>{copiedInvite ? 'Copied Invite to Clipboard!' : 'Copy Invite for Discord'}</span>
                   </button>
 
-                  {/* Discord Rich Presence Auto-Connect */}
+                  {/* Discord Presence Mode */}
                   <div className="p-2.5 rounded-xl bg-[#5865F2]/10 border border-[#5865F2]/20 flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-[#5865F2] shrink-0" />
-                        <span className="text-xs font-bold text-sc-fg">Discord Auto-Connect</span>
+                        <span className="text-xs font-bold text-sc-fg">
+                          {profile.shareWithDiscord ? 'PC GameSDK Join Mode' : 'Universal Profile Buttons'}
+                        </span>
                       </div>
                       <p className="text-[10.5px] text-sc-muted leading-tight mt-0.5">
-                        Adds a &quot;Join&quot; button on your Discord profile for mutual friends to add you with 1 click.
+                        {profile.shareWithDiscord
+                          ? 'Shows native PC Join button for Discord Desktop friends (replaces URL buttons).'
+                          : 'Shows [Join on Abbadon] & [SoundCloud] buttons on both Mobile and PC.'}
                       </p>
                     </div>
                     <button
@@ -811,7 +815,7 @@ export function FriendsPopover({
                       )}
                       role="switch"
                       aria-checked={Boolean(profile.shareWithDiscord)}
-                      title="Toggle Discord auto-join on your Discord status"
+                      title="Toggle between Universal Buttons and PC GameSDK Join"
                     >
                       <div
                         className={clsx(

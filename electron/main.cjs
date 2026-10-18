@@ -1315,10 +1315,10 @@ function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0, frien
       };
     } else {
       const buttons = [];
+      buttons.push({ label: 'Join on Abbadon', url: 'https://github.com/Xertoo/abbadon' });
       if (track.permalinkUrl && typeof track.permalinkUrl === 'string' && track.permalinkUrl.startsWith('http')) {
         buttons.push({ label: 'SoundCloud Track', url: track.permalinkUrl });
       }
-      buttons.push({ label: 'Get Abbadon App', url: 'https://github.com/Xertoo/abbadon' });
       rawActivity.buttons = buttons.slice(0, 2);
     }
 

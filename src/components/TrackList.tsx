@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Play, Heart, MoreHorizontal, Plus, Compass, Eye, Sparkles, ListPlus } from 'lucide-react';
+import { Play, Heart, MoreHorizontal, Plus, Compass, Eye, Sparkles, ListPlus, ListStart } from 'lucide-react';
 import clsx from 'clsx';
 import { Artwork } from './Artwork';
 import type { Track } from '../types';
@@ -19,6 +19,8 @@ interface Props {
   onOpenArtist?: (artist: { id: string; username: string; permalinkUrl?: string }) => void;
   /** Shows a compass button that seeds the "Find similar" view. */
   onFindSimilar?: (track: Track) => void;
+  /** Inserts this track right after the current playing track in the queue. */
+  onPlayNext?: (track: Track) => void;
   /** Adds this track to the playback queue. */
   onAddToQueue?: (track: Track) => void;
   numbered?: boolean;
@@ -54,6 +56,7 @@ export function TrackRow({
   onToggleLike,
   onOpenArtist,
   onFindSimilar,
+  onPlayNext,
   onAddToQueue,
   showArtwork = true,
   compact,
@@ -68,6 +71,7 @@ export function TrackRow({
   onToggleLike: (track: Track) => void;
   onOpenArtist?: (artist: { id: string; username: string; permalinkUrl?: string }) => void;
   onFindSimilar?: (track: Track) => void;
+  onPlayNext?: (track: Track) => void;
   onAddToQueue?: (track: Track) => void;
   showArtwork?: boolean;
   compact?: boolean;
@@ -235,6 +239,19 @@ export function TrackRow({
             <Compass className="w-[15px] h-[15px]" />
           </button>
         )}
+        {onPlayNext && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onPlayNext(track);
+            }}
+            title="Play next"
+            aria-label="Play next"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-sc-dim opacity-0 group-hover:opacity-100 hover:text-amber-400 hover:scale-125 active:scale-75 transition-all duration-200 cursor-pointer"
+          >
+            <ListStart className="w-[15px] h-[15px]" />
+          </button>
+        )}
         {onAddToQueue && (
           <button
             onClick={(e) => {
@@ -321,6 +338,7 @@ export function TrackList(props: Props) {
           onToggleLike={props.onToggleLike}
           onOpenArtist={props.onOpenArtist}
           onFindSimilar={props.onFindSimilar}
+          onPlayNext={props.onPlayNext}
           onAddToQueue={props.onAddToQueue}
           showArtwork={props.showArtwork}
           compact={props.compact}

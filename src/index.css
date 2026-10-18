@@ -339,6 +339,32 @@
   transform-origin: var(--sc-pop-origin, bottom right);
 }
 
+/*
+ * Popover entrance from top toolbar button with natural spring expansion.
+ */
+@keyframes sc-popover-from-top {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.85);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(3px) scale(1.02);
+  }
+  85% {
+    transform: translateY(-1px) scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-popover-from-top {
+  animation: sc-popover-from-top 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transform-origin: top right;
+}
+
 .animate-bounce-in {
   animation: sc-popover-bounce 0.38s cubic-bezier(0.05, 0.9, 0.1, 1.05) both;
 }

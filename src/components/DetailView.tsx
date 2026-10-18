@@ -55,6 +55,7 @@ interface Props {
   onRemoveFromPlaylist: (playlist: Playlist, track: Track) => void;
   onCreatePlaylist: (title: string) => Promise<Playlist | null>;
   onDownload: (track: Track) => void;
+  onPlayNext?: (track: Track) => void;
   onAddToQueue?: (track: Track) => void;
   /** Ids of tracks with a download in flight, which get a spinner. */
   downloadingIds: string[];
@@ -614,6 +615,7 @@ export function DetailView(p: Props) {
                 onPlay={(track) => p.onPlay(track, selectedAlbum.tracks)}
                 onToggleLike={p.onToggleLike}
                 onOpenArtist={p.onOpenArtist}
+                onPlayNext={p.onPlayNext}
                 onAddToQueue={p.onAddToQueue}
               />
             </div>
@@ -692,6 +694,7 @@ export function DetailView(p: Props) {
               onPlay={(track) => p.onPlay(track, visible)}
               onToggleLike={p.onToggleLike}
               onOpenArtist={p.onOpenArtist}
+              onPlayNext={p.onPlayNext}
               onAddToQueue={p.onAddToQueue}
               renderActions={(t) => {
                 const isDownloading = p.downloadingIds.includes(t.id);

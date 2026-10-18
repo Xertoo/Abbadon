@@ -80,6 +80,7 @@ interface SearchProps {
   onOpenArtist: (u: User | { id: string; username: string }) => void;
   onOpenPlaylist: (p: Playlist) => void;
   onFindSimilar: (seed: Track) => void;
+  onPlayNext?: (track: Track) => void;
   onAddToQueue?: (track: Track) => void;
   renderActions?: (track: Track) => React.ReactNode;
   compact?: boolean;
@@ -228,6 +229,7 @@ export function SearchView(p: SearchProps) {
                   onToggleLike={p.onToggleLike}
                   onOpenArtist={p.onOpenArtist}
                   onFindSimilar={p.onFindSimilar}
+                  onPlayNext={p.onPlayNext}
                   onAddToQueue={p.onAddToQueue}
                   compact={p.compact}
                   showArtwork={p.showArtwork}
@@ -297,6 +299,7 @@ export function SearchView(p: SearchProps) {
             onToggleLike={p.onToggleLike}
             onOpenArtist={p.onOpenArtist}
             onFindSimilar={p.onFindSimilar}
+            onPlayNext={p.onPlayNext}
             onAddToQueue={p.onAddToQueue}
             compact={p.compact}
             showArtwork={p.showArtwork}
@@ -425,6 +428,7 @@ interface LibraryProps {
   onToggleLike: (t: Track) => void;
   onOpenArtist: (u: User | { id: string; username: string }) => void;
   onFindSimilar: (seed: Track) => void;
+  onPlayNext?: (track: Track) => void;
   onAddToQueue?: (track: Track) => void;
   signedIn: boolean;
   onLogin: () => void;
@@ -495,6 +499,7 @@ export function LibraryView(p: LibraryProps) {
             onToggleLike={p.onToggleLike}
             onOpenArtist={p.onOpenArtist}
             onFindSimilar={p.onFindSimilar}
+            onPlayNext={p.onPlayNext}
             onAddToQueue={p.onAddToQueue}
             compact={p.compact}
             showArtwork={p.showArtwork}

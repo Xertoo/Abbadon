@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ListPlus, Loader2, Plus, Check } from 'lucide-react';
+import { FolderPlus, Loader2, Plus, Check } from 'lucide-react';
 import clsx from 'clsx';
 import type { Playlist, Track } from '../types';
 
@@ -92,7 +92,7 @@ export function PlaylistAddButton({
           className
         )}
       >
-        <ListPlus className="w-[15px] h-[15px]" />
+        <FolderPlus className="w-[15px] h-[15px]" />
       </button>
     );
   }
@@ -148,7 +148,7 @@ export function PlaylistAddButton({
           className
         )}
       >
-        <ListPlus className="w-[15px] h-[15px]" />
+        <FolderPlus className="w-[15px] h-[15px]" />
       </button>
 
       {open &&

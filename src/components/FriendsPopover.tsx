@@ -246,7 +246,7 @@ export function FriendsPopover({
       <div
         role="dialog"
         aria-label="Friends and Activity"
-        className="absolute top-16 right-4 sm:right-6 z-50 w-[380px] max-w-[calc(100vw-24px)] max-h-[85vh] flex flex-col rounded-3xl border border-white/[0.1] bg-sc-panel/95 backdrop-blur-2xl shadow-[0_16px_40px_rgba(0,0,0,0.6)] animate-popover overflow-hidden"
+        className="absolute top-16 right-4 sm:right-6 z-50 w-[380px] max-w-[calc(100vw-24px)] max-h-[85vh] flex flex-col rounded-3xl border border-white/[0.1] bg-sc-panel/95 backdrop-blur-2xl shadow-[0_16px_40px_rgba(0,0,0,0.6)] animate-popover-from-top origin-top-right overflow-hidden"
       >
         {/* Header */}
         <div className="p-4 border-b border-white/[0.06] flex items-center justify-between shrink-0 bg-white/[0.02]">

@@ -987,6 +987,31 @@ if (typeof d.theme === 'string') {
     [notify]
   );
 
+  /**
+   * Inserts one track right after the currently playing track in the queue,
+   * so it will play as the very next track.
+   */
+  const playNext = useCallback(
+    (t: Track) => {
+      const cur = trackRef.current;
+      setQueue((prev) => {
+        const remaining = prev.filter((q) => q.id !== t.id);
+        if (!cur) {
+          return [t, ...remaining];
+        }
+        const curIndex = remaining.findIndex((q) => q.id === cur.id);
+        if (curIndex === -1) {
+          return [t, ...remaining];
+        }
+        const nextQueue = [...remaining];
+        nextQueue.splice(curIndex + 1, 0, t);
+        return nextQueue;
+      });
+      notify(`"${t.title}" will play next`);
+    },
+    [notify]
+  );
+
   const prev = useCallback(() => {
     const q = queueRef.current;
     if (q.length === 0) return;
@@ -2013,6 +2038,7 @@ if (typeof d.theme === 'string') {
               onToggleLike={toggleLike}
               onOpenArtist={openArtist}
               onFindSimilar={openSimilar}
+              onPlayNext={playNext}
               onAddToQueue={addToQueue}
               onRefresh={() => void api.loadDiscover({ force: true })}
               renderActions={playlistAction}
@@ -2052,6 +2078,7 @@ if (typeof d.theme === 'string') {
               onOpenArtist={openArtist}
               onOpenPlaylist={openPlaylist}
               onFindSimilar={openSimilar}
+              onPlayNext={playNext}
               onAddToQueue={addToQueue}
               renderActions={playlistAction}
               compact={prefs.compactRows}
@@ -2074,6 +2101,7 @@ if (typeof d.theme === 'string') {
               onToggleLike={toggleLike}
               onOpenArtist={openArtist}
               onFindSimilar={openSimilar}
+              onPlayNext={playNext}
               onAddToQueue={addToQueue}
               onOpenSearch={() => navTo('search')}
               renderActions={playlistAction}
@@ -2124,6 +2152,7 @@ if (typeof d.theme === 'string') {
               onToggleLike={toggleLike}
               onOpenArtist={openArtist}
               onFindSimilar={openSimilar}
+              onPlayNext={playNext}
               onAddToQueue={addToQueue}
               signedIn={prefs.source === 'spotify' ? spotify.connected : Boolean(api.me)}
               onLogin={prefs.source === 'spotify' ? () => navTo('settings') : signIn}
@@ -2145,6 +2174,7 @@ if (typeof d.theme === 'string') {
               onOpenArtist={openArtist}
               onBack={goBack}
               onPlayAll={(tracks) => tracks[0] && playTrack(tracks[0], tracks)}
+              onPlayNext={playNext}
               onAddToQueue={addToQueue}
               signedIn={Boolean(api.me)}
               accountPlaylists={api.accountPlaylists}

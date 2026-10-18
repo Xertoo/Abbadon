@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Compass, Heart, Sparkles, ArrowRight, ChevronDown, ChevronUp, Flame, ListPlus } from 'lucide-react';
+import { Play, Compass, Heart, Sparkles, ArrowRight, ChevronDown, ChevronUp, Flame, ListPlus, ListStart } from 'lucide-react';
 import clsx from 'clsx';
 import { Artwork } from './Artwork';
 import type { Track, User } from '../types';
@@ -25,6 +25,7 @@ interface Props {
   /** Opens the same view seeded by a row, for drilling sideways. */
   onFindSimilar: (seed: Track) => void;
   onOpenSearch: () => void;
+  onPlayNext?: (track: Track) => void;
   onAddToQueue?: (track: Track) => void;
   renderActions?: (track: Track) => React.ReactNode;
   compact?: boolean;
@@ -42,6 +43,7 @@ function Card({
   playing,
   onClick,
   onOpenArtist,
+  onPlayNext,
   onAddToQueue,
   renderActions,
 }: {
@@ -50,6 +52,7 @@ function Card({
   playing: boolean;
   onClick: () => void;
   onOpenArtist?: (artist: { id: string; username: string; permalinkUrl?: string }) => void;
+  onPlayNext?: () => void;
   onAddToQueue?: () => void;
   renderActions?: (track: Track) => React.ReactNode;
 }) {
@@ -118,6 +121,20 @@ function Card({
       <div className="mt-1 flex items-center justify-between text-[11px] tabular-nums text-sc-faint">
         <span>{track.durationFormatted || ''}</span>
         <div className="flex items-center gap-1">
+          {onPlayNext && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onPlayNext();
+              }}
+              title={`Play ${track.title} next`}
+              aria-label={`Play next`}
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-sc-dim hover:text-amber-400 cursor-pointer p-0.5 hover:scale-110 active:scale-90"
+            >
+              <ListStart className="w-3.5 h-3.5" />
+            </button>
+          )}
           {onAddToQueue && (
             <button
               type="button"
@@ -274,6 +291,20 @@ export function SimilarView(p: Props) {
                       <div className="text-[11.5px] text-sc-muted truncate">{t.artist}</div>
                     </div>
                     <div className="flex items-center gap-1 shrink-0">
+                      {p.onPlayNext && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            p.onPlayNext?.(t);
+                          }}
+                          title={`Play ${t.title} next`}
+                          aria-label="Play next"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-sc-dim hover:text-amber-400 cursor-pointer p-1.5 hover:scale-110 active:scale-90"
+                        >
+                          <ListStart className="w-4 h-4" />
+                        </button>
+                      )}
                       {p.onAddToQueue && (
                         <button
                           type="button"
@@ -314,6 +345,7 @@ export function SimilarView(p: Props) {
                     setExpandedSeeds(false);
                   }}
                   onOpenArtist={p.onOpenArtist}
+                  onPlayNext={p.onPlayNext ? () => p.onPlayNext?.(t) : undefined}
                   onAddToQueue={p.onAddToQueue ? () => p.onAddToQueue?.(t) : undefined}
                   renderActions={p.renderActions}
                 />
@@ -357,6 +389,7 @@ export function SimilarView(p: Props) {
                         p.onPick(t);
                       }}
                       onOpenArtist={p.onOpenArtist}
+                      onPlayNext={p.onPlayNext ? () => p.onPlayNext?.(t) : undefined}
                       onAddToQueue={p.onAddToQueue ? () => p.onAddToQueue?.(t) : undefined}
                       renderActions={p.renderActions}
                     />
@@ -384,6 +417,7 @@ export function SimilarView(p: Props) {
                 playing={t.id === p.playingId && p.isPlaying}
                 onClick={() => p.onPlay(t, p.tracks)}
                 onOpenArtist={p.onOpenArtist}
+                onPlayNext={p.onPlayNext ? () => p.onPlayNext?.(t) : undefined}
                 onAddToQueue={p.onAddToQueue ? () => p.onAddToQueue?.(t) : undefined}
                 renderActions={p.renderActions}
               />

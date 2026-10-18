@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Play, Heart, Compass, Sparkles, Flame, Music2, RotateCcw, ListPlus, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Play, Heart, Compass, Sparkles, Flame, Music2, RotateCcw, ListPlus, ListStart, ChevronLeft, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 import { Artwork } from './Artwork';
 import type { Track, DiscoverSection } from '../types';
@@ -16,6 +16,7 @@ interface Props {
   onOpenArtist: (u: { id: string; username: string; permalinkUrl?: string }) => void;
   onFindSimilar: (seed: Track) => void;
   onRefresh: () => void;
+  onPlayNext?: (track: Track) => void;
   onAddToQueue?: (track: Track) => void;
   renderActions?: (track: Track) => React.ReactNode;
 }
@@ -44,6 +45,7 @@ function RailCard({
   onToggleLike,
   onOpenArtist,
   onFindSimilar,
+  onPlayNext,
   onAddToQueue,
   renderActions,
 }: {
@@ -54,6 +56,7 @@ function RailCard({
   onToggleLike: () => void;
   onOpenArtist: () => void;
   onFindSimilar: () => void;
+  onPlayNext?: () => void;
   onAddToQueue?: () => void;
   renderActions?: (track: Track) => React.ReactNode;
 }) {
@@ -123,6 +126,17 @@ function RailCard({
       <div className="mt-1 flex items-center justify-between text-[11px] tabular-nums text-sc-faint">
         <span>{track.durationFormatted || ''}</span>
         <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onPlayNext && (
+            <button
+              type="button"
+              onClick={onPlayNext}
+              title={`Play ${track.title} next`}
+              aria-label={`Play next`}
+              className="text-sc-dim hover:text-amber-400 hover:scale-110 active:scale-90 transition-all cursor-pointer"
+            >
+              <ListStart className="w-3.5 h-3.5" />
+            </button>
+          )}
           {onAddToQueue && (
             <button
               type="button"
@@ -158,6 +172,7 @@ function RailSection({
   onToggleLike,
   onOpenArtist,
   onFindSimilar,
+  onPlayNext,
   onAddToQueue,
   renderActions,
 }: {
@@ -169,6 +184,7 @@ function RailSection({
   onToggleLike: (t: Track) => void;
   onOpenArtist: (u: { id: string; username: string; permalinkUrl?: string }) => void;
   onFindSimilar: (seed: Track) => void;
+  onPlayNext?: (track: Track) => void;
   onAddToQueue?: (track: Track) => void;
   renderActions?: (track: Track) => React.ReactNode;
 }) {
@@ -286,6 +302,7 @@ function RailSection({
                 })
               }
               onFindSimilar={() => onFindSimilar(t)}
+              onPlayNext={onPlayNext ? () => onPlayNext(t) : undefined}
               onAddToQueue={onAddToQueue ? () => onAddToQueue(t) : undefined}
               renderActions={renderActions}
             />
@@ -361,6 +378,7 @@ export function DiscoverView(p: Props) {
           onToggleLike={p.onToggleLike}
           onOpenArtist={p.onOpenArtist}
           onFindSimilar={p.onFindSimilar}
+          onPlayNext={p.onPlayNext}
           onAddToQueue={p.onAddToQueue}
           renderActions={p.renderActions}
         />

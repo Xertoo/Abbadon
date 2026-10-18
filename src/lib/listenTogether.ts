@@ -41,6 +41,7 @@ export interface UserProfile {
   themeColor?: ProfileThemeColor;
   totalListenedSeconds?: number;
   tracksListenedCount?: number;
+  appearOffline?: boolean;
 }
 
 export interface Friend {
@@ -100,6 +101,7 @@ export type ListenTogetherMessage =
       themeColor?: ProfileThemeColor;
       totalListenedSeconds?: number;
       tracksListenedCount?: number;
+      appearOffline?: boolean;
       track: Track | null;
       isPlaying: boolean;
       currentTime: number;
@@ -234,6 +236,7 @@ export function loadProfile(defaultName?: string, defaultAvatar?: string): UserP
           themeColor: parsed.themeColor || 'orange',
           totalListenedSeconds: parsed.totalListenedSeconds || 0,
           tracksListenedCount: parsed.tracksListenedCount || 0,
+          appearOffline: Boolean(parsed.appearOffline),
         };
       }
     }
@@ -247,11 +250,11 @@ export function loadProfile(defaultName?: string, defaultAvatar?: string): UserP
     name: defaultName || `Listener #${newCode.slice(-4)}`,
     avatarUrl: defaultAvatar,
     avatarPreset: 'dj',
-    badge: '🎧 Audiophile',
     bio: 'Vibing to SoundCloud',
     themeColor: 'orange',
     totalListenedSeconds: 0,
     tracksListenedCount: 0,
+    appearOffline: false,
   };
   saveProfile(profile);
   return profile;

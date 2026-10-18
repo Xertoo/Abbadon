@@ -15,6 +15,8 @@ import {
   ArrowUpDown,
   ExternalLink,
   Trash2,
+  LayoutGrid,
+  ListMusic,
 } from 'lucide-react';
 import type { Playlist, Track, User } from '../types';
 import { TrackList, SectionHeader, SkeletonRows } from './TrackList';
@@ -119,9 +121,115 @@ const byDateAsc = (a: IndexedTrack, b: IndexedTrack) => {
 const playsDesc = (a: IndexedTrack, b: IndexedTrack) =>
   (b.track.playsCount ?? 0) - (a.track.playsCount ?? 0) || a.index - b.index;
 
+export interface AlbumGroup {
+  id: string;
+  title: string;
+  artwork?: string;
+  releaseYear?: string;
+  type: 'Album' | 'EP' | 'Single';
+  tracks: Track[];
+}
+
+function detectAlbumsAndEps(tracks: Track[]): AlbumGroup[] {
+  if (!tracks.length) return [];
+
+  // Count artwork occurrences across tracks
+  const artworkCounts = new Map<string, number>();
+  for (const t of tracks) {
+    if (t.artwork) {
+      artworkCounts.set(t.artwork, (artworkCounts.get(t.artwork) || 0) + 1);
+    }
+  }
+
+  // An artwork used by > 75% of tracks in a catalogue of 8+ tracks is likely a generic profile avatar
+  const isGenericArtwork = (art?: string) => {
+    if (!art || tracks.length < 8) return false;
+    const count = artworkCounts.get(art) || 0;
+    return count / tracks.length > 0.75;
+  };
+
+  const groupsMap = new Map<string, { artwork?: string; tracks: Track[]; dateStr?: string }>();
+
+  for (const t of tracks) {
+    const art = t.artwork;
+    const generic = isGenericArtwork(art);
+    const dateStr = t.createdAt ? t.createdAt.slice(0, 10) : '';
+
+    let key = '';
+    if (art && !generic) {
+      const monthStr = t.createdAt ? t.createdAt.slice(0, 7) : '';
+      key = `art:${art}:${monthStr}`;
+    } else if (dateStr) {
+      key = `date:${dateStr}`;
+    } else {
+      key = `single:${t.id}`;
+    }
+
+    if (!groupsMap.has(key)) {
+      groupsMap.set(key, { artwork: art, tracks: [], dateStr });
+    }
+    groupsMap.get(key)!.tracks.push(t);
+  }
+
+  const result: AlbumGroup[] = [];
+
+  for (const [key, group] of groupsMap.entries()) {
+    const groupTracks = group.tracks;
+    let albumTitle = '';
+    const firstTitle = groupTracks[0].title;
+
+    if (groupTracks.length > 1) {
+      const parts = firstTitle.split(/ [-–—:] /);
+      if (parts.length > 1 && groupTracks.every((t) => t.title.startsWith(parts[0]))) {
+        albumTitle = parts[0].trim();
+      }
+    }
+
+    if (!albumTitle) {
+      if (groupTracks.length >= 2) {
+        albumTitle = firstTitle.replace(/\s*\(feat\..*?\)/i, '').replace(/\s*\[.*?\]/, '').trim();
+      } else {
+        albumTitle = firstTitle;
+      }
+    }
+
+    let releaseYear = '';
+    const date = groupTracks[0].createdAt;
+    if (date) {
+      const parsed = new Date(date);
+      if (!isNaN(parsed.getFullYear())) {
+        releaseYear = String(parsed.getFullYear());
+      }
+    }
+
+    const type = groupTracks.length >= 7 ? 'Album' : groupTracks.length >= 2 ? 'EP' : 'Single';
+
+    result.push({
+      id: key,
+      title: albumTitle,
+      artwork: group.artwork || groupTracks[0].artwork,
+      releaseYear,
+      type,
+      tracks: groupTracks,
+    });
+  }
+
+  return result.sort((a, b) => {
+    const rank = (x: AlbumGroup) => (x.type === 'Album' ? 1 : x.type === 'EP' ? 2 : 3);
+    const rDiff = rank(a) - rank(b);
+    if (rDiff !== 0) return rDiff;
+
+    const dateA = a.tracks[0]?.createdAt ? Date.parse(a.tracks[0].createdAt) : 0;
+    const dateB = b.tracks[0]?.createdAt ? Date.parse(b.tracks[0].createdAt) : 0;
+    return dateB - dateA;
+  });
+}
+
 export function DetailView(p: Props) {
   const [sort, setSort] = useState<SortId>('default');
   const [showFullBio, setShowFullBio] = useState(false);
+  const [artistViewMode, setArtistViewMode] = useState<'tracks' | 'albums'>('tracks');
+  const [selectedAlbum, setSelectedAlbum] = useState<AlbumGroup | null>(null);
   const pl = p.playlist;
   const isArtist = pl?.id.startsWith('user-') ?? false;
 
@@ -133,6 +241,8 @@ export function DetailView(p: Props) {
   useEffect(() => {
     setSort('default');
     setShowFullBio(false);
+    setArtistViewMode('tracks');
+    setSelectedAlbum(null);
   }, [listId]);
 
   const tracks = pl?.tracks ?? EMPTY_TRACKS;
@@ -160,6 +270,11 @@ export function DetailView(p: Props) {
     if (sort === 'oldest') return indexed.sort(byDateAsc).map((item) => item.track);
     return tracks;
   }, [tracks, sort, isArtist]);
+
+  const albumsAndEps = useMemo(() => {
+    if (!isArtist || !pl) return [];
+    return detectAlbumsAndEps(pl.tracks);
+  }, [isArtist, pl]);
 
   const sortOptions: Array<{ id: SortId; label: string; icon: typeof Clock; title: string }> =
     isArtist
@@ -364,16 +479,163 @@ export function DetailView(p: Props) {
                   </button>
                 ))}
               </div>
+
+              {/* Artist view mode switch */}
+              {isArtist && albumsAndEps.length > 0 && (
+                <div
+                  className="flex items-center gap-1 rounded-full border border-sc-line bg-sc-panel p-0.5 ml-auto"
+                  role="tablist"
+                  aria-label="Artist view mode"
+                >
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setArtistViewMode('tracks');
+                      setSelectedAlbum(null);
+                    }}
+                    className={clsx(
+                      'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-all duration-200 cursor-pointer active:scale-95',
+                      artistViewMode === 'tracks'
+                        ? 'bg-sc-orange/15 text-sc-orange-soft shadow-xs'
+                        : 'text-sc-muted hover:text-sc-fg hover:bg-sc-fill/5'
+                    )}
+                  >
+                    <ListMusic className="w-3.5 h-3.5" />
+                    All Tracks
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setArtistViewMode('albums')}
+                    className={clsx(
+                      'inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-[12px] font-bold transition-all duration-200 cursor-pointer active:scale-95',
+                      artistViewMode === 'albums'
+                        ? 'bg-sc-orange/15 text-sc-orange-soft shadow-xs'
+                        : 'text-sc-muted hover:text-sc-fg hover:bg-sc-fill/5'
+                    )}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    Albums & EPs ({albumsAndEps.filter((a) => a.type !== 'Single').length || albumsAndEps.length})
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
       </div>
 
-      {/* Tracks */}
+      {/* Content Area: Albums & EPs Grid OR Tracks List */}
       <div className="px-4 sm:px-6 pb-10">
         {p.loading && pl.tracks.length === 0 ? (
           <SkeletonRows count={10} compact={p.compactRows} />
+        ) : isArtist && artistViewMode === 'albums' ? (
+          selectedAlbum ? (
+            /* Selected Album Track List */
+            <div className="space-y-4 animate-fade-in">
+              <div className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-sc-panel/60 border border-sc-line">
+                <button
+                  type="button"
+                  onClick={() => setSelectedAlbum(null)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full border border-sc-line bg-sc-panel text-[12px] font-bold text-sc-muted hover:text-sc-fg hover:border-sc-orange/50 transition-all cursor-pointer active:scale-95"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Back to all Albums & EPs
+                </button>
+                <div className="flex items-center gap-3">
+                  <Artwork
+                    src={selectedAlbum.artwork}
+                    seed={selectedAlbum.id}
+                    size={80}
+                    rounded="rounded-lg"
+                    className="w-10 h-10 shrink-0 shadow-sm"
+                  />
+                  <div>
+                    <h3 className="text-sm font-bold text-sc-fg">{selectedAlbum.title}</h3>
+                    <p className="text-[11px] text-sc-muted">
+                      {selectedAlbum.type} · {selectedAlbum.tracks.length} tracks
+                      {selectedAlbum.releaseYear ? ` · ${selectedAlbum.releaseYear}` : ''}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => p.onPlay(selectedAlbum.tracks[0], selectedAlbum.tracks)}
+                  className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-sc-orange text-sc-on-accent text-xs font-bold hover:scale-105 active:scale-95 transition-all cursor-pointer shadow-xs"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  Play {selectedAlbum.type}
+                </button>
+              </div>
+
+              <TrackList
+                tracks={selectedAlbum.tracks}
+                likedIds={p.likedIds}
+                playingId={p.playingId}
+                isPlaying={p.isPlaying}
+                compact={p.compactRows}
+                showArtwork={p.showArtwork ?? true}
+                onPlay={(track) => p.onPlay(track, selectedAlbum.tracks)}
+                onToggleLike={p.onToggleLike}
+                onOpenArtist={p.onOpenArtist}
+              />
+            </div>
+          ) : (
+            /* Albums & EPs Tiled Grid */
+            <div className="space-y-4 animate-fade-in">
+              <SectionHeader
+                title="Albums & EPs"
+                subtitle={`${albumsAndEps.length} releases`}
+                icon={<Disc3 className="w-[18px] h-[18px] text-sc-orange" />}
+              />
+
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4">
+                {albumsAndEps.map((album) => (
+                  <div
+                    key={album.id}
+                    onClick={() => setSelectedAlbum(album)}
+                    className="group flex flex-col text-left select-none p-3 rounded-2xl bg-sc-panel/40 hover:bg-sc-panel border border-white/[0.04] hover:border-sc-orange/50 transition-all duration-200 cursor-pointer hover:scale-[1.02] shadow-sm"
+                  >
+                    <div className="relative aspect-square rounded-xl overflow-hidden bg-sc-panel-2 shadow-inner">
+                      <Artwork
+                        src={album.artwork}
+                        seed={album.id}
+                        size={250}
+                        className="w-full h-full transition-transform duration-500 ease-out group-hover:scale-108"
+                      />
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          p.onPlay(album.tracks[0], album.tracks);
+                        }}
+                        aria-label={`Play ${album.title}`}
+                        className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+                      >
+                        <span className="w-12 h-12 rounded-full bg-sc-orange text-sc-on-accent flex items-center justify-center shadow-xl scale-90 group-hover:scale-100 transition-transform">
+                          <Play className="w-5 h-5 fill-current translate-x-[1px]" />
+                        </span>
+                      </button>
+                      <span className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/75 backdrop-blur-xs text-[9px] font-extrabold text-sc-orange uppercase tracking-wider shadow-md">
+                        {album.type}
+                      </span>
+                    </div>
+                    <div className="mt-2.5 min-w-0">
+                      <h4
+                        className="text-[12.5px] font-bold text-sc-fg truncate group-hover:text-sc-orange transition-colors"
+                        title={album.title}
+                      >
+                        {album.title}
+                      </h4>
+                      <div className="mt-1 flex items-center justify-between text-[11px] tabular-nums text-sc-muted">
+                        <span>{album.tracks.length} tracks</span>
+                        {album.releaseYear && <span>{album.releaseYear}</span>}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )
         ) : (
+          /* Standard All Tracks List */
           <>
             <SectionHeader
               title={sort === 'default' ? 'Tracks' : `${activeSort?.label ?? 'Sorted'} first`}

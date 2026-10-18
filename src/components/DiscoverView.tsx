@@ -1,4 +1,5 @@
-import { Play, Heart, Compass, Sparkles, Flame, Music2, RotateCcw, ListPlus } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Play, Heart, Compass, Sparkles, Flame, Music2, RotateCcw, ListPlus, ChevronLeft, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 import { Artwork } from './Artwork';
 import type { Track, DiscoverSection } from '../types';
@@ -132,6 +133,150 @@ function RailCard({
   );
 }
 
+function RailSection({
+  section,
+  liked,
+  playingId,
+  isPlaying,
+  onPlay,
+  onToggleLike,
+  onOpenArtist,
+  onFindSimilar,
+  renderActions,
+}: {
+  section: DiscoverSection;
+  liked: Set<string>;
+  playingId: string | null;
+  isPlaying: boolean;
+  onPlay: (t: Track, q: Track[]) => void;
+  onToggleLike: (t: Track) => void;
+  onOpenArtist: (u: { id: string; username: string; permalinkUrl?: string }) => void;
+  onFindSimilar: (seed: Track) => void;
+  renderActions?: (track: Track) => React.ReactNode;
+}) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
+  const checkScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 20);
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 20);
+  };
+
+  useEffect(() => {
+    checkScroll();
+  }, [section.tracks]);
+
+  const scroll = (direction: 'left' | 'right') => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const distance = 540;
+    el.scrollBy({
+      left: direction === 'left' ? -distance : distance,
+      behavior: 'smooth',
+    });
+  };
+
+  return (
+    <section key={section.id} className="relative group/rail">
+      <SectionHeader
+        title={section.title}
+        subtitle={section.subtitle}
+        icon={railIcon(section.id)}
+        action={
+          <div className="flex items-center gap-2">
+            {section.tracks.length > 0 && (
+              <button
+                type="button"
+                onClick={() => onPlay(section.tracks[0], section.tracks)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold text-sc-muted hover:text-sc-fg border border-sc-line hover:border-sc-orange/50 hover:bg-sc-fill/5 transition-all cursor-pointer active:scale-95 shrink-0"
+              >
+                <ListPlus className="w-3.5 h-3.5 text-sc-orange" />
+                Play all
+              </button>
+            )}
+
+            {/* Carousel navigation arrows */}
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => scroll('left')}
+                disabled={!canScrollLeft}
+                aria-label="Scroll left"
+                className="w-7 h-7 rounded-full flex items-center justify-center border border-sc-line bg-sc-panel/80 hover:bg-sc-panel hover:text-sc-fg text-sc-muted disabled:opacity-20 disabled:hover:bg-sc-panel/80 disabled:hover:text-sc-muted transition-all cursor-pointer active:scale-90"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => scroll('right')}
+                disabled={!canScrollRight}
+                aria-label="Scroll right"
+                className="w-7 h-7 rounded-full flex items-center justify-center border border-sc-line bg-sc-panel/80 hover:bg-sc-panel hover:text-sc-fg text-sc-muted disabled:opacity-20 disabled:hover:bg-sc-panel/80 disabled:hover:text-sc-muted transition-all cursor-pointer active:scale-90"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        }
+      />
+
+      {/* Floating edge arrows on hover */}
+      {canScrollLeft && (
+        <button
+          type="button"
+          onClick={() => scroll('left')}
+          aria-label="Scroll left"
+          className="absolute left-0 top-[60%] -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/80 hover:bg-black text-white shadow-xl flex items-center justify-center opacity-0 group-hover/rail:opacity-100 transition-opacity backdrop-blur-xs cursor-pointer hover:scale-110 active:scale-95"
+        >
+          <ChevronLeft className="w-5 h-5" />
+        </button>
+      )}
+
+      {canScrollRight && (
+        <button
+          type="button"
+          onClick={() => scroll('right')}
+          aria-label="Scroll right"
+          className="absolute right-0 top-[60%] -translate-y-1/2 z-20 w-9 h-9 rounded-full bg-black/80 hover:bg-black text-white shadow-xl flex items-center justify-center opacity-0 group-hover/rail:opacity-100 transition-opacity backdrop-blur-xs cursor-pointer hover:scale-110 active:scale-95"
+        >
+          <ChevronRight className="w-5 h-5" />
+        </button>
+      )}
+
+      {/* Track rail: scrollbar hidden, smooth snapping */}
+      <div
+        ref={scrollRef}
+        onScroll={checkScroll}
+        className="flex gap-3 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden pb-2 -mx-1 px-1 snap-x scroll-smooth"
+      >
+        {section.tracks.map((t) => (
+          <div key={t.id} className="w-[164px] shrink-0 snap-start">
+            <RailCard
+              track={t}
+              playing={t.id === playingId && isPlaying}
+              liked={liked.has(t.id)}
+              onPlay={() => onPlay(t, section.tracks)}
+              onToggleLike={() => onToggleLike(t)}
+              onOpenArtist={() =>
+                onOpenArtist({
+                  id: t.artistId ?? '',
+                  username: t.artist,
+                  permalinkUrl: t.artistUrl,
+                })
+              }
+              onFindSimilar={() => onFindSimilar(t)}
+              renderActions={renderActions}
+            />
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 /**
  * The home screen.
  *
@@ -187,47 +332,18 @@ export function DiscoverView(p: Props) {
       )}
 
       {p.sections.map((section) => (
-        <section key={section.id}>
-          <SectionHeader
-            title={section.title}
-            subtitle={section.subtitle}
-            icon={railIcon(section.id)}
-            action={
-              section.tracks.length > 0 ? (
-                <button
-                  type="button"
-                  onClick={() => p.onPlay(section.tracks[0], section.tracks)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold text-sc-muted hover:text-sc-fg border border-sc-line hover:border-sc-orange/50 hover:bg-sc-fill/5 transition-all cursor-pointer active:scale-95 shrink-0"
-                >
-                  <ListPlus className="w-3.5 h-3.5 text-sc-orange" />
-                  Play all
-                </button>
-              ) : undefined
-            }
-          />
-          <div className="flex gap-3 overflow-x-auto scroll-thin pb-2 -mx-1 px-1 snap-x">
-            {section.tracks.map((t) => (
-              <div key={t.id} className="w-[164px] shrink-0 snap-start">
-                <RailCard
-                  track={t}
-                  playing={t.id === p.playingId && p.isPlaying}
-                  liked={liked.has(t.id)}
-                  onPlay={() => p.onPlay(t, section.tracks)}
-                  onToggleLike={() => p.onToggleLike(t)}
-                  onOpenArtist={() =>
-                    p.onOpenArtist({
-                      id: t.artistId ?? '',
-                      username: t.artist,
-                      permalinkUrl: t.artistUrl,
-                    })
-                  }
-                  onFindSimilar={() => p.onFindSimilar(t)}
-                  renderActions={p.renderActions}
-                />
-              </div>
-            ))}
-          </div>
-        </section>
+        <RailSection
+          key={section.id}
+          section={section}
+          liked={liked}
+          playingId={p.playingId}
+          isPlaying={p.isPlaying}
+          onPlay={p.onPlay}
+          onToggleLike={p.onToggleLike}
+          onOpenArtist={p.onOpenArtist}
+          onFindSimilar={p.onFindSimilar}
+          renderActions={p.renderActions}
+        />
       ))}
     </div>
   );

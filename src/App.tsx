@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Compass, Loader2, Cloud } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Compass, Loader2, Cloud, Users } from 'lucide-react';
 import clsx from 'clsx';
 import { Sidebar, type View } from './components/Sidebar';
 import { SearchBar } from './components/SearchBar';
@@ -15,7 +15,7 @@ import { PlaylistAddButton } from './components/PlaylistAddButton';
 import { SoundHeardle } from './components/SoundHeardle';
 import { Toasts } from './components/Toasts';
 import { ListenTogetherView } from './components/ListenTogetherView';
-import { ListenTogetherDrawer } from './components/ListenTogetherDrawer';
+import { FriendsPopover } from './components/FriendsPopover';
 import { useListenTogether } from './hooks/useListenTogether';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useAutoUpdater } from './hooks/useAutoUpdater';
@@ -1917,10 +1917,37 @@ if (typeof d.theme === 'string') {
             </div>
           </div>
 
-          {/* Right: own profile. Doubles as the sign-in button when signed
-              out, so there is one fixed corner target rather than a button
-              that appears and disappears. */}
-          <div className="flex items-center gap-2 z-10 shrink-0">
+          {/* Right: Friends button & own profile */}
+          <div className="flex items-center gap-2.5 z-10 shrink-0">
+            {/* Friends popover trigger button */}
+            <button
+              onClick={() => setFriendsDrawerOpen((prev) => !prev)}
+              title={
+                listenTogether.syncSession.mode !== 'idle'
+                  ? 'Listening together with friend'
+                  : onlineFriendsCount > 0
+                    ? `Friends (${onlineFriendsCount} online)`
+                    : 'Friends & Activity'
+              }
+              aria-label="Friends and Activity"
+              className={clsx(
+                'relative w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer',
+                friendsDrawerOpen
+                  ? 'bg-sc-orange text-sc-on-accent shadow-md scale-105'
+                  : 'bg-white/5 hover:bg-white/10 text-sc-muted hover:text-sc-fg hover:scale-105 active:scale-95 border border-white/5'
+              )}
+            >
+              <Users className="w-4 h-4" />
+              {onlineFriendsCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-emerald-500 text-[9px] font-extrabold text-white flex items-center justify-center shadow-xs">
+                  {onlineFriendsCount}
+                </span>
+              )}
+              {listenTogether.syncSession.mode !== 'idle' && (
+                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-sc-orange animate-ping" />
+              )}
+            </button>
+
             {api.me ? (
               <button
                 onClick={() => openArtist(api.me!)}
@@ -2299,7 +2326,7 @@ if (typeof d.theme === 'string') {
         </div>
       )}
 
-      <ListenTogetherDrawer
+      <FriendsPopover
         isOpen={friendsDrawerOpen}
         onClose={() => setFriendsDrawerOpen(false)}
         profile={listenTogether.profile}

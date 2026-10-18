@@ -26,6 +26,7 @@ import {
   MessageSquare,
   Music4,
   Headphones,
+  Users,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { Track, User } from '../types';
@@ -1411,7 +1412,7 @@ export function PlayerBar(p: Props) {
 
         <div className="flex items-center gap-4 px-4 h-[88px]">
           {/* Track info */}
-          <div className="flex items-center gap-3 w-[240px] min-w-0 shrink-0">
+          <div className="flex items-center gap-3 w-[280px] sm:w-[320px] lg:w-[360px] min-w-0 shrink-0">
             {p.track ? (
               <>
                 <button
@@ -1424,9 +1425,11 @@ export function PlayerBar(p: Props) {
                     <Maximize2 className="w-4 h-4 text-white" />
                   </div>
                 </button>
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 flex-1 overflow-hidden">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <div className="text-[13px] font-semibold text-sc-fg truncate">{p.track.title}</div>
+                    <span className="text-[13.5px] font-bold text-sc-fg truncate block" title={p.track.title}>
+                      {p.track.title}
+                    </span>
                     {p.isPlaying && (
                       <div className="flex items-end gap-0.5 h-3 shrink-0 ml-0.5" title="Playing">
                         <span className="w-0.5 bg-sc-orange rounded-full animate-eq-1" />
@@ -1435,7 +1438,7 @@ export function PlayerBar(p: Props) {
                       </div>
                     )}
                   </div>
-                  <div className="truncate">
+                  <div className="truncate mt-0.5">
                     <button
                       type="button"
                       onClick={(e) => {
@@ -1448,7 +1451,7 @@ export function PlayerBar(p: Props) {
                           });
                         }
                       }}
-                      className="text-[12px] text-sc-muted hover:text-sc-orange hover:underline transition-colors truncate inline-block max-w-full text-left cursor-pointer"
+                      className="text-[12px] font-medium text-sc-muted hover:text-sc-orange hover:underline transition-colors truncate inline-block max-w-full text-left cursor-pointer"
                       title={`Open ${p.track.artist}`}
                     >
                       {p.track.artist}
@@ -1465,25 +1468,27 @@ export function PlayerBar(p: Props) {
                 >
                   <Heart className={clsx('w-[17px] h-[17px] transition-transform duration-200', p.liked && 'fill-sc-orange-soft')} />
                 </button>
-                {p.renderPlaylistAction?.(p.track, true)}
-                <button
-                  onClick={() => p.onAddToQueue?.(p.track!)}
-                  disabled={!p.onAddToQueue}
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-sc-dim hover:text-sc-fg transition-all duration-150 hover:scale-115 active:scale-85 shrink-0 disabled:opacity-30 cursor-pointer"
-                  title="Add this track to the queue"
-                  aria-label="Add to queue"
-                >
-                  <ListEnd className="w-[15px] h-[15px]" />
-                </button>
-                <a
-                  href={p.track.permalinkUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="w-8 h-8 rounded-full flex items-center justify-center text-sc-dim hover:text-sc-fg transition-all duration-150 hover:scale-115 active:scale-85 shrink-0"
-                  aria-label="Open on SoundCloud"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+                <div className="hidden sm:flex items-center gap-0.5 shrink-0">
+                  {p.renderPlaylistAction?.(p.track, true)}
+                  <button
+                    onClick={() => p.onAddToQueue?.(p.track!)}
+                    disabled={!p.onAddToQueue}
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-sc-dim hover:text-sc-fg transition-all duration-150 hover:scale-115 active:scale-85 shrink-0 disabled:opacity-30 cursor-pointer"
+                    title="Add this track to the queue"
+                    aria-label="Add to queue"
+                  >
+                    <ListEnd className="w-[15px] h-[15px]" />
+                  </button>
+                  <a
+                    href={p.track.permalinkUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-8 h-8 rounded-full flex items-center justify-center text-sc-dim hover:text-sc-fg transition-all duration-150 hover:scale-115 active:scale-85 shrink-0"
+                    aria-label="Open on SoundCloud"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
               </>
             ) : (
               <div className="text-[13px] text-sc-dim">Nothing playing</div>
@@ -1608,7 +1613,7 @@ export function PlayerBar(p: Props) {
               )}
             </button>
 
-            {/* Listen Together Button */}
+            {/* Friends & Activity Button */}
             {p.onOpenFriends && (
               <button
                 onClick={p.onOpenFriends}
@@ -1618,10 +1623,10 @@ export function PlayerBar(p: Props) {
                     ? 'text-sc-orange bg-sc-orange/15 shadow-xs ring-1 ring-sc-orange/40'
                     : 'text-sc-muted hover:text-sc-fg'
                 )}
-                title={p.isSyncActive ? `Listening together with ${p.syncTargetName || 'friend'}` : 'Listen Together with friends'}
-                aria-label="Listen Together"
+                title={p.isSyncActive ? `Listening with ${p.syncTargetName || 'friend'}` : 'Friends & Activity'}
+                aria-label="Friends"
               >
-                <Headphones className="w-[17px] h-[17px]" />
+                <Users className="w-[17px] h-[17px]" />
                 {p.isSyncActive && (
                   <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-sc-orange animate-ping" />
                 )}

@@ -12,6 +12,7 @@ import {
   Sparkles,
   Globe,
   Headphones,
+  Users,
 } from 'lucide-react';
 import { Artwork } from './Artwork';
 import clsx from 'clsx';
@@ -60,7 +61,7 @@ interface Props {
 const NAV: Array<{ id: View; label: string; icon: typeof Heart }> = [
   { id: 'discover', label: 'Discover', icon: Compass },
   { id: 'library', label: 'Liked Tracks', icon: Heart },
-  { id: 'friends', label: 'Listen Together', icon: Headphones },
+  { id: 'friends', label: 'Friends', icon: Users },
   { id: 'search', label: 'Search', icon: Search },
 ];
 

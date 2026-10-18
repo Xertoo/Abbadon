@@ -35,6 +35,7 @@ import {
   ListVideo,
   RotateCcw,
   ChevronDown,
+  ChevronUp,
   EyeOff,
   Cloud,
   Globe,
@@ -771,33 +772,51 @@ interface SpotifyProps {
  * allow-list - Spotify rejects the flow if the two do not match exactly.
  */
 function SpotifyPanel(p: SpotifyProps) {
+  const [expanded, setExpanded] = useState(p.connected);
   const premium = p.product === 'premium';
   return (
-    <div className="rounded-2xl border border-sc-line bg-sc-panel p-5">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h3 className="text-[14px] font-bold text-sc-fg flex items-center gap-2">
-            <Disc3 className="w-4 h-4 text-emerald-400" />
-            Spotify (experimental)
-          </h3>
+    <div className="rounded-2xl border border-sc-line bg-sc-panel transition-all duration-200 overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        className="w-full p-5 flex items-start justify-between gap-4 text-left cursor-pointer hover:bg-white/[0.02] transition-colors"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <Disc3 className="w-4 h-4 text-emerald-400 shrink-0" />
+            <h3 className="text-[14px] font-bold text-sc-fg">
+              Spotify (experimental)
+            </h3>
+            <span className="text-[10px] font-semibold text-sc-dim px-2 py-0.5 rounded-full bg-white/5">
+              Optional
+            </span>
+          </div>
           <p className="text-[12px] text-sc-muted mt-1 max-w-lg leading-relaxed">
             Full-length playback through the Web Playback SDK. Needs a Spotify
             <span className="font-semibold text-sc-fg"> Premium </span>
             account and your own app Client ID from developer.spotify.com.
           </p>
         </div>
-        {p.connected ? (
-          <div className="flex items-center gap-2 rounded-full bg-emerald-500/12 px-3 py-1.5 shrink-0">
-            <span className="text-[12px] font-semibold text-emerald-400">
-              {p.accountName ?? 'Connected'}
-            </span>
+        <div className="flex items-center gap-3 shrink-0">
+          {p.connected ? (
+            <div className="flex items-center gap-2 rounded-full bg-emerald-500/12 px-3 py-1.5">
+              <span className="text-[12px] font-semibold text-emerald-400">
+                {p.accountName ?? 'Connected'}
+              </span>
+            </div>
+          ) : (
+            <div className="rounded-full bg-sc-fill/6 px-3 py-1.5 text-[12px] text-sc-muted">
+              Not connected
+            </div>
+          )}
+          <div className="w-7 h-7 rounded-full bg-white/5 flex items-center justify-center text-sc-muted">
+            {expanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
           </div>
-        ) : (
-          <div className="rounded-full bg-sc-fill/6 px-3 py-1.5 text-[12px] text-sc-muted shrink-0">
-            Not connected
-          </div>
-        )}
-      </div>
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-5 pb-5 pt-0 border-t border-white/[0.04] mt-1 space-y-4 animate-fade-in">
 
       {!p.available && (
         <p className="mt-3 text-[11px] text-amber-400/90 flex items-start gap-1.5">
@@ -900,6 +919,8 @@ function SpotifyPanel(p: SpotifyProps) {
           </p>
         )}
       </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1816,8 +1837,6 @@ export function SettingsView({
 
       <AuthPanel {...auth} />
 
-      <SpotifyPanel {...spotify} />
-
       <div className="grid gap-3 sm:grid-cols-2">
         <Toggle
           icon={Compass}
@@ -2499,6 +2518,8 @@ export function SettingsView({
       </Disclosure>
 
       <SoftwareUpdatesPanel />
+
+      <SpotifyPanel {...spotify} />
 
       {prefs.hiddenPlaylistIds?.length > 0 && (
         <Disclosure

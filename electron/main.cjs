@@ -1268,8 +1268,8 @@ function initDiscordRPC() {
   connectDiscordRPC();
 }
 
-function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0, friendCode = null, shareDiscordFriendCode = false) {
-  lastPlaybackState = { track, isPlaying, currentTime, duration, friendCode, shareDiscordFriendCode };
+function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0, friendCode = null, shareDiscordFriendCode = false, showDiscordButtons = true) {
+  lastPlaybackState = { track, isPlaying, currentTime, duration, friendCode, shareDiscordFriendCode, showDiscordButtons };
   if (!rpcClient || !rpcConnected) return;
 
   try {
@@ -1300,13 +1300,13 @@ function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0, frien
       };
     }
 
-    // Discord Rich Presence Profile Buttons (Visible to you, mobile friends, and PC friends)
-    const buttons = [];
-    buttons.push({ label: 'Join on Abbadon', url: 'https://github.com/Xertoo/abbadon' });
-    if (track.permalinkUrl && typeof track.permalinkUrl === 'string' && track.permalinkUrl.startsWith('http')) {
-      buttons.push({ label: 'SoundCloud Track', url: track.permalinkUrl });
+    // Configurable Discord Presence Profile Buttons (Visible to you, mobile friends, and PC friends)
+    if (showDiscordButtons !== false) {
+      rawActivity.buttons = [
+        { label: 'Listen Together', url: 'https://github.com/Xertoo/abbadon' },
+        { label: 'Add Friend on Abbadon', url: 'https://github.com/Xertoo/abbadon' },
+      ];
     }
-    rawActivity.buttons = buttons.slice(0, 2);
 
     rpcClient.request('SET_ACTIVITY', {
       pid: process.pid,
@@ -1443,11 +1443,11 @@ function notifyTrack(track) {
   }
 }
 
-ipcMain.on('sc:player-state', (_e, { track, isPlaying, currentTime = 0, duration = 0, friendCode, shareDiscordFriendCode }) => {
+ipcMain.on('sc:player-state', (_e, { track, isPlaying, currentTime = 0, duration = 0, friendCode, shareDiscordFriendCode, showDiscordButtons }) => {
   if (updateTrayFn) {
     updateTrayFn(track, isPlaying);
   }
-  updateDiscordRPC(track, isPlaying, currentTime, duration, friendCode, shareDiscordFriendCode);
+  updateDiscordRPC(track, isPlaying, currentTime, duration, friendCode, shareDiscordFriendCode, showDiscordButtons);
 
   if (track && track.id !== lastNotifiedTrackId && isPlaying) {
     lastNotifiedTrackId = track.id;

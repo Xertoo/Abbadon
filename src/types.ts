@@ -76,6 +76,7 @@ export interface Playlist {
   permalinkUrl?: string;
   owner?: User;
   tracks: Track[];
+  albums?: Playlist[];
 }
 
 /**

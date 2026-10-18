@@ -1370,8 +1370,9 @@ if (typeof d.theme === 'string') {
       duration: dur,
       friendCode: listenTogether.profile.code,
       shareDiscordFriendCode: Boolean(listenTogether.profile.shareWithDiscord),
+      showDiscordButtons: listenTogether.profile.showDiscordButtons !== false,
     });
-  }, [track, playing, Math.floor(time / 5), dur, listenTogether.profile.code, listenTogether.profile.shareWithDiscord]);
+  }, [track, playing, Math.floor(time / 5), dur, listenTogether.profile.code, listenTogether.profile.shareWithDiscord, listenTogether.profile.showDiscordButtons]);
 
   // Discord Rich Presence & Deep-link friend auto-add listener
   useEffect(() => {

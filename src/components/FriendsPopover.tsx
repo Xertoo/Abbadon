@@ -759,13 +759,32 @@ export function FriendsPopover({
                     <div className="flex items-center gap-1.5">
                       <h4 className="text-sm font-bold text-sc-fg truncate">{profile.name}</h4>
                     </div>
-                    <p className="text-[11px] text-sc-muted truncate mt-0.5">
-                      {profile.bio || 'Vibing to SoundCloud'}
-                    </p>
+                    {profile.bio ? (
+                      <p className="text-[11px] text-sc-muted truncate mt-0.5">
+                        {profile.bio}
+                      </p>
+                    ) : null}
                     <div className="mt-1 flex items-center gap-2 text-[10px] text-sc-dim">
                       <span>{formatListenedTime(profile.totalListenedSeconds || 0)} listened</span>
                       <span>·</span>
-                      <span>{profile.tracksListenedCount || 0} tracks</span>
+                      <span>{profile.tracksListenedCount || 0} tracks played</span>
+                      {(profile.tracksListenedCount || 0) > 0 && (
+                        <>
+                          <span>·</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              updateProfile({ tracksListenedCount: 0 });
+                              setStatusMessage('Tracks played reset to 0');
+                              setTimeout(() => setStatusMessage(null), 2000);
+                            }}
+                            className="text-sc-muted hover:text-sc-orange underline cursor-pointer"
+                            title="Reset tracks played counter"
+                          >
+                            Reset
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -791,36 +810,34 @@ export function FriendsPopover({
                     <span>{copiedInvite ? 'Copied Invite to Clipboard!' : 'Copy Invite for Discord'}</span>
                   </button>
 
-                  {/* Discord Presence Mode */}
+                  {/* Discord Profile Buttons Toggle */}
                   <div className="p-2.5 rounded-xl bg-[#5865F2]/10 border border-[#5865F2]/20 flex items-center justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
                         <span className="w-2 h-2 rounded-full bg-[#5865F2] shrink-0" />
                         <span className="text-xs font-bold text-sc-fg">
-                          {profile.shareWithDiscord ? 'PC GameSDK Join Mode' : 'Universal Profile Buttons'}
+                          Discord Profile Buttons
                         </span>
                       </div>
                       <p className="text-[10.5px] text-sc-muted leading-tight mt-0.5">
-                        {profile.shareWithDiscord
-                          ? 'Shows native PC Join button for Discord Desktop friends (replaces URL buttons).'
-                          : 'Shows [Join on Abbadon] & [SoundCloud] buttons on both Mobile and PC.'}
+                        Show &ldquo;Listen Together&rdquo; &amp; &ldquo;Add Friend on Abbadon&rdquo; buttons on your Discord profile.
                       </p>
                     </div>
                     <button
                       type="button"
-                      onClick={() => updateProfile({ shareWithDiscord: !profile.shareWithDiscord })}
+                      onClick={() => updateProfile({ showDiscordButtons: profile.showDiscordButtons === false ? true : false })}
                       className={clsx(
                         'w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer shrink-0',
-                        profile.shareWithDiscord ? 'bg-[#5865F2]' : 'bg-white/10'
+                        profile.showDiscordButtons !== false ? 'bg-[#5865F2]' : 'bg-white/10'
                       )}
                       role="switch"
-                      aria-checked={Boolean(profile.shareWithDiscord)}
-                      title="Toggle between Universal Buttons and PC GameSDK Join"
+                      aria-checked={profile.showDiscordButtons !== false}
+                      title="Toggle Discord profile buttons"
                     >
                       <div
                         className={clsx(
                           'w-4 h-4 rounded-full bg-white transition-transform shadow-sm',
-                          profile.shareWithDiscord ? 'translate-x-4' : 'translate-x-0'
+                          profile.showDiscordButtons !== false ? 'translate-x-4' : 'translate-x-0'
                         )}
                       />
                     </button>
@@ -839,7 +856,14 @@ export function FriendsPopover({
                   className="hidden"
                 />
 
-                <div className="grid grid-cols-2 gap-2">
+                <div
+                  className={clsx(
+                    'grid gap-2',
+                    Boolean(soundCloudUser?.avatarUrl && profile.avatarUrl !== soundCloudUser.avatarUrl)
+                      ? 'grid-cols-2'
+                      : 'grid-cols-1'
+                  )}
+                >
                   <button
                     onClick={() => fileInputRef.current?.click()}
                     className="p-2.5 rounded-xl border border-white/[0.08] hover:border-sc-orange/50 bg-white/5 hover:bg-white/10 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
@@ -848,7 +872,7 @@ export function FriendsPopover({
                     <span>Upload from PC</span>
                   </button>
 
-                  {soundCloudUser && (
+                  {Boolean(soundCloudUser?.avatarUrl && profile.avatarUrl !== soundCloudUser.avatarUrl) && (
                     <button
                       onClick={handleUseSoundCloudPhoto}
                       className="p-2.5 rounded-xl border border-white/[0.08] hover:border-sc-orange/50 bg-white/5 hover:bg-white/10 text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer"
@@ -880,7 +904,7 @@ export function FriendsPopover({
                     type="text"
                     value={bioDraft}
                     onChange={(e) => setBioDraft(e.target.value)}
-                    placeholder="e.g. Vibing to SoundCloud..."
+                    placeholder="Add a bio or status quote..."
                     className="w-full px-3 py-1.5 rounded-xl bg-black/40 border border-white/[0.08] text-xs text-sc-fg"
                   />
                 </div>

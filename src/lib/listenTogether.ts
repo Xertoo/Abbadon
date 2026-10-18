@@ -43,6 +43,7 @@ export interface UserProfile {
   tracksListenedCount?: number;
   appearOffline?: boolean;
   shareWithDiscord?: boolean;
+  showDiscordButtons?: boolean;
 }
 
 export interface Friend {
@@ -227,18 +228,20 @@ export function loadProfile(defaultName?: string, defaultAvatar?: string): UserP
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed.code === 'string') {
         const isDefaultName = !parsed.name || parsed.name.startsWith('Listener #');
+        const cleanedBio = parsed.bio === 'Vibing to SoundCloud' ? '' : (parsed.bio || '');
         return {
           code: sanitizeCode(parsed.code),
           name: isDefaultName && defaultName ? defaultName : parsed.name || `Listener #${parsed.code.slice(-4)}`,
           avatarUrl: parsed.avatarUrl || defaultAvatar,
           avatarPreset: parsed.avatarPreset || 'dj',
           badge: parsed.badge || '🎧 Audiophile',
-          bio: parsed.bio || 'Vibing to SoundCloud',
+          bio: cleanedBio,
           themeColor: parsed.themeColor || 'orange',
           totalListenedSeconds: parsed.totalListenedSeconds || 0,
           tracksListenedCount: parsed.tracksListenedCount || 0,
           appearOffline: Boolean(parsed.appearOffline),
           shareWithDiscord: parsed.shareWithDiscord !== undefined ? Boolean(parsed.shareWithDiscord) : false,
+          showDiscordButtons: parsed.showDiscordButtons !== undefined ? Boolean(parsed.showDiscordButtons) : true,
         };
       }
     }
@@ -252,12 +255,13 @@ export function loadProfile(defaultName?: string, defaultAvatar?: string): UserP
     name: defaultName || `Listener #${newCode.slice(-4)}`,
     avatarUrl: defaultAvatar,
     avatarPreset: 'dj',
-    bio: 'Vibing to SoundCloud',
+    bio: '',
     themeColor: 'orange',
     totalListenedSeconds: 0,
     tracksListenedCount: 0,
     appearOffline: false,
     shareWithDiscord: false,
+    showDiscordButtons: true,
   };
   saveProfile(profile);
   return profile;

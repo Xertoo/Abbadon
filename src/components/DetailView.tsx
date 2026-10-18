@@ -130,21 +130,28 @@ export interface AlbumGroup {
   tracks: Track[];
 }
 
+function normalizeArtworkUrl(url?: string): string {
+  if (!url) return '';
+  return url.replace(/-(?:large|t\d+x\d+)\.(jpg|png|webp)/i, '').split('?')[0];
+}
+
 function detectAlbumsAndEps(tracks: Track[]): AlbumGroup[] {
   if (!tracks.length) return [];
 
-  // Count artwork occurrences across tracks
+  // Count normalized artwork occurrences across tracks
   const artworkCounts = new Map<string, number>();
   for (const t of tracks) {
-    if (t.artwork) {
-      artworkCounts.set(t.artwork, (artworkCounts.get(t.artwork) || 0) + 1);
+    const norm = normalizeArtworkUrl(t.artwork);
+    if (norm) {
+      artworkCounts.set(norm, (artworkCounts.get(norm) || 0) + 1);
     }
   }
 
-  // An artwork used by > 75% of tracks in a catalogue of 8+ tracks is likely a generic profile avatar
+  // An artwork used by > 75% of tracks in a large catalogue (12+ tracks) is a generic avatar
   const isGenericArtwork = (art?: string) => {
-    if (!art || tracks.length < 8) return false;
-    const count = artworkCounts.get(art) || 0;
+    if (!art || tracks.length < 12) return false;
+    const norm = normalizeArtworkUrl(art);
+    const count = artworkCounts.get(norm) || 0;
     return count / tracks.length > 0.75;
   };
 
@@ -152,13 +159,13 @@ function detectAlbumsAndEps(tracks: Track[]): AlbumGroup[] {
 
   for (const t of tracks) {
     const art = t.artwork;
+    const normArt = normalizeArtworkUrl(art);
     const generic = isGenericArtwork(art);
     const dateStr = t.createdAt ? t.createdAt.slice(0, 10) : '';
 
     let key = '';
-    if (art && !generic) {
-      const monthStr = t.createdAt ? t.createdAt.slice(0, 7) : '';
-      key = `art:${art}:${monthStr}`;
+    if (normArt && !generic) {
+      key = `art:${normArt}`;
     } else if (dateStr) {
       key = `date:${dateStr}`;
     } else {
@@ -273,6 +280,37 @@ export function DetailView(p: Props) {
 
   const albumsAndEps = useMemo(() => {
     if (!isArtist || !pl) return [];
+
+    // 1. If official SoundCloud albums/playlists are present, use the artist's published sequence
+    if (pl.albums && pl.albums.length > 0) {
+      const groups: AlbumGroup[] = pl.albums.map((a) => {
+        const year = a.tracks[0]?.createdAt
+          ? String(new Date(a.tracks[0].createdAt).getFullYear())
+          : '';
+        const count = a.tracks.length || a.trackCount;
+        const type: 'Album' | 'EP' | 'Single' = count >= 7 ? 'Album' : count >= 2 ? 'EP' : 'Single';
+        return {
+          id: a.id,
+          title: a.title,
+          artwork: a.artwork || a.tracks[0]?.artwork,
+          releaseYear: year,
+          type,
+          tracks: a.tracks, // EXACT published track order by creator
+        };
+      });
+
+      return groups.sort((a, b) => {
+        const rank = (x: AlbumGroup) => (x.type === 'Album' ? 1 : x.type === 'EP' ? 2 : 3);
+        const rDiff = rank(a) - rank(b);
+        if (rDiff !== 0) return rDiff;
+
+        const dateA = a.tracks[0]?.createdAt ? Date.parse(a.tracks[0].createdAt) : 0;
+        const dateB = b.tracks[0]?.createdAt ? Date.parse(b.tracks[0].createdAt) : 0;
+        return dateB - dateA;
+      });
+    }
+
+    // 2. Fallback to automated catalogue detection
     return detectAlbumsAndEps(pl.tracks);
   }, [isArtist, pl]);
 

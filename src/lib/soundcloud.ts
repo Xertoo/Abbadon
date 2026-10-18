@@ -832,8 +832,12 @@ export const sc = {
     return [];
   },
 
-  userPlaylists(userId: string | number, limit = 30) {
+  userPlaylists(userId: string | number, limit = 50) {
     return request<{ collection: ScPlaylist[] }>(`/users/${userId}/playlists?limit=${limit}`, MED);
+  },
+
+  userAlbums(userId: string | number, limit = 50) {
+    return request<{ collection: ScPlaylist[] }>(`/users/${userId}/albums?limit=${limit}`, MED);
   },
 
   /**

@@ -107,11 +107,36 @@ export function useListenTogether({
     });
   }, [defaultUsername, defaultAvatarUrl]);
 
-  // Track user listening time: accumulates seconds while music is playing
+  // Track user listening time and tracks listened count:
+  // Only counts a track after at least 15 seconds of active playback.
+  const currentTrackSecondsRef = useRef<number>(0);
+  const creditedTrackIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (currentTrack?.id !== creditedTrackIdRef.current) {
+      currentTrackSecondsRef.current = 0;
+    }
+  }, [currentTrack?.id]);
+
   useEffect(() => {
     if (!isPlaying) return;
 
     const interval = setInterval(() => {
+      if (currentTrack) {
+        currentTrackSecondsRef.current += 1;
+        if (currentTrackSecondsRef.current >= 15 && creditedTrackIdRef.current !== currentTrack.id) {
+          creditedTrackIdRef.current = currentTrack.id;
+          setProfileState((prev) => {
+            const next = {
+              ...prev,
+              tracksListenedCount: (prev.tracksListenedCount || 0) + 1,
+            };
+            saveProfile(next);
+            return next;
+          });
+        }
+      }
+
       setProfileState((prev) => {
         const next = {
           ...prev,
@@ -126,23 +151,7 @@ export function useListenTogether({
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [isPlaying]);
-
-  // Track play counter: count how many unique songs were played
-  const lastTrackIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (currentTrack && isPlaying && currentTrack.id !== lastTrackIdRef.current) {
-      lastTrackIdRef.current = currentTrack.id;
-      setProfileState((prev) => {
-        const next = {
-          ...prev,
-          tracksListenedCount: (prev.tracksListenedCount || 0) + 1,
-        };
-        saveProfile(next);
-        return next;
-      });
-    }
-  }, [currentTrack, isPlaying]);
+  }, [isPlaying, currentTrack]);
 
   // Broadcast helper to all connected peers
   const broadcast = useCallback((msg: ListenTogetherMessage) => {

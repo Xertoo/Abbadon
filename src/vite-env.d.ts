@@ -78,6 +78,7 @@ interface DesktopBridge {
     duration: number;
     friendCode?: string;
     shareDiscordFriendCode?: boolean;
+    showDiscordButtons?: boolean;
   }) => void;
   onDiscordJoinFriend?: (cb: (code: string) => void) => () => void;
   setDiscordClientId?: (clientId: string) => Promise<{ ok: boolean; clientId?: string; error?: string }>;

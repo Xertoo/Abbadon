@@ -535,13 +535,15 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
         tracks: [],
       });
 
-      const [tracks, fullUserResult, webProfilesResult] = await Promise.all([
+      const [tracks, fullUserResult, webProfilesResult, albumsResult, playlistsResult] = await Promise.all([
         guard(
           async () => (await sc.userTracksAll(user.id, user.username)).map(mapTrack),
           [] as Track[]
         ),
         sc.user(user.id).then(mapUser).catch(() => null),
         sc.userWebProfiles(user.id).catch(() => []),
+        sc.userAlbums(user.id, 50).catch(() => ({ collection: [] })),
+        sc.userPlaylists(user.id, 50).catch(() => ({ collection: [] })),
       ]);
 
       const mergedUser: User = {
@@ -549,6 +551,36 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
         description: fullUserResult?.description || user.description || '',
         webProfiles: webProfilesResult.length > 0 ? webProfilesResult : (user.webProfiles ?? []),
       };
+
+      // Index catalogue tracks for fast hydration
+      const trackMap = new Map<string, Track>();
+      for (const t of tracks) {
+        trackMap.set(String(t.id), t);
+      }
+
+      // Collect official albums & EPs in the exact artist sequence
+      const seenAlbumIds = new Set<string>();
+      const officialAlbums: Playlist[] = [];
+      const rawSets = [...(albumsResult?.collection || []), ...(playlistsResult?.collection || [])];
+
+      for (const p of rawSets) {
+        if (!p || !p.id) continue;
+        const pId = String(p.id);
+        if (seenAlbumIds.has(pId)) continue;
+        seenAlbumIds.add(pId);
+
+        const mappedMeta = mapPlaylistMeta(p);
+        if (Array.isArray(p.tracks)) {
+          mappedMeta.tracks = p.tracks
+            .filter((t) => t && (t.title || t.id))
+            .map((t) => {
+              const existing = trackMap.get(String(t.id));
+              if (existing) return existing;
+              return mapTrack(t);
+            });
+        }
+        officialAlbums.push(mappedMeta);
+      }
 
       setCurrentPlaylist({
         id: `user-${mergedUser.id}`,
@@ -558,6 +590,7 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
         trackCount: tracks.length || mergedUser.trackCount,
         owner: mergedUser,
         tracks,
+        albums: officialAlbums,
       });
     },
     [guard, notify]

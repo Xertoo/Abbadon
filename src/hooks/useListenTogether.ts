@@ -27,6 +27,7 @@ interface UseListenTogetherOptions {
   currentTime: number;
   duration: number;
   defaultUsername?: string;
+  defaultAvatarUrl?: string;
   onPlayTrack: (track: Track) => Promise<void> | void;
   onPlay: () => void;
   onPause: () => void;
@@ -40,13 +41,16 @@ export function useListenTogether({
   currentTime,
   duration,
   defaultUsername,
+  defaultAvatarUrl,
   onPlayTrack,
   onPlay,
   onPause,
   onSeek,
   notify,
 }: UseListenTogetherOptions) {
-  const [profile, setProfileState] = useState<UserProfile>(() => loadProfile(defaultUsername));
+  const [profile, setProfileState] = useState<UserProfile>(() =>
+    loadProfile(defaultUsername, defaultAvatarUrl)
+  );
   const [friends, setFriends] = useState<Friend[]>(() => loadFriends());
   const [presences, setPresences] = useState<Record<string, FriendPresence>>({});
   const [connectionStatus, setConnectionStatus] = useState<
@@ -77,7 +81,70 @@ export function useListenTogether({
   const friendsRef = useRef(friends);
   friendsRef.current = friends;
 
-  // Broadcast helper to all connected peers or room members
+  // Auto-sync default username & avatar from SoundCloud if user logged in
+  useEffect(() => {
+    if (!defaultUsername && !defaultAvatarUrl) return;
+
+    setProfileState((prev) => {
+      let changed = false;
+      const updated = { ...prev };
+
+      const isGeneratedName = !prev.name || prev.name.startsWith('Listener #');
+      if (isGeneratedName && defaultUsername && prev.name !== defaultUsername) {
+        updated.name = defaultUsername;
+        changed = true;
+      }
+      if (defaultAvatarUrl && !prev.avatarUrl) {
+        updated.avatarUrl = defaultAvatarUrl;
+        changed = true;
+      }
+
+      if (changed) {
+        saveProfile(updated);
+        return updated;
+      }
+      return prev;
+    });
+  }, [defaultUsername, defaultAvatarUrl]);
+
+  // Track user listening time: accumulates seconds while music is playing
+  useEffect(() => {
+    if (!isPlaying) return;
+
+    const interval = setInterval(() => {
+      setProfileState((prev) => {
+        const next = {
+          ...prev,
+          totalListenedSeconds: (prev.totalListenedSeconds || 0) + 1,
+        };
+        // Persist periodically every 15s to keep localStorage light
+        if (next.totalListenedSeconds % 15 === 0) {
+          saveProfile(next);
+        }
+        return next;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isPlaying]);
+
+  // Track play counter: count how many unique songs were played
+  const lastTrackIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (currentTrack && isPlaying && currentTrack.id !== lastTrackIdRef.current) {
+      lastTrackIdRef.current = currentTrack.id;
+      setProfileState((prev) => {
+        const next = {
+          ...prev,
+          tracksListenedCount: (prev.tracksListenedCount || 0) + 1,
+        };
+        saveProfile(next);
+        return next;
+      });
+    }
+  }, [currentTrack, isPlaying]);
+
+  // Broadcast helper to all connected peers
   const broadcast = useCallback((msg: ListenTogetherMessage) => {
     connectionsRef.current.forEach((conn) => {
       if (conn.open) {
@@ -104,23 +171,165 @@ export function useListenTogether({
     return false;
   }, []);
 
-  // Updates display name or friend code
+  // Flexible updateProfile: handles both (updatesObject) and legacy (name, newCode)
   const updateProfile = useCallback(
-    (name: string, newCode?: string) => {
-      const sanitized = newCode ? sanitizeCode(newCode) : profile.code;
-      const updated: UserProfile = {
-        ...profile,
-        name: name.trim() || profile.name,
-        code: sanitized,
-      };
-      setProfileState(updated);
-      saveProfile(updated);
+    (arg1: Partial<UserProfile> | string, newCode?: string) => {
+      setProfileState((prev) => {
+        let updated: UserProfile;
+        if (typeof arg1 === 'string') {
+          const sanitized = newCode ? sanitizeCode(newCode) : prev.code;
+          updated = {
+            ...prev,
+            name: arg1.trim() || prev.name,
+            code: sanitized,
+          };
+        } else {
+          const sanitized = arg1.code ? sanitizeCode(arg1.code) : prev.code;
+          updated = {
+            ...prev,
+            ...arg1,
+            code: sanitized,
+            name: arg1.name?.trim() || prev.name,
+          };
+        }
+        saveProfile(updated);
+        // Broadcast profile changes live to all connected friends
+        broadcast({
+          type: 'PROFILE_UPDATE',
+          senderProfile: updated,
+        });
+        return updated;
+      });
       notify('Profile updated');
     },
-    [profile, notify]
+    [broadcast, notify]
   );
 
-  // Add friend by code
+  // Connect to friend by code (and optionally initiate mutual friendship handshake)
+  const connectToFriend = useCallback(
+    (codeRaw: string, isInitiator = false) => {
+      const code = sanitizeCode(codeRaw);
+      if (!code || code === profileRef.current.code || !peerRef.current || !peerRef.current.open) {
+        return;
+      }
+
+      // If already connected and open, just ping
+      const existing = connectionsRef.current.get(code);
+      if (existing && existing.open) {
+        try {
+          existing.send({
+            type: 'PRESENCE_REQUEST',
+            senderCode: profileRef.current.code,
+          });
+        } catch {
+          // ignore
+        }
+        return;
+      }
+
+      const targetPeerId = peerIdForCode(code);
+      try {
+        const conn = peerRef.current.connect(targetPeerId, {
+          reliable: true,
+          metadata: {
+            profile: profileRef.current,
+          },
+        });
+
+        conn.on('open', () => {
+          connectionsRef.current.set(code, conn);
+
+          // 1. Send FRIEND_HELLO so the other person automatically adds us reciprocally!
+          try {
+            conn.send({
+              type: 'FRIEND_HELLO',
+              senderProfile: profileRef.current,
+              isResponse: !isInitiator,
+            });
+
+            // 2. Send current presence
+            conn.send({
+              type: 'PRESENCE_UPDATE',
+              senderCode: profileRef.current.code,
+              senderName: profileRef.current.name,
+              avatarUrl: profileRef.current.avatarUrl,
+              avatarPreset: profileRef.current.avatarPreset,
+              badge: profileRef.current.badge,
+              bio: profileRef.current.bio,
+              themeColor: profileRef.current.themeColor,
+              totalListenedSeconds: profileRef.current.totalListenedSeconds,
+              tracksListenedCount: profileRef.current.tracksListenedCount,
+              track: currentTrackRef.current,
+              isPlaying: isPlayingRef.current,
+              currentTime: currentTimeRef.current,
+              duration: durationRef.current,
+              timestamp: Date.now(),
+              roomId: syncSessionRef.current.roomId || null,
+            });
+          } catch {
+            // ignore
+          }
+
+          setPresences((prev) => ({
+            ...prev,
+            [code]: {
+              ...(prev[code] || {
+                code,
+                name: friendsRef.current.find((f) => f.code === code)?.name || code,
+                lastSeen: Date.now(),
+                track: null,
+                isPlaying: false,
+                currentTime: 0,
+                duration: 0,
+                timestamp: Date.now(),
+              }),
+              online: true,
+            },
+          }));
+        });
+
+        conn.on('data', (data) => {
+          handleMessage(data as ListenTogetherMessage, conn);
+        });
+
+        conn.on('close', () => {
+          connectionsRef.current.delete(code);
+          setPresences((prev) => {
+            if (!prev[code]) return prev;
+            return {
+              ...prev,
+              [code]: {
+                ...prev[code],
+                online: false,
+                lastSeen: Date.now(),
+              },
+            };
+          });
+        });
+
+        conn.on('error', () => {
+          connectionsRef.current.delete(code);
+          setPresences((prev) => {
+            if (!prev[code]) return prev;
+            return {
+              ...prev,
+              [code]: {
+                ...prev[code],
+                online: false,
+                lastSeen: Date.now(),
+              },
+            };
+          });
+        });
+      } catch {
+        // ignore connection attempt failure
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    []
+  );
+
+  // Add friend by code (initiates reciprocal friendship)
   const addFriend = useCallback(
     (codeRaw: string, nameRaw?: string) => {
       const code = sanitizeCode(codeRaw);
@@ -148,11 +357,11 @@ export function useListenTogether({
       saveFriends(next);
       notify(`Added ${name} to friends`);
 
-      // Attempt immediate connection to friend
-      connectToFriend(code);
+      // Immediately connect and send FRIEND_HELLO
+      connectToFriend(code, true);
       return true;
     },
-    [notify]
+    [connectToFriend, notify]
   );
 
   // Remove friend
@@ -188,7 +397,9 @@ export function useListenTogether({
   // Rename friend alias
   const renameFriend = useCallback((codeRaw: string, newName: string) => {
     const code = sanitizeCode(codeRaw);
-    const next = friendsRef.current.map((f) => (f.code === code ? { ...f, name: newName.trim() || f.name } : f));
+    const next = friendsRef.current.map((f) =>
+      f.code === code ? { ...f, name: newName.trim() || f.name } : f
+    );
     setFriends(next);
     saveFriends(next);
   }, []);
@@ -199,13 +410,137 @@ export function useListenTogether({
       if (!msg || typeof msg !== 'object') return;
 
       switch (msg.type) {
+        case 'FRIEND_HELLO': {
+          const sender = msg.senderProfile;
+          if (!sender || !sender.code) break;
+          const senderCode = sanitizeCode(sender.code);
+
+          // 1. RECIPROCAL FRIENDSHIP: Automatically add sender to friends list if not already added!
+          if (!friendsRef.current.some((f) => f.code === senderCode)) {
+            const autoFriend: Friend = {
+              code: senderCode,
+              name: sender.name || `Friend #${senderCode}`,
+              avatarUrl: sender.avatarUrl,
+              avatarPreset: sender.avatarPreset,
+              badge: sender.badge,
+              bio: sender.bio,
+              themeColor: sender.themeColor,
+              addedAt: Date.now(),
+            };
+            const next = [autoFriend, ...friendsRef.current];
+            setFriends(next);
+            saveFriends(next);
+            notify(`${sender.name || senderCode} connected with you!`);
+          }
+
+          // 2. If it was the first hello, reply back so both are guaranteed mutually connected
+          if (!msg.isResponse) {
+            try {
+              senderConn.send({
+                type: 'FRIEND_HELLO',
+                senderProfile: profileRef.current,
+                isResponse: true,
+              });
+            } catch {
+              // ignore
+            }
+          }
+
+          // 3. Update presence with their full profile info
+          setPresences((prev) => ({
+            ...prev,
+            [senderCode]: {
+              ...(prev[senderCode] || {
+                code: senderCode,
+                name: sender.name || senderCode,
+                online: true,
+                lastSeen: Date.now(),
+                track: null,
+                isPlaying: false,
+                currentTime: 0,
+                duration: 0,
+                timestamp: Date.now(),
+              }),
+              name: sender.name || prev[senderCode]?.name || senderCode,
+              avatarUrl: sender.avatarUrl,
+              avatarPreset: sender.avatarPreset,
+              badge: sender.badge,
+              bio: sender.bio,
+              themeColor: sender.themeColor,
+              totalListenedSeconds: sender.totalListenedSeconds,
+              tracksListenedCount: sender.tracksListenedCount,
+              online: true,
+              lastSeen: Date.now(),
+            },
+          }));
+          break;
+        }
+
+        case 'PROFILE_UPDATE': {
+          const sender = msg.senderProfile;
+          if (!sender || !sender.code) break;
+          const senderCode = sanitizeCode(sender.code);
+
+          // Update friend details in list
+          setFriends((prev) => {
+            const updated = prev.map((f) =>
+              f.code === senderCode
+                ? {
+                    ...f,
+                    name: sender.name || f.name,
+                    avatarUrl: sender.avatarUrl,
+                    avatarPreset: sender.avatarPreset,
+                    badge: sender.badge,
+                    bio: sender.bio,
+                    themeColor: sender.themeColor,
+                  }
+                : f
+            );
+            saveFriends(updated);
+            return updated;
+          });
+
+          // Update presence card
+          setPresences((prev) => ({
+            ...prev,
+            [senderCode]: {
+              ...(prev[senderCode] || {
+                code: senderCode,
+                name: sender.name || senderCode,
+                online: true,
+                lastSeen: Date.now(),
+                track: null,
+                isPlaying: false,
+                currentTime: 0,
+                duration: 0,
+                timestamp: Date.now(),
+              }),
+              name: sender.name || prev[senderCode]?.name || senderCode,
+              avatarUrl: sender.avatarUrl,
+              avatarPreset: sender.avatarPreset,
+              badge: sender.badge,
+              bio: sender.bio,
+              themeColor: sender.themeColor,
+              totalListenedSeconds: sender.totalListenedSeconds,
+              tracksListenedCount: sender.tracksListenedCount,
+            },
+          }));
+          break;
+        }
+
         case 'PRESENCE_REQUEST': {
-          // Immediately reply with current presence
           try {
             senderConn.send({
               type: 'PRESENCE_UPDATE',
               senderCode: profileRef.current.code,
               senderName: profileRef.current.name,
+              avatarUrl: profileRef.current.avatarUrl,
+              avatarPreset: profileRef.current.avatarPreset,
+              badge: profileRef.current.badge,
+              bio: profileRef.current.bio,
+              themeColor: profileRef.current.themeColor,
+              totalListenedSeconds: profileRef.current.totalListenedSeconds,
+              tracksListenedCount: profileRef.current.tracksListenedCount,
               track: currentTrackRef.current,
               isPlaying: isPlayingRef.current,
               currentTime: currentTimeRef.current,
@@ -226,6 +561,13 @@ export function useListenTogether({
             [senderCode]: {
               code: senderCode,
               name: msg.senderName || prev[senderCode]?.name || senderCode,
+              avatarUrl: msg.avatarUrl || prev[senderCode]?.avatarUrl,
+              avatarPreset: msg.avatarPreset || prev[senderCode]?.avatarPreset,
+              badge: msg.badge || prev[senderCode]?.badge,
+              bio: msg.bio || prev[senderCode]?.bio,
+              themeColor: msg.themeColor || prev[senderCode]?.themeColor,
+              totalListenedSeconds: msg.totalListenedSeconds ?? prev[senderCode]?.totalListenedSeconds,
+              tracksListenedCount: msg.tracksListenedCount ?? prev[senderCode]?.tracksListenedCount,
               online: true,
               lastSeen: Date.now(),
               track: msg.track,
@@ -322,40 +664,51 @@ export function useListenTogether({
         case 'ROOM_LEAVE': {
           const senderCode = sanitizeCode(msg.senderCode);
           setSyncSession((prev) => {
-            if (prev.mode !== 'room') return prev;
-            const existing = prev.participants || [];
-            return {
-              ...prev,
-              participants: existing.filter((p) => p.code !== senderCode),
-            };
+            if (prev.mode !== 'room' || prev.roomId !== msg.roomId) return prev;
+            const updated = (prev.participants || []).filter((p) => p.code !== senderCode);
+            return { ...prev, participants: updated };
           });
           break;
         }
 
         case 'CHAT_MESSAGE': {
-          setChatMessages((prev) => [...prev.slice(-49), msg]);
+          const session = syncSessionRef.current;
+          if (session.mode === 'room' && session.roomId === msg.roomId) {
+            const chatMsg: RoomChatMessage = {
+              id: msg.id,
+              senderCode: sanitizeCode(msg.senderCode),
+              senderName: msg.senderName,
+              text: msg.text,
+              timestamp: msg.timestamp,
+            };
+            setChatMessages((prev) => [...prev.slice(-49), chatMsg]);
+          }
           break;
         }
 
         case 'REACTION': {
-          const reaction: RoomReaction = {
-            id: `rx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            senderName: msg.senderName,
-            emoji: msg.emoji,
-            timestamp: msg.timestamp,
-          };
-          setReactions((prev) => [...prev.slice(-15), reaction]);
-          setTimeout(() => {
-            setReactions((prev) => prev.filter((r) => r.id !== reaction.id));
-          }, 3500);
+          const session = syncSessionRef.current;
+          if (session.mode === 'room' && session.roomId === msg.roomId) {
+            const rx: RoomReaction = {
+              id: `rx-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              senderName: msg.senderName,
+              emoji: msg.emoji,
+              timestamp: msg.timestamp,
+            };
+            setReactions((prev) => [...prev.slice(-15), rx]);
+            setTimeout(() => {
+              setReactions((prev) => prev.filter((r) => r.id !== rx.id));
+            }, 3500);
+          }
           break;
         }
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [notify]
   );
 
-  // Apply state update from remote friend/host
+  // Apply state from followed peer (smart drift correction and auto-play)
   const applyRemoteState = useCallback(
     (remote: {
       track: Track | null;
@@ -448,145 +801,38 @@ export function useListenTogether({
         }
 
         case 'PLAY': {
-          isSyncApplyingRef.current = true;
-          onPlay();
-          if (typeof cmd.currentTime === 'number') {
-            const drift = Math.abs(currentTimeRef.current - targetTime);
-            if (drift > 1.5) onSeek(targetTime);
+          if (!isPlayingRef.current) {
+            isSyncApplyingRef.current = true;
+            onPlay();
+            setTimeout(() => {
+              isSyncApplyingRef.current = false;
+            }, 300);
           }
-          setTimeout(() => {
-            isSyncApplyingRef.current = false;
-          }, 400);
           break;
         }
 
         case 'PAUSE': {
-          isSyncApplyingRef.current = true;
-          onPause();
-          if (typeof cmd.currentTime === 'number') {
-            onSeek(cmd.currentTime);
+          if (isPlayingRef.current) {
+            isSyncApplyingRef.current = true;
+            onPause();
+            setTimeout(() => {
+              isSyncApplyingRef.current = false;
+            }, 300);
           }
-          setTimeout(() => {
-            isSyncApplyingRef.current = false;
-          }, 400);
           break;
         }
 
         case 'SEEK': {
-          if (typeof cmd.currentTime === 'number') {
-            isSyncApplyingRef.current = true;
-            onSeek(targetTime);
-            setTimeout(() => {
-              isSyncApplyingRef.current = false;
-            }, 400);
-          }
+          isSyncApplyingRef.current = true;
+          onSeek(targetTime);
+          setTimeout(() => {
+            isSyncApplyingRef.current = false;
+          }, 300);
           break;
         }
       }
     },
     [onPlayTrack, onPlay, onPause, onSeek]
-  );
-
-  // Connect to a friend via PeerJS
-  const connectToFriend = useCallback(
-    (friendCode: string) => {
-      const code = sanitizeCode(friendCode);
-      if (!peerRef.current || peerRef.current.destroyed || !peerRef.current.open) return;
-      if (connectionsRef.current.has(code)) {
-        const existing = connectionsRef.current.get(code);
-        if (existing && existing.open) return;
-      }
-
-      const targetPeerId = peerIdForCode(code);
-      try {
-        const conn = peerRef.current.connect(targetPeerId, {
-          reliable: true,
-          metadata: {
-            code: profileRef.current.code,
-            name: profileRef.current.name,
-          },
-        });
-
-        conn.on('open', () => {
-          connectionsRef.current.set(code, conn);
-          setPresences((prev) => ({
-            ...prev,
-            [code]: {
-              ...(prev[code] || {
-                code,
-                name: friendsRef.current.find((f) => f.code === code)?.name || code,
-                lastSeen: Date.now(),
-                track: null,
-                isPlaying: false,
-                currentTime: 0,
-                duration: 0,
-                timestamp: Date.now(),
-              }),
-              online: true,
-            },
-          }));
-
-          // Request presence immediately
-          try {
-            conn.send({
-              type: 'PRESENCE_REQUEST',
-              senderCode: profileRef.current.code,
-            });
-            // And share our own presence
-            conn.send({
-              type: 'PRESENCE_UPDATE',
-              senderCode: profileRef.current.code,
-              senderName: profileRef.current.name,
-              track: currentTrackRef.current,
-              isPlaying: isPlayingRef.current,
-              currentTime: currentTimeRef.current,
-              duration: durationRef.current,
-              timestamp: Date.now(),
-              roomId: syncSessionRef.current.roomId || null,
-            });
-          } catch {
-            // ignore
-          }
-        });
-
-        conn.on('data', (data) => {
-          handleMessage(data as ListenTogetherMessage, conn);
-        });
-
-        conn.on('close', () => {
-          connectionsRef.current.delete(code);
-          setPresences((prev) => {
-            if (!prev[code]) return prev;
-            return {
-              ...prev,
-              [code]: {
-                ...prev[code],
-                online: false,
-                lastSeen: Date.now(),
-              },
-            };
-          });
-        });
-
-        conn.on('error', () => {
-          connectionsRef.current.delete(code);
-          setPresences((prev) => {
-            if (!prev[code]) return prev;
-            return {
-              ...prev,
-              [code]: {
-                ...prev[code],
-                online: false,
-                lastSeen: Date.now(),
-              },
-            };
-          });
-        });
-      } catch {
-        // ignore connection attempt failure
-      }
-    },
-    [handleMessage]
   );
 
   // Setup PeerJS instance
@@ -616,6 +862,7 @@ export function useListenTogether({
       });
     });
 
+    // Incoming connection from another peer
     peer.on('connection', (conn) => {
       if (!active) return;
       const remotePeerId = conn.peer;
@@ -624,6 +871,38 @@ export function useListenTogether({
       conn.on('open', () => {
         if (remoteCode) {
           connectionsRef.current.set(remoteCode, conn);
+
+          // Greet incoming peer with our profile
+          try {
+            conn.send({
+              type: 'FRIEND_HELLO',
+              senderProfile: profileRef.current,
+              isResponse: false,
+            });
+
+            // Send our current presence
+            conn.send({
+              type: 'PRESENCE_UPDATE',
+              senderCode: profileRef.current.code,
+              senderName: profileRef.current.name,
+              avatarUrl: profileRef.current.avatarUrl,
+              avatarPreset: profileRef.current.avatarPreset,
+              badge: profileRef.current.badge,
+              bio: profileRef.current.bio,
+              themeColor: profileRef.current.themeColor,
+              totalListenedSeconds: profileRef.current.totalListenedSeconds,
+              tracksListenedCount: profileRef.current.tracksListenedCount,
+              track: currentTrackRef.current,
+              isPlaying: isPlayingRef.current,
+              currentTime: currentTimeRef.current,
+              duration: durationRef.current,
+              timestamp: Date.now(),
+              roomId: syncSessionRef.current.roomId || null,
+            });
+          } catch {
+            // ignore
+          }
+
           setPresences((prev) => ({
             ...prev,
             [remoteCode]: {
@@ -640,23 +919,6 @@ export function useListenTogether({
               online: true,
             },
           }));
-        }
-
-        // Send our current presence
-        try {
-          conn.send({
-            type: 'PRESENCE_UPDATE',
-            senderCode: profileRef.current.code,
-            senderName: profileRef.current.name,
-            track: currentTrackRef.current,
-            isPlaying: isPlayingRef.current,
-            currentTime: currentTimeRef.current,
-            duration: durationRef.current,
-            timestamp: Date.now(),
-            roomId: syncSessionRef.current.roomId || null,
-          });
-        } catch {
-          // ignore
         }
       });
 
@@ -684,12 +946,10 @@ export function useListenTogether({
 
     peer.on('error', (err) => {
       if (!active) return;
-      // Peer unavailable usually means a friend is offline
       if (err.type === 'peer-unavailable') {
         return;
       }
       if (err.type === 'unavailable-id') {
-        // ID was taken, generate a fresh unique code
         const fallback = generateFriendCode();
         setProfileState((prev) => {
           const next = { ...prev, code: fallback };
@@ -731,6 +991,13 @@ export function useListenTogether({
         type: 'PRESENCE_UPDATE',
         senderCode: profileRef.current.code,
         senderName: profileRef.current.name,
+        avatarUrl: profileRef.current.avatarUrl,
+        avatarPreset: profileRef.current.avatarPreset,
+        badge: profileRef.current.badge,
+        bio: profileRef.current.bio,
+        themeColor: profileRef.current.themeColor,
+        totalListenedSeconds: profileRef.current.totalListenedSeconds,
+        tracksListenedCount: profileRef.current.tracksListenedCount,
         track: currentTrackRef.current,
         isPlaying: isPlayingRef.current,
         currentTime: currentTimeRef.current,
@@ -770,6 +1037,13 @@ export function useListenTogether({
         type: 'PRESENCE_UPDATE',
         senderCode: profile.code,
         senderName: profile.name,
+        avatarUrl: profile.avatarUrl,
+        avatarPreset: profile.avatarPreset,
+        badge: profile.badge,
+        bio: profile.bio,
+        themeColor: profile.themeColor,
+        totalListenedSeconds: profile.totalListenedSeconds,
+        tracksListenedCount: profile.tracksListenedCount,
         track: currentTrack,
         isPlaying,
         currentTime,
@@ -778,7 +1052,7 @@ export function useListenTogether({
         roomId: syncSession.roomId || null,
       });
 
-      // 2. If we are room host or someone is following us, broadcast sync command
+      // 2. If we are room host, broadcast sync command
       const session = syncSessionRef.current;
       if (session.mode === 'room' && (session.isHost || session.allowGuestsControl)) {
         if (trackChanged && currentTrack) {
@@ -919,6 +1193,9 @@ export function useListenTogether({
       const hostParticipant: RoomParticipant = {
         code: profileRef.current.code,
         name: profileRef.current.name,
+        avatarUrl: profileRef.current.avatarUrl,
+        avatarPreset: profileRef.current.avatarPreset,
+        badge: profileRef.current.badge,
         isHost: true,
         joinedAt: Date.now(),
       };
@@ -948,6 +1225,9 @@ export function useListenTogether({
       const selfParticipant: RoomParticipant = {
         code: profileRef.current.code,
         name: profileRef.current.name,
+        avatarUrl: profileRef.current.avatarUrl,
+        avatarPreset: profileRef.current.avatarPreset,
+        badge: profileRef.current.badge,
         isHost: false,
         joinedAt: Date.now(),
       };

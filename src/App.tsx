@@ -15,6 +15,7 @@ import { PlaylistAddButton } from './components/PlaylistAddButton';
 import { SoundHeardle } from './components/SoundHeardle';
 import { Toasts } from './components/Toasts';
 import { ListenTogetherView } from './components/ListenTogetherView';
+import { ListenTogetherDrawer } from './components/ListenTogetherDrawer';
 import { useListenTogether } from './hooks/useListenTogether';
 import { UpdateBanner } from './components/UpdateBanner';
 import { useAutoUpdater } from './hooks/useAutoUpdater';
@@ -287,6 +288,7 @@ export default function App() {
   const [manualToken, setManualToken] = useState('');
   const [manualPending, setManualPending] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
+  const [friendsDrawerOpen, setFriendsDrawerOpen] = useState(false);
   const [heardleOpen, setHeardleOpen] = useState(false);
 
   // Player state
@@ -1032,6 +1034,7 @@ if (typeof d.theme === 'string') {
     currentTime: time,
     duration: dur,
     defaultUsername: api.me?.username,
+    defaultAvatarUrl: api.me?.avatarUrl,
     onPlayTrack: async (remoteTrack) => {
       await playTrack(remoteTrack, [remoteTrack]);
     },
@@ -1843,6 +1846,8 @@ if (typeof d.theme === 'string') {
         proxyPreset={prefs.proxyPreset}
         onlineFriendsCount={onlineFriendsCount}
         isSyncActive={listenTogether.syncSession.mode !== 'idle'}
+        friendsDrawerOpen={friendsDrawerOpen}
+        onToggleFriendsDrawer={() => setFriendsDrawerOpen((prev) => !prev)}
       />
 
       <div className="relative z-10 flex-1 flex flex-col min-w-0">
@@ -2246,7 +2251,7 @@ if (typeof d.theme === 'string') {
           onShuffle={() => setShuffle((s) => !s)}
           onRepeat={() => setRepeat((r) => (r === 'off' ? 'all' : r === 'all' ? 'one' : 'off'))}
           onOpenQueue={() => setQueueOpen((o) => !o)}
-          onOpenFriends={() => navTo('friends')}
+          onOpenFriends={() => setFriendsDrawerOpen((o) => !o)}
           isSyncActive={listenTogether.syncSession.mode !== 'idle'}
           syncTargetName={listenTogether.syncSession.targetName || listenTogether.syncSession.roomName}
           eq={eq}
@@ -2293,6 +2298,36 @@ if (typeof d.theme === 'string') {
           </div>
         </div>
       )}
+
+      <ListenTogetherDrawer
+        isOpen={friendsDrawerOpen}
+        onClose={() => setFriendsDrawerOpen(false)}
+        profile={listenTogether.profile}
+        updateProfile={listenTogether.updateProfile}
+        friends={listenTogether.friends}
+        presences={listenTogether.presences}
+        connectionStatus={listenTogether.connectionStatus}
+        syncSession={listenTogether.syncSession}
+        incomingInvites={listenTogether.incomingInvites}
+        chatMessages={listenTogether.chatMessages}
+        reactions={listenTogether.reactions}
+        currentTrack={track}
+        isPlaying={playing}
+        soundCloudUser={api.me}
+        onAddFriend={listenTogether.addFriend}
+        onRemoveFriend={listenTogether.removeFriend}
+        onRenameFriend={listenTogether.renameFriend}
+        onFollowFriend={listenTogether.followFriend}
+        onStopSync={listenTogether.stopSync}
+        onInviteFriend={listenTogether.inviteFriend}
+        onAcceptInvite={listenTogether.acceptInvite}
+        onDismissInvite={listenTogether.dismissInvite}
+        onCreateRoom={listenTogether.createRoom}
+        onJoinRoom={listenTogether.joinRoom}
+        onSendChatMessage={listenTogether.sendChatMessage}
+        onSendReaction={listenTogether.sendReaction}
+        onConnectToFriend={listenTogether.connectToFriend}
+      />
 
       {queueOpen && (
         <QueueDrawer

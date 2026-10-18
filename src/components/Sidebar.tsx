@@ -53,6 +53,8 @@ interface Props {
   proxyPreset?: string;
   onlineFriendsCount?: number;
   isSyncActive?: boolean;
+  friendsDrawerOpen?: boolean;
+  onToggleFriendsDrawer?: () => void;
 }
 
 const NAV: Array<{ id: View; label: string; icon: typeof Heart }> = [
@@ -80,6 +82,8 @@ export function Sidebar({
   proxyPreset,
   onlineFriendsCount = 0,
   isSyncActive = false,
+  friendsDrawerOpen = false,
+  onToggleFriendsDrawer,
 }: Props) {
   /** Row being dragged, and the row it would land on. */
   const dragFrom = useRef<number | null>(null);
@@ -124,11 +128,17 @@ export function Sidebar({
 
       <nav className="p-3 space-y-1">
         {NAV.map(({ id, label, icon: Icon }) => {
-          const active = view === id;
+          const active = id === 'friends' ? Boolean(friendsDrawerOpen) : view === id;
           return (
             <button
               key={id}
-              onClick={() => onNavigate(id)}
+              onClick={() => {
+                if (id === 'friends' && onToggleFriendsDrawer) {
+                  onToggleFriendsDrawer();
+                } else {
+                  onNavigate(id);
+                }
+              }}
               className={clsx(
                 'group relative w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-semibold transition-all duration-300 active:scale-[0.98]',
                 active

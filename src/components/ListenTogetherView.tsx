@@ -43,7 +43,7 @@ import type {
 
 interface Props {
   profile: UserProfile;
-  updateProfile: (name: string, newCode?: string) => void;
+  updateProfile: (updates: Partial<UserProfile> | string, newCode?: string) => void;
   friends: Friend[];
   presences: Record<string, FriendPresence>;
   connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error';

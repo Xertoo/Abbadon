@@ -1,15 +1,56 @@
-import { Peer, type DataConnection } from 'peerjs';
 import type { Track } from '../types';
+
+export type ProfileThemeColor = 'orange' | 'purple' | 'cyan' | 'emerald' | 'pink' | 'amber';
+
+export interface AvatarPreset {
+  id: string;
+  name: string;
+  icon: string;
+  gradient: string;
+}
+
+export const AVATAR_PRESETS: AvatarPreset[] = [
+  { id: 'dj', name: 'DJ Hero', icon: '🎧', gradient: 'from-orange-500 to-amber-600' },
+  { id: 'neon', name: 'Neon Pulse', icon: '⚡', gradient: 'from-cyan-500 to-blue-600' },
+  { id: 'cyber', name: 'Cyber Synth', icon: '👾', gradient: 'from-purple-500 to-pink-600' },
+  { id: 'vinyl', name: 'Vinyl Classic', icon: '💿', gradient: 'from-neutral-700 to-neutral-900' },
+  { id: 'astral', name: 'Astral Wave', icon: '🌌', gradient: 'from-indigo-600 to-violet-800' },
+  { id: 'cat', name: 'Pixel Cat', icon: '🐱', gradient: 'from-pink-500 to-rose-600' },
+  { id: 'flame', name: 'Bass Fire', icon: '🔥', gradient: 'from-red-500 to-orange-600' },
+  { id: 'lofi', name: 'Lo-Fi Chill', icon: '☕', gradient: 'from-emerald-500 to-teal-700' },
+];
+
+export const PROFILE_BADGES = [
+  '🎧 Audiophile',
+  '🔥 Bass Addict',
+  '🌙 Night Owl',
+  '👑 Jam Host',
+  '☕ Lo-Fi Dreamer',
+  '⚡ Synth Rider',
+  '💎 Music Explorer',
+  '🚀 Beat Conductor',
+];
 
 export interface UserProfile {
   code: string;
   name: string;
-  avatarSeed?: string;
+  avatarUrl?: string;
+  avatarPreset?: string;
+  badge?: string;
+  bio?: string;
+  themeColor?: ProfileThemeColor;
+  totalListenedSeconds?: number;
+  tracksListenedCount?: number;
 }
 
 export interface Friend {
   code: string;
   name: string;
+  avatarUrl?: string;
+  avatarPreset?: string;
+  badge?: string;
+  bio?: string;
+  themeColor?: ProfileThemeColor;
   addedAt: number;
   note?: string;
 }
@@ -17,6 +58,11 @@ export interface Friend {
 export interface FriendPresence {
   code: string;
   name: string;
+  avatarUrl?: string;
+  avatarPreset?: string;
+  badge?: string;
+  bio?: string;
+  themeColor?: ProfileThemeColor;
   online: boolean;
   lastSeen: number;
   track: Track | null;
@@ -25,9 +71,20 @@ export interface FriendPresence {
   duration: number;
   timestamp: number;
   roomId?: string | null;
+  totalListenedSeconds?: number;
+  tracksListenedCount?: number;
 }
 
 export type ListenTogetherMessage =
+  | {
+      type: 'FRIEND_HELLO';
+      senderProfile: UserProfile;
+      isResponse?: boolean;
+    }
+  | {
+      type: 'PROFILE_UPDATE';
+      senderProfile: UserProfile;
+    }
   | {
       type: 'PRESENCE_REQUEST';
       senderCode: string;
@@ -36,6 +93,13 @@ export type ListenTogetherMessage =
       type: 'PRESENCE_UPDATE';
       senderCode: string;
       senderName: string;
+      avatarUrl?: string;
+      avatarPreset?: string;
+      badge?: string;
+      bio?: string;
+      themeColor?: ProfileThemeColor;
+      totalListenedSeconds?: number;
+      tracksListenedCount?: number;
       track: Track | null;
       isPlaying: boolean;
       currentTime: number;
@@ -93,6 +157,9 @@ export type ListenTogetherMessage =
 export interface RoomParticipant {
   code: string;
   name: string;
+  avatarUrl?: string;
+  avatarPreset?: string;
+  badge?: string;
   isHost: boolean;
   joinedAt: number;
 }
@@ -150,16 +217,23 @@ export function generateFriendCode(): string {
   return `SC-${rand}`;
 }
 
-export function loadProfile(defaultName?: string): UserProfile {
+export function loadProfile(defaultName?: string, defaultAvatar?: string): UserProfile {
   try {
     const raw = localStorage.getItem(PROFILE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed.code === 'string') {
+        const isDefaultName = !parsed.name || parsed.name.startsWith('Listener #');
         return {
           code: sanitizeCode(parsed.code),
-          name: parsed.name || defaultName || `Listener #${parsed.code.slice(-4)}`,
-          avatarSeed: parsed.avatarSeed || parsed.code,
+          name: isDefaultName && defaultName ? defaultName : parsed.name || `Listener #${parsed.code.slice(-4)}`,
+          avatarUrl: parsed.avatarUrl || defaultAvatar,
+          avatarPreset: parsed.avatarPreset || 'dj',
+          badge: parsed.badge || '🎧 Audiophile',
+          bio: parsed.bio || 'Vibing to SoundCloud',
+          themeColor: parsed.themeColor || 'orange',
+          totalListenedSeconds: parsed.totalListenedSeconds || 0,
+          tracksListenedCount: parsed.tracksListenedCount || 0,
         };
       }
     }
@@ -171,7 +245,13 @@ export function loadProfile(defaultName?: string): UserProfile {
   const profile: UserProfile = {
     code: newCode,
     name: defaultName || `Listener #${newCode.slice(-4)}`,
-    avatarSeed: newCode,
+    avatarUrl: defaultAvatar,
+    avatarPreset: 'dj',
+    badge: '🎧 Audiophile',
+    bio: 'Vibing to SoundCloud',
+    themeColor: 'orange',
+    totalListenedSeconds: 0,
+    tracksListenedCount: 0,
   };
   saveProfile(profile);
   return profile;
@@ -194,6 +274,11 @@ export function loadFriends(): Friend[] {
         return parsed.map((f) => ({
           code: sanitizeCode(f.code),
           name: f.name || f.code,
+          avatarUrl: f.avatarUrl,
+          avatarPreset: f.avatarPreset,
+          badge: f.badge,
+          bio: f.bio,
+          themeColor: f.themeColor,
           addedAt: f.addedAt || Date.now(),
           note: f.note,
         }));

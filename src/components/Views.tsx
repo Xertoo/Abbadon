@@ -1684,7 +1684,7 @@ function SoftwareUpdatesPanel() {
                 Bump the version in <code className="text-sc-orange">package.json</code> (e.g. from <code className="text-sc-dim">1.0.0</code> to <code className="text-sc-orange">1.0.1</code>).
               </li>
               <li>
-                Run <code className="text-sc-orange">npm run release</code> in terminal or double-click <code className="text-sc-orange">publish-update.bat</code>.
+                Run <code className="text-sc-orange">npm run release</code> in terminal.
               </li>
               <li>
                 The installer and <code className="text-sc-orange">latest.yml</code> file will be generated in the <code className="text-sc-dim">release/</code> folder.

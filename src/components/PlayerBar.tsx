@@ -1579,7 +1579,7 @@ export function PlayerBar(p: Props) {
                       {p.track.artist} · Synced Lyrics
                     </button>
                   ) : (
-                    <p className="text-[10px] text-sc-muted truncate">LRCLIB Karaoke</p>
+                    <p className="text-[10px] text-sc-muted truncate">LRCLIB Synced Lyrics</p>
                   )}
                 </div>
               </div>
@@ -1879,7 +1879,7 @@ export function PlayerBar(p: Props) {
                     ? 'text-sc-orange-soft bg-sc-orange/15 shadow-xs'
                     : 'text-sc-muted hover:text-sc-fg'
                 )}
-                title="Tekst utworu (Synced Karaoke Lyrics)"
+                title="Tekst utworu (Synced Lyrics)"
                 aria-label="Tekst utworu"
               >
                 <Mic2 className="w-[17px] h-[17px]" />

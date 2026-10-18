@@ -72,7 +72,14 @@ export function LyricsPanel({
   onCloseCover,
 }: Props) {
   const [expanded, setExpanded] = useState(defaultOpen);
-  const [state, setState] = useState<State>({ kind: 'idle' });
+  const [state, setState] = useState<State>(() => {
+    if (!track) return { kind: 'idle' };
+    const hit = cachedLyrics(track);
+    if (hit !== undefined) {
+      return hit ? { kind: 'ready', lyrics: hit } : { kind: 'missing' };
+    }
+    return { kind: 'idle' };
+  });
   const [follow, setFollow] = useState(true);
   const [covering, setCovering] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -138,14 +145,26 @@ export function LyricsPanel({
       container.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
-    const node = activeRef.current;
-    if (!node) return;
-    const containerRect = container.getBoundingClientRect();
-    const nodeRect = node.getBoundingClientRect();
-    const relativeTop = nodeRect.top - containerRect.top + container.scrollTop;
-    const target = relativeTop - container.clientHeight / 2 + node.clientHeight / 2;
-    container.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
-  }, [active, open, follow]);
+
+    const scrollToActive = (behavior: ScrollBehavior = 'smooth') => {
+      const c = scrollRef.current;
+      const node = activeRef.current;
+      if (!c || !node) return;
+      const containerRect = c.getBoundingClientRect();
+      const nodeRect = node.getBoundingClientRect();
+      const relativeTop = nodeRect.top - containerRect.top + c.scrollTop;
+      const target = relativeTop - c.clientHeight / 2 + node.clientHeight / 2;
+      c.scrollTo({ top: Math.max(0, target), behavior });
+    };
+
+    const rafId = requestAnimationFrame(() => scrollToActive('smooth'));
+    const timer = setTimeout(() => scrollToActive('smooth'), 120);
+
+    return () => {
+      cancelAnimationFrame(rafId);
+      clearTimeout(timer);
+    };
+  }, [active, open, follow, lines]);
 
   /**
    * Nothing to show.
@@ -167,7 +186,7 @@ export function LyricsPanel({
       className={clsx(
         cover
           ? 'space-y-3 pt-6 pb-[45vh] px-4'
-          : 'space-y-1.5 py-2 pb-[35vh]'
+          : 'space-y-2 py-3 pb-[40vh] px-1'
       )}
     >
       {lines.map((line, i) => {
@@ -178,7 +197,7 @@ export function LyricsPanel({
             ref={isActive ? activeRef : undefined}
             onClick={() => onSeek?.(line.time)}
             className={clsx(
-              'rounded-lg cursor-pointer transition-all duration-300 ease-out will-change-transform',
+              'rounded-xl cursor-pointer transition-all duration-300 ease-out will-change-transform select-none',
               cover
                 ? clsx(
                     'px-3 py-1.5 text-center',
@@ -187,14 +206,15 @@ export function LyricsPanel({
                       : 'text-sc-muted/45 blur-[1.5px] hover:blur-0 hover:text-sc-fg'
                   )
                 : clsx(
-                    'text-[14px] leading-snug px-2 py-1',
+                    'text-[14px] leading-snug px-3 py-2',
                     isActive
-                      ? 'text-sc-orange-soft font-semibold bg-sc-orange/10 translate-x-0.5'
-                      : 'text-sc-dim hover:text-sc-muted hover:bg-sc-fill/5'
+                      ? 'text-sc-orange font-bold bg-sc-orange/15 shadow-xs border border-sc-orange/30 translate-x-1'
+                      : 'text-sc-muted hover:text-sc-fg hover:bg-sc-fill/5'
                   )
             )}
+            title="Kliknij, aby przejść do tej linii utworu"
           >
-            {line.text || <span className="opacity-40">♪</span>}
+            {line.text || <span className="opacity-40">♪ ♪ ♪</span>}
           </li>
         );
       })}
@@ -278,18 +298,21 @@ export function LyricsPanel({
   }
 
   const content = !track ? (
-    <p className="text-[13px] text-sc-dim py-3">Nothing playing.</p>
+    <div className="flex-1 min-h-0 flex items-center justify-center py-6 text-center">
+      <p className="text-[13px] text-sc-dim">Nothing playing.</p>
+    </div>
   ) : state.kind === 'loading' || state.kind === 'idle' ? (
-    <div className="flex items-center justify-center py-8 gap-2 text-sc-dim text-[13px]">
-      <Loader2 className="w-4 h-4 animate-spin" />
+    <div className="flex-1 min-h-0 flex items-center justify-center py-8 gap-2 text-sc-dim text-[13px]">
+      <Loader2 className="w-4 h-4 animate-spin text-sc-orange" />
       Searching for lyrics…
     </div>
   ) : state.kind === 'error' ? (
-    <div className="flex items-center gap-3 py-4">
-      <p className="text-[13px] text-sc-dim flex-1">
+    <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 py-6 text-center">
+      <p className="text-[13px] text-sc-dim">
         Could not reach the lyrics database.
       </p>
       <button
+        type="button"
         onClick={() => void run(track, true)}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-sc-line text-[11px] font-semibold text-sc-muted hover:text-sc-fg hover:bg-sc-fill/5 transition-colors cursor-pointer"
       >
@@ -298,11 +321,12 @@ export function LyricsPanel({
       </button>
     </div>
   ) : state.kind === 'missing' ? (
-    <div className="flex items-center gap-3 py-4">
-      <p className="text-[13px] text-sc-dim flex-1">
+    <div className="flex-1 min-h-0 flex flex-col items-center justify-center gap-3 py-6 text-center">
+      <p className="text-[13px] text-sc-dim">
         No lyrics found for “{track.title}”.
       </p>
       <button
+        type="button"
         onClick={() => void run(track, true)}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-sc-line text-[11px] font-semibold text-sc-muted hover:text-sc-fg hover:bg-sc-fill/5 transition-colors cursor-pointer"
       >
@@ -311,43 +335,65 @@ export function LyricsPanel({
       </button>
     </div>
   ) : state.lyrics.instrumental ? (
-    <p className="text-[13px] text-sc-dim py-4 italic">Instrumental — no lyrics for this track.</p>
+    <div className="flex-1 min-h-0 flex items-center justify-center py-6 text-center">
+      <p className="text-[13px] text-sc-dim italic">Instrumental — no lyrics for this track.</p>
+    </div>
   ) : state.lyrics.synced ? (
     <div
       ref={scrollRef}
       className={clsx(
-        'relative flex-1 min-h-0 overflow-y-auto pr-2 overflow-x-clip scroll-rail',
+        'relative flex-1 min-h-0 overflow-y-auto pr-1 overflow-x-clip scroll-rail',
         maxHeightClass ?? 'max-h-[340px]'
       )}
     >
       {linesView}
     </div>
   ) : (
-    <p
+    <div
+      ref={scrollRef}
       className={clsx(
-        'text-[13px] text-sc-muted whitespace-pre-wrap leading-relaxed',
-        maxHeightClass && 'overflow-y-auto overflow-x-clip scroll-rail'
+        'relative flex-1 min-h-0 overflow-y-auto pr-1 overflow-x-clip scroll-rail',
+        maxHeightClass ?? 'max-h-[340px]'
       )}
     >
-      {state.lyrics.plain}
-    </p>
+      <p className="text-[13px] text-sc-muted whitespace-pre-wrap leading-relaxed py-2 px-1">
+        {state.lyrics.plain}
+      </p>
+    </div>
   );
 
   // Inline mode is a fixed slot: the lyrics arrive on their own once the lookup
   // lands, so a heading would be a placeholder for something that may never come.
   if (inline) {
     return (
-      <div className="animate-fade-in">
+      <div className="animate-fade-in flex-1 min-h-0 flex flex-col h-full overflow-hidden">
         {state.kind === 'ready' && (
-          <div className="mb-2 flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-sc-dim">
-            <Music4 className="w-3 h-3" />
-            Lyrics
+          <div className="mb-2.5 flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-sc-dim shrink-0 pb-2 border-b border-white/5">
+            <div className="flex items-center gap-2">
+              <Music4 className="w-3.5 h-3.5 text-sc-orange" />
+              <span>Lyrics</span>
+              {state.lyrics.synced && (
+                <span className="text-sc-orange normal-case tracking-normal font-semibold px-2 py-0.5 rounded-full bg-sc-orange/15 text-[10px]">
+                  synced
+                </span>
+              )}
+            </div>
             {state.lyrics.synced && (
-              <span className="text-sc-orange/80 normal-case tracking-normal">synced</span>
+              <label className="flex items-center gap-1.5 text-[11px] font-medium text-sc-dim hover:text-sc-fg cursor-pointer select-none transition-colors">
+                <input
+                  type="checkbox"
+                  checked={follow}
+                  onChange={(e) => setFollow(e.target.checked)}
+                  className="accent-sc-orange w-3.5 h-3.5 rounded cursor-pointer"
+                />
+                Auto-scroll
+              </label>
             )}
           </div>
         )}
-        {content}
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          {content}
+        </div>
       </div>
     );
   }

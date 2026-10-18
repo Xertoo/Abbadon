@@ -1312,9 +1312,12 @@ function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0, frien
       };
     }
 
+    const buttons = [];
     if (track.permalinkUrl && typeof track.permalinkUrl === 'string' && track.permalinkUrl.startsWith('http')) {
-      rawActivity.buttons = [{ label: 'Listen on SoundCloud', url: track.permalinkUrl }];
+      buttons.push({ label: 'SoundCloud Track', url: track.permalinkUrl });
     }
+    buttons.push({ label: 'Get Abbadon App', url: 'https://github.com/Xertoo/abbadon' });
+    rawActivity.buttons = buttons.slice(0, 2);
 
     rpcClient.request('SET_ACTIVITY', {
       pid: process.pid,

@@ -133,7 +133,7 @@ export function FriendsPopover({
   };
 
   const copyDiscordInvite = () => {
-    const inviteText = `Join my music session on Abbadon! Click to add: abbadon://friend/${profile.code} (or enter friend code: ${profile.code})`;
+    const inviteText = `🎵 Join my music session on Abbadon!\n• Already installed? abbadon://friend/${profile.code}\n• Download app: https://github.com/Xertoo/abbadon/releases\n• Friend Code: ${profile.code}`;
     navigator.clipboard.writeText(inviteText);
     setCopiedInvite(true);
     setTimeout(() => setCopiedInvite(false), 2000);

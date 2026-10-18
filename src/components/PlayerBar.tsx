@@ -88,6 +88,7 @@ interface Props {
   repeat: 'off' | 'all' | 'one';
   getFreq: (() => Uint8Array | null) | null;
   onOpenQueue: () => void;
+  queueOpen?: boolean;
   eq: number[];
   onEq: (gains: number[]) => void;
   /** Active band count. The bar shows a curve, not sliders, so this is read-only. */
@@ -1262,6 +1263,25 @@ export function PlayerBar(p: Props) {
   const rateWrap = useRef<HTMLDivElement>(null);
   const lyricsWrap = useRef<HTMLDivElement>(null);
   const lyricsButton = useRef<HTMLButtonElement>(null);
+  const footerRef = useRef<HTMLElement>(null);
+  const [barWidth, setBarWidth] = useState<number>(1200);
+
+  useEffect(() => {
+    if (!footerRef.current) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect) {
+          setBarWidth(entry.contentRect.width);
+        }
+      }
+    });
+    ro.observe(footerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  const isTight = Boolean(p.queueOpen && barWidth < 1050) || barWidth < 860;
+  const isCompact = Boolean(p.queueOpen && barWidth < 900) || barWidth < 700;
+  const isVeryCompact = Boolean(p.queueOpen && barWidth < 750) || barWidth < 540;
 
   /**
    * The popovers share one dismiss handler, so opening one has to close the
@@ -1416,7 +1436,7 @@ export function PlayerBar(p: Props) {
         )}
       </div>
 
-      <footer className="relative z-20 shrink-0 border-t border-white/[0.08] backdrop-blur-2xl bg-sc-panel/70 shadow-[0_-12px_45px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.08)]">
+      <footer ref={footerRef} className="relative z-20 shrink-0 border-t border-white/[0.08] backdrop-blur-2xl bg-sc-panel/70 shadow-[0_-12px_45px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.08)]">
         <div ref={eqWrap}>
           {eqOpen && !fullscreen && (
             <div
@@ -1437,15 +1457,28 @@ export function PlayerBar(p: Props) {
           )}
         </div>
 
-        <div className="flex items-center gap-4 px-4 h-[88px]">
+        <div className="flex items-center gap-2 sm:gap-4 px-3 sm:px-4 h-[88px] overflow-hidden">
           {/* Track info */}
-          <div className="flex items-center gap-3 w-[280px] sm:w-[320px] lg:w-[360px] min-w-0 shrink-0">
+          <div
+            className={clsx(
+              'flex items-center gap-2.5 sm:gap-3 min-w-0 transition-all duration-200',
+              isCompact
+                ? 'w-[160px] sm:w-[190px] shrink-0'
+                : isTight
+                  ? 'w-[210px] sm:w-[240px] shrink-0'
+                  : 'w-[280px] sm:w-[320px] lg:w-[360px] shrink-0'
+            )}
+          >
             {p.track ? (
               <>
                 <button
                   onClick={() => setFullscreen(true)}
-                  className="relative w-14 h-14 rounded-xl overflow-hidden bg-sc-panel-2 shrink-0 group transition-all duration-300 hover:scale-105 active:scale-95 shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:shadow-[0_8px_24px_rgba(var(--sc-accent-rgb,109,94,252),0.3)] cursor-pointer ring-1 ring-white/10"
+                  className={clsx(
+                    'relative rounded-xl overflow-hidden bg-sc-panel-2 shrink-0 group transition-all duration-300 hover:scale-105 active:scale-95 shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:shadow-[0_8px_24px_rgba(var(--sc-accent-rgb,109,94,252),0.3)] cursor-pointer ring-1 ring-white/10',
+                    isCompact ? 'w-11 h-11' : 'w-14 h-14'
+                  )}
                   aria-label="Open now playing"
+                  title="Open now playing"
                 >
                   <Artwork src={p.track.artwork} seed={p.track.id} size={200} className="w-full h-full transition-transform duration-500 ease-out group-hover:scale-110" />
                   <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-xs">
@@ -1454,7 +1487,13 @@ export function PlayerBar(p: Props) {
                 </button>
                 <div className="min-w-0 flex-1 overflow-hidden">
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <span className="text-[13.5px] font-bold text-sc-fg truncate block" title={p.track.title}>
+                    <span
+                      className={clsx(
+                        'font-bold text-sc-fg truncate block',
+                        isCompact ? 'text-[12.5px]' : 'text-[13.5px]'
+                      )}
+                      title={p.track.title}
+                    >
                       {p.track.title}
                     </span>
                     {p.isPlaying && (
@@ -1478,7 +1517,7 @@ export function PlayerBar(p: Props) {
                           });
                         }
                       }}
-                      className="text-[12px] font-medium text-sc-muted hover:text-sc-orange hover:underline transition-colors truncate inline-block max-w-full text-left cursor-pointer"
+                      className="text-[11.5px] sm:text-[12px] font-medium text-sc-muted hover:text-sc-orange hover:underline transition-colors truncate inline-block max-w-full text-left cursor-pointer"
                       title={`Open ${p.track.artist}`}
                     >
                       {p.track.artist}
@@ -1492,21 +1531,25 @@ export function PlayerBar(p: Props) {
                     p.liked ? 'text-sc-orange-soft animate-heart-pop' : 'text-sc-muted hover:text-sc-fg'
                   )}
                   aria-label="Like"
+                  title={p.liked ? 'Unlike' : 'Like'}
                 >
                   <Heart className={clsx('w-[17px] h-[17px] transition-transform duration-200', p.liked && 'fill-sc-orange-soft')} />
                 </button>
-                <div className="hidden sm:flex items-center gap-0.5 shrink-0">
-                  {p.renderPlaylistAction?.(p.track, true)}
-                  <a
-                    href={p.track.permalinkUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-sc-dim hover:text-sc-fg transition-all duration-150 hover:scale-115 active:scale-85 shrink-0"
-                    aria-label="Open on SoundCloud"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
-                </div>
+                {!isTight && (
+                  <div className="hidden sm:flex items-center gap-0.5 shrink-0">
+                    {p.renderPlaylistAction?.(p.track, true)}
+                    <a
+                      href={p.track.permalinkUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-sc-dim hover:text-sc-fg transition-all duration-150 hover:scale-115 active:scale-85 shrink-0"
+                      aria-label="Open on SoundCloud"
+                      title="Open on SoundCloud"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                    </a>
+                  </div>
+                )}
               </>
             ) : (
               <div className="text-[13px] text-sc-dim">Nothing playing</div>
@@ -1514,33 +1557,38 @@ export function PlayerBar(p: Props) {
           </div>
 
           {/* Controls */}
-          <div className="flex-1 flex flex-col items-center gap-1.5 min-w-0">
-            <div className="flex items-center gap-1">
-              <button
-                onClick={p.onShuffle}
-                className={clsx(
-                  'w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-115 active:scale-90 cursor-pointer',
-                  p.shuffle ? 'text-sc-orange-soft' : 'text-sc-muted hover:text-sc-fg'
-                )}
-                aria-label="Shuffle"
-              >
-                <Shuffle className="w-4 h-4" />
-              </button>
+          <div className="flex-1 flex flex-col items-center gap-1 sm:gap-1.5 min-w-0 px-1 sm:px-2">
+            <div className="flex items-center gap-0.5 sm:gap-1">
+              {!isTight && (
+                <button
+                  onClick={p.onShuffle}
+                  className={clsx(
+                    'w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-115 active:scale-90 cursor-pointer',
+                    p.shuffle ? 'text-sc-orange-soft' : 'text-sc-muted hover:text-sc-fg'
+                  )}
+                  aria-label="Shuffle"
+                  title="Shuffle"
+                >
+                  <Shuffle className="w-4 h-4" />
+                </button>
+              )}
               <button
                 onClick={p.onPrev}
-                className="w-9 h-9 rounded-full flex items-center justify-center text-sc-muted hover:text-sc-fg hover:scale-115 active:scale-85 active:-translate-x-1 transition-all duration-150 cursor-pointer"
+                className="w-8 sm:w-9 h-8 sm:h-9 rounded-full flex items-center justify-center text-sc-muted hover:text-sc-fg hover:scale-115 active:scale-85 active:-translate-x-1 transition-all duration-150 cursor-pointer"
                 aria-label="Previous"
+                title="Previous"
               >
-                <SkipBack className="w-[18px] h-[18px] fill-current" />
+                <SkipBack className="w-[17px] h-[17px] sm:w-[18px] sm:h-[18px] fill-current" />
               </button>
               <button
                 onClick={p.onTogglePlay}
                 disabled={!p.track}
                 className={clsx(
-                  'w-11 h-11 rounded-full bg-gradient-to-br from-sc-orange to-sc-orange-soft text-sc-on-accent flex items-center justify-center hover:scale-110 active:scale-90 transition-all duration-200 disabled:opacity-30 cursor-pointer',
+                  'w-10 sm:w-11 h-10 sm:h-11 rounded-full bg-gradient-to-br from-sc-orange to-sc-orange-soft text-sc-on-accent flex items-center justify-center hover:scale-110 active:scale-90 transition-all duration-200 disabled:opacity-30 cursor-pointer',
                   p.isPlaying && 'animate-pulse-glow'
                 )}
                 aria-label={p.isPlaying ? 'Pause' : 'Play'}
+                title={p.isPlaying ? 'Pause' : 'Play'}
               >
                 {p.isBuffering ? (
                   <Loader2 className="w-5 h-5 animate-spin-slow" />
@@ -1552,30 +1600,34 @@ export function PlayerBar(p: Props) {
               </button>
               <button
                 onClick={p.onNext}
-                className="w-9 h-9 rounded-full flex items-center justify-center text-sc-muted hover:text-sc-fg hover:scale-110 active:scale-85 active:translate-x-1 transition-all duration-150 cursor-pointer"
+                className="w-8 sm:w-9 h-8 sm:h-9 rounded-full flex items-center justify-center text-sc-muted hover:text-sc-fg hover:scale-110 active:scale-85 active:translate-x-1 transition-all duration-150 cursor-pointer"
                 aria-label="Next"
+                title="Next"
               >
-                <SkipForward className="w-[18px] h-[18px] fill-current" />
+                <SkipForward className="w-[17px] h-[17px] sm:w-[18px] sm:h-[18px] fill-current" />
               </button>
-              <button
-                onClick={p.onRepeat}
-                className={clsx(
-                  'w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-115 active:scale-90 relative cursor-pointer',
-                  p.repeat === 'off' ? 'text-sc-muted hover:text-sc-fg' : 'text-sc-orange-soft'
-                )}
-                aria-label="Repeat"
-              >
-                {p.repeat === 'one' ? <Repeat1 className="w-4 h-4" /> : <Repeat className="w-4 h-4" />}
-              </button>
+              {!isTight && (
+                <button
+                  onClick={p.onRepeat}
+                  className={clsx(
+                    'w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-115 active:scale-90 relative cursor-pointer',
+                    p.repeat === 'off' ? 'text-sc-muted hover:text-sc-fg' : 'text-sc-orange-soft'
+                  )}
+                  aria-label="Repeat"
+                  title="Repeat"
+                >
+                  {p.repeat === 'one' ? <Repeat1 className="w-4 h-4" /> : <Repeat className="w-4 h-4" />}
+                </button>
+              )}
             </div>
 
             {/* Scrubber */}
-            <div className="w-full max-w-[560px] flex items-center gap-2.5">
-              <span className="text-[11px] tabular-nums text-sc-dim w-9 text-right">
+            <div className="w-full max-w-[560px] flex items-center gap-1.5 sm:gap-2.5 min-w-0">
+              <span className={clsx("tabular-nums text-sc-dim text-right shrink-0", isVeryCompact ? "text-[10px] w-7" : "text-[11px] w-9")}>
                 {fmt(p.currentTime)}
               </span>
               <div
-                className="relative flex-1 h-1.5 hover:h-2 rounded-full bg-sc-fill/10 group cursor-pointer transition-all duration-200"
+                className="relative flex-1 h-1.5 hover:h-2 rounded-full bg-sc-fill/10 group cursor-pointer transition-all duration-200 min-w-[40px]"
                 onClick={(e) => {
                   const r = e.currentTarget.getBoundingClientRect();
                   p.onSeek(((e.clientX - r.left) / r.width) * p.duration);
@@ -1590,17 +1642,23 @@ export function PlayerBar(p: Props) {
                   style={{ left: `${pct}%` }}
                 />
               </div>
-              <span className="text-[11px] tabular-nums text-sc-dim w-9">
+              <span className={clsx("tabular-nums text-sc-dim shrink-0", isVeryCompact ? "text-[10px] w-7" : "text-[11px] w-9")}>
                 {fmt(p.duration || p.track?.duration || 0)}
               </span>
             </div>
           </div>
 
           {/* Right controls */}
-          <div className="flex items-center gap-1 sm:gap-1.5 min-w-[240px] justify-end shrink-0">
+          <div className="flex items-center gap-0.5 sm:gap-1.5 justify-end shrink-0">
             <button
               onClick={p.onOpenQueue}
-              className="relative w-8 h-8 rounded-full flex items-center justify-center text-sc-muted hover:text-sc-fg transition-all duration-150 hover:scale-115 active:scale-90 cursor-pointer"
+              className={clsx(
+                'relative w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-115 active:scale-90 cursor-pointer',
+                p.queueOpen
+                  ? 'text-sc-orange bg-sc-orange/15 shadow-xs ring-1 ring-sc-orange/40'
+                  : 'text-sc-muted hover:text-sc-fg'
+              )}
+              title={p.queueOpen ? 'Close queue' : 'Open queue'}
               aria-label="Queue"
             >
               <ListMusic className="w-[17px] h-[17px]" />
@@ -1612,7 +1670,7 @@ export function PlayerBar(p: Props) {
             </button>
 
             {/* Friends & Activity Button */}
-            {p.onOpenFriends && (
+            {p.onOpenFriends && (p.isSyncActive || !isTight) && (
               <button
                 onClick={p.onOpenFriends}
                 className={clsx(
@@ -1632,89 +1690,103 @@ export function PlayerBar(p: Props) {
             )}
 
             {/* Karaoke Synced Lyrics Button */}
-            <button
-              ref={lyricsButton}
-              onClick={() => setLyricsOpen((v) => !v)}
-              className={clsx(
-                'relative w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-115 active:scale-90 cursor-pointer',
-                lyricsOpen
-                  ? 'text-sc-orange-soft bg-sc-orange/15 shadow-xs'
-                  : 'text-sc-muted hover:text-sc-fg'
-              )}
-              title="Tekst utworu (Synced Karaoke Lyrics)"
-              aria-label="Tekst utworu"
-            >
-              <Mic2 className="w-[17px] h-[17px]" />
-            </button>
-
-            <div ref={rateWrap}>
-              {rateOpen && !fullscreen && (
-                <div
-                  role="dialog"
-                  aria-label="Speed and pitch"
-                  style={{ ['--sc-pop-origin' as string]: 'bottom right' }}
-                  className="absolute bottom-full right-4 mb-2 animate-popover"
-                >
-                  <RatePanel
-                    rate={p.rate}
-                    onRate={p.onRate}
-                    preservePitch={p.preservePitch}
-                    onPreservePitch={p.onPreservePitch}
-                    width={340}
-                  />
-                </div>
-              )}
+            {(lyricsOpen || !isCompact) && (
               <button
-                ref={rateButton}
-                onClick={toggleRate}
+                ref={lyricsButton}
+                onClick={() => setLyricsOpen((v) => !v)}
                 className={clsx(
                   'relative w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-115 active:scale-90 cursor-pointer',
-                  rateOpen || p.rate !== 1
-                    ? 'text-sc-orange-soft bg-sc-orange/10'
+                  lyricsOpen
+                    ? 'text-sc-orange-soft bg-sc-orange/15 shadow-xs'
                     : 'text-sc-muted hover:text-sc-fg'
                 )}
-                title={`Speed ${formatRate(p.rate)}${
-                  p.preservePitch ? ' (pitch corrected)' : ' (pitch shifted)'
-                }`}
-                aria-label="Speed and pitch"
-                aria-expanded={rateOpen}
-                aria-haspopup="dialog"
+                title="Tekst utworu (Synced Karaoke Lyrics)"
+                aria-label="Tekst utworu"
               >
-                <Gauge className="w-[17px] h-[17px]" />
-                {p.rate !== 1 && (
-                  <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-0.5 rounded-full bg-sc-orange text-[8px] font-bold flex items-center justify-center text-sc-on-accent">
-                    {formatRate(p.rate)}
-                  </span>
-                )}
+                <Mic2 className="w-[17px] h-[17px]" />
               </button>
-            </div>
-            <button
-              ref={eqButton}
-              onClick={toggleEq}
-              className={clsx(
-                'w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-115 active:scale-90 cursor-pointer',
-                eqOpen ? 'text-sc-orange-soft bg-sc-orange/10' : 'text-sc-muted hover:text-sc-fg'
-              )}
-              aria-label="Equalizer"
-              aria-expanded={eqOpen}
-              aria-haspopup="dialog"
-            >
-              <Sliders className="w-[17px] h-[17px]" />
-            </button>
+            )}
+
+            {/* Speed & pitch button */}
+            {(rateOpen || p.rate !== 1 || !isTight) && (
+              <div ref={rateWrap}>
+                {rateOpen && !fullscreen && (
+                  <div
+                    role="dialog"
+                    aria-label="Speed and pitch"
+                    style={{ ['--sc-pop-origin' as string]: 'bottom right' }}
+                    className="absolute bottom-full right-4 mb-2 animate-popover"
+                  >
+                    <RatePanel
+                      rate={p.rate}
+                      onRate={p.onRate}
+                      preservePitch={p.preservePitch}
+                      onPreservePitch={p.onPreservePitch}
+                      width={340}
+                    />
+                  </div>
+                )}
+                <button
+                  ref={rateButton}
+                  onClick={toggleRate}
+                  className={clsx(
+                    'relative w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-115 active:scale-90 cursor-pointer',
+                    rateOpen || p.rate !== 1
+                      ? 'text-sc-orange-soft bg-sc-orange/10'
+                      : 'text-sc-muted hover:text-sc-fg'
+                  )}
+                  title={`Speed ${formatRate(p.rate)}${
+                    p.preservePitch ? ' (pitch corrected)' : ' (pitch shifted)'
+                  }`}
+                  aria-label="Speed and pitch"
+                  aria-expanded={rateOpen}
+                  aria-haspopup="dialog"
+                >
+                  <Gauge className="w-[17px] h-[17px]" />
+                  {p.rate !== 1 && (
+                    <span className="absolute -top-1 -right-1 min-w-[15px] h-[15px] px-0.5 rounded-full bg-sc-orange text-[8px] font-bold flex items-center justify-center text-sc-on-accent">
+                      {formatRate(p.rate)}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
+
+            {/* Equalizer button */}
+            {(eqOpen || !isTight) && (
+              <button
+                ref={eqButton}
+                onClick={toggleEq}
+                className={clsx(
+                  'w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-115 active:scale-90 cursor-pointer',
+                  eqOpen ? 'text-sc-orange-soft bg-sc-orange/10' : 'text-sc-muted hover:text-sc-fg'
+                )}
+                aria-label="Equalizer"
+                aria-expanded={eqOpen}
+                aria-haspopup="dialog"
+                title="Equalizer"
+              >
+                <Sliders className="w-[17px] h-[17px]" />
+              </button>
+            )}
+
+            {/* Mute button */}
             <button
               onClick={p.onMute}
               className="w-8 h-8 rounded-full flex items-center justify-center text-sc-muted hover:text-sc-fg transition-all duration-150 hover:scale-115 active:scale-90 cursor-pointer"
               aria-label="Mute"
+              title={volumePct === 0 ? 'Unmute' : 'Mute'}
             >
               {volumePct === 0 ? <VolumeX className="w-[18px] h-[18px]" /> : <Volume2 className="w-[18px] h-[18px]" />}
             </button>
-            {/*
-              Wheel-to-volume comes from useWheelVolume above, which attaches a
-              non-passive listener so preventDefault actually works.
-            */}
+
+            {/* Volume slider */}
             <div
               ref={volumeWheel}
-              className="w-28 px-1.5 py-1 rounded-md hover:bg-sc-fill/5 transition-colors"
+              className={clsx(
+                'px-1.5 py-1 rounded-md hover:bg-sc-fill/5 transition-colors',
+                isCompact ? 'w-16 sm:w-20' : 'w-24 lg:w-28'
+              )}
               title="Drag, click or scroll to change volume"
             >
               <Slider
@@ -1725,16 +1797,25 @@ export function PlayerBar(p: Props) {
                 className="w-full"
               />
             </div>
-            <span className="text-[11px] tabular-nums text-sc-muted w-8 text-right">
-              {Math.round(volumePct)}
-            </span>
-            <button
-              onClick={() => setFullscreen(true)}
-              className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-115 active:scale-90 text-sc-muted hover:text-sc-fg cursor-pointer"
-              aria-label="Full screen now playing"
-            >
-              <Maximize2 className="w-[17px] h-[17px]" />
-            </button>
+
+            {/* Volume percentage */}
+            {!isTight && (
+              <span className="text-[11px] tabular-nums text-sc-muted w-8 text-right">
+                {Math.round(volumePct)}
+              </span>
+            )}
+
+            {/* Fullscreen button */}
+            {!isCompact && (
+              <button
+                onClick={() => setFullscreen(true)}
+                className="w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-115 active:scale-90 text-sc-muted hover:text-sc-fg cursor-pointer"
+                aria-label="Full screen now playing"
+                title="Full screen now playing"
+              >
+                <Maximize2 className="w-[17px] h-[17px]" />
+              </button>
+            )}
           </div>
         </div>
       </footer>

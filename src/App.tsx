@@ -2326,6 +2326,7 @@ if (typeof d.theme === 'string') {
           onShuffle={() => setShuffle((s) => !s)}
           onRepeat={() => setRepeat((r) => (r === 'off' ? 'all' : r === 'all' ? 'one' : 'off'))}
           onOpenQueue={() => setQueueOpen((o) => !o)}
+          queueOpen={queueOpen}
           onOpenFriends={() => setFriendsDrawerOpen((o) => !o)}
           isSyncActive={listenTogether.syncSession.mode !== 'idle'}
           syncTargetName={listenTogether.syncSession.targetName || listenTogether.syncSession.roomName}

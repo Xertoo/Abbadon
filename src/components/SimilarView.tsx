@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Compass, Heart, Sparkles, ArrowRight, ChevronDown, ChevronUp, Flame } from 'lucide-react';
+import { Play, Compass, Heart, Sparkles, ArrowRight, ChevronDown, ChevronUp, Flame, ListPlus } from 'lucide-react';
 import clsx from 'clsx';
 import { Artwork } from './Artwork';
 import type { Track, User } from '../types';
@@ -25,6 +25,7 @@ interface Props {
   /** Opens the same view seeded by a row, for drilling sideways. */
   onFindSimilar: (seed: Track) => void;
   onOpenSearch: () => void;
+  onAddToQueue?: (track: Track) => void;
   renderActions?: (track: Track) => React.ReactNode;
   compact?: boolean;
   showArtwork?: boolean;
@@ -41,6 +42,7 @@ function Card({
   playing,
   onClick,
   onOpenArtist,
+  onAddToQueue,
   renderActions,
 }: {
   track: Track;
@@ -48,6 +50,7 @@ function Card({
   playing: boolean;
   onClick: () => void;
   onOpenArtist?: (artist: { id: string; username: string; permalinkUrl?: string }) => void;
+  onAddToQueue?: () => void;
   renderActions?: (track: Track) => React.ReactNode;
 }) {
   return (
@@ -114,14 +117,30 @@ function Card({
       </div>
       <div className="mt-1 flex items-center justify-between text-[11px] tabular-nums text-sc-faint">
         <span>{track.durationFormatted || ''}</span>
-        {renderActions && (
-          <div
-            className="opacity-0 group-hover:opacity-100 transition-opacity"
-            onClick={(e) => e.stopPropagation()}
-          >
-            {renderActions(track)}
-          </div>
-        )}
+        <div className="flex items-center gap-1">
+          {onAddToQueue && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onAddToQueue();
+              }}
+              title={`Add ${track.title} to queue`}
+              aria-label={`Add ${track.title} to queue`}
+              className="opacity-0 group-hover:opacity-100 transition-opacity text-sc-dim hover:text-sc-fg cursor-pointer p-0.5 hover:scale-110 active:scale-90"
+            >
+              <ListPlus className="w-3.5 h-3.5" />
+            </button>
+          )}
+          {renderActions && (
+            <div
+              className="opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {renderActions(track)}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -254,14 +273,30 @@ export function SimilarView(p: Props) {
                       </div>
                       <div className="text-[11.5px] text-sc-muted truncate">{t.artist}</div>
                     </div>
-                    {p.renderActions && (
-                      <div
-                        className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {p.renderActions(t)}
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1 shrink-0">
+                      {p.onAddToQueue && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            p.onAddToQueue?.(t);
+                          }}
+                          title={`Add ${t.title} to queue`}
+                          aria-label="Add to queue"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity text-sc-dim hover:text-sc-fg cursor-pointer p-1.5 hover:scale-110 active:scale-90"
+                        >
+                          <ListPlus className="w-4 h-4" />
+                        </button>
+                      )}
+                      {p.renderActions && (
+                        <div
+                          className="opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {p.renderActions(t)}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 );
               })}
@@ -279,6 +314,7 @@ export function SimilarView(p: Props) {
                     setExpandedSeeds(false);
                   }}
                   onOpenArtist={p.onOpenArtist}
+                  onAddToQueue={p.onAddToQueue ? () => p.onAddToQueue?.(t) : undefined}
                   renderActions={p.renderActions}
                 />
               ))}
@@ -321,6 +357,7 @@ export function SimilarView(p: Props) {
                         p.onPick(t);
                       }}
                       onOpenArtist={p.onOpenArtist}
+                      onAddToQueue={p.onAddToQueue ? () => p.onAddToQueue?.(t) : undefined}
                       renderActions={p.renderActions}
                     />
                   ))}
@@ -347,6 +384,7 @@ export function SimilarView(p: Props) {
                 playing={t.id === p.playingId && p.isPlaying}
                 onClick={() => p.onPlay(t, p.tracks)}
                 onOpenArtist={p.onOpenArtist}
+                onAddToQueue={p.onAddToQueue ? () => p.onAddToQueue?.(t) : undefined}
                 renderActions={p.renderActions}
               />
             ))}

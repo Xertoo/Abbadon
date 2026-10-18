@@ -140,7 +140,10 @@ export function LyricsPanel({
     }
     const node = activeRef.current;
     if (!node) return;
-    const target = node.offsetTop - container.clientHeight / 2 + node.clientHeight / 2;
+    const containerRect = container.getBoundingClientRect();
+    const nodeRect = node.getBoundingClientRect();
+    const relativeTop = nodeRect.top - containerRect.top + container.scrollTop;
+    const target = relativeTop - container.clientHeight / 2 + node.clientHeight / 2;
     container.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
   }, [active, open, follow]);
 
@@ -164,7 +167,7 @@ export function LyricsPanel({
       className={clsx(
         cover
           ? 'space-y-3 pt-6 pb-[45vh] px-4'
-          : 'space-y-1.5 py-2'
+          : 'space-y-1.5 py-2 pb-[35vh]'
       )}
     >
       {lines.map((line, i) => {
@@ -313,7 +316,7 @@ export function LyricsPanel({
     <div
       ref={scrollRef}
       className={clsx(
-        'overflow-y-auto pr-2 overflow-x-clip scroll-rail',
+        'relative flex-1 min-h-0 overflow-y-auto pr-2 overflow-x-clip scroll-rail',
         maxHeightClass ?? 'max-h-[340px]'
       )}
     >

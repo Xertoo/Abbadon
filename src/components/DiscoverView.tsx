@@ -16,6 +16,7 @@ interface Props {
   onOpenArtist: (u: { id: string; username: string; permalinkUrl?: string }) => void;
   onFindSimilar: (seed: Track) => void;
   onRefresh: () => void;
+  onAddToQueue?: (track: Track) => void;
   renderActions?: (track: Track) => React.ReactNode;
 }
 
@@ -43,6 +44,7 @@ function RailCard({
   onToggleLike,
   onOpenArtist,
   onFindSimilar,
+  onAddToQueue,
   renderActions,
 }: {
   track: Track;
@@ -52,6 +54,7 @@ function RailCard({
   onToggleLike: () => void;
   onOpenArtist: () => void;
   onFindSimilar: () => void;
+  onAddToQueue?: () => void;
   renderActions?: (track: Track) => React.ReactNode;
 }) {
   return (
@@ -119,15 +122,28 @@ function RailCard({
       </button>
       <div className="mt-1 flex items-center justify-between text-[11px] tabular-nums text-sc-faint">
         <span>{track.durationFormatted || ''}</span>
-        <button
-          type="button"
-          onClick={onFindSimilar}
-          title={`Find tracks like ${track.title}`}
-          aria-label={`Find similar to ${track.title}`}
-          className="opacity-0 group-hover:opacity-100 transition-opacity text-sc-dim hover:text-sc-orange cursor-pointer"
-        >
-          <Compass className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+          {onAddToQueue && (
+            <button
+              type="button"
+              onClick={onAddToQueue}
+              title={`Add ${track.title} to queue`}
+              aria-label={`Add ${track.title} to queue`}
+              className="text-sc-dim hover:text-sc-fg hover:scale-110 active:scale-90 transition-all cursor-pointer"
+            >
+              <ListPlus className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onFindSimilar}
+            title={`Find tracks like ${track.title}`}
+            aria-label={`Find similar to ${track.title}`}
+            className="text-sc-dim hover:text-sc-orange hover:scale-110 active:scale-90 transition-all cursor-pointer"
+          >
+            <Compass className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -142,6 +158,7 @@ function RailSection({
   onToggleLike,
   onOpenArtist,
   onFindSimilar,
+  onAddToQueue,
   renderActions,
 }: {
   section: DiscoverSection;
@@ -152,6 +169,7 @@ function RailSection({
   onToggleLike: (t: Track) => void;
   onOpenArtist: (u: { id: string; username: string; permalinkUrl?: string }) => void;
   onFindSimilar: (seed: Track) => void;
+  onAddToQueue?: (track: Track) => void;
   renderActions?: (track: Track) => React.ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -268,6 +286,7 @@ function RailSection({
                 })
               }
               onFindSimilar={() => onFindSimilar(t)}
+              onAddToQueue={onAddToQueue ? () => onAddToQueue(t) : undefined}
               renderActions={renderActions}
             />
           </div>
@@ -342,6 +361,7 @@ export function DiscoverView(p: Props) {
           onToggleLike={p.onToggleLike}
           onOpenArtist={p.onOpenArtist}
           onFindSimilar={p.onFindSimilar}
+          onAddToQueue={p.onAddToQueue}
           renderActions={p.renderActions}
         />
       ))}

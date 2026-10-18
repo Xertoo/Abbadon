@@ -435,6 +435,8 @@ async function request<T>(path: string, ttl: number, opts: RequestOpts = {}): Pr
        */
       if (opts.auth && !effectiveToken) {
         msg = 'SoundCloud refused the write because the session has no token. Sign out and sign in again.';
+      } else if (res.text && (res.text.includes('captcha-delivery.com') || res.text.includes('initialCid') || res.text.includes('datadome'))) {
+        msg = 'SoundCloud bot protection triggered. Please check your connection or wait a few seconds and try again.';
       } else if (msg.startsWith('SoundCloud rejected this action') && res.text) {
         // Keep SoundCloud's own wording visible when we could not parse it, so
         // the reason is not silently swallowed.

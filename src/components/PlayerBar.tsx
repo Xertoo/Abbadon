@@ -419,7 +419,10 @@ function NowPlaying({
     }
     const node = activeLineRef.current;
     if (!node) return;
-    const target = node.offsetTop - container.clientHeight / 2 + node.clientHeight / 2;
+    const containerRect = container.getBoundingClientRect();
+    const nodeRect = node.getBoundingClientRect();
+    const relativeTop = nodeRect.top - containerRect.top + container.scrollTop;
+    const target = relativeTop - container.clientHeight / 2 + node.clientHeight / 2;
     container.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
   }, [activeIdx, karaokeMode, karaokeFollow]);
 
@@ -513,9 +516,25 @@ function NowPlaying({
                 <h2 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white line-clamp-2">
                   {p.track?.title ?? 'Nothing playing'}
                 </h2>
-                <p className="text-base font-semibold text-sc-orange-soft mt-1 truncate">
-                  {p.track?.artist}
-                </p>
+                {p.track?.artist ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (p.track) {
+                        onClose();
+                        p.onOpenArtist?.({
+                          id: p.track.artistId ?? '',
+                          username: p.track.artist,
+                          permalinkUrl: p.track.artistUrl,
+                        });
+                      }
+                    }}
+                    className="text-base font-semibold text-sc-orange-soft hover:underline cursor-pointer mt-1 truncate text-left block transition-colors"
+                    title={`Open ${p.track.artist}`}
+                  >
+                    {p.track.artist}
+                  </button>
+                ) : null}
               </div>
             </div>
 
@@ -1020,15 +1039,6 @@ function NowPlaying({
             </button>
             {p.track && p.renderPlaylistAction?.(p.track, true)}
             <button
-              onClick={() => p.track && p.onAddToQueue?.(p.track)}
-              disabled={!p.track || !p.onAddToQueue}
-              title="Add this track to the queue"
-              className="w-10 h-10 rounded-full flex items-center justify-center text-sc-muted hover:text-sc-fg hover:scale-110 transition-all disabled:opacity-30 cursor-pointer"
-              aria-label="Add to queue"
-            >
-              <ListEnd className="w-[18px] h-[18px]" />
-            </button>
-            <button
               onClick={p.onDownload}
               disabled={!p.track || p.downloading}
               title={
@@ -1352,9 +1362,26 @@ export function PlayerBar(p: Props) {
                   <h4 className="text-[12px] font-bold text-sc-fg truncate">
                     {p.track ? p.track.title : 'Tekst utworu'}
                   </h4>
-                  <p className="text-[10px] text-sc-muted truncate">
-                    {p.track ? `${p.track.artist} · Synced Lyrics` : 'LRCLIB Karaoke'}
-                  </p>
+                  {p.track ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!p.track) return;
+                        setLyricsOpen(false);
+                        p.onOpenArtist?.({
+                          id: p.track.artistId ?? '',
+                          username: p.track.artist,
+                          permalinkUrl: p.track.artistUrl,
+                        });
+                      }}
+                      className="text-[10px] text-sc-muted hover:text-sc-orange hover:underline cursor-pointer truncate text-left block transition-colors"
+                      title={`Open ${p.track.artist}`}
+                    >
+                      {p.track.artist} · Synced Lyrics
+                    </button>
+                  ) : (
+                    <p className="text-[10px] text-sc-muted truncate">LRCLIB Karaoke</p>
+                  )}
                 </div>
               </div>
               <button
@@ -1367,7 +1394,7 @@ export function PlayerBar(p: Props) {
             </div>
 
             {/* Body */}
-            <div className="flex-1 overflow-y-auto p-4 scroll-rail">
+            <div className="flex-1 min-h-0 flex flex-col p-4 overflow-hidden">
               {p.track ? (
                 <LyricsPanel
                   track={p.track}
@@ -1377,7 +1404,7 @@ export function PlayerBar(p: Props) {
                   notify={p.notify ?? NOOP_NOTIFY}
                   inline
                   defaultOpen
-                  maxHeightClass="max-h-full"
+                  maxHeightClass="flex-1 min-h-0"
                 />
               ) : (
                 <div className="h-full flex items-center justify-center text-sc-dim text-[12px]">
@@ -1470,15 +1497,6 @@ export function PlayerBar(p: Props) {
                 </button>
                 <div className="hidden sm:flex items-center gap-0.5 shrink-0">
                   {p.renderPlaylistAction?.(p.track, true)}
-                  <button
-                    onClick={() => p.onAddToQueue?.(p.track!)}
-                    disabled={!p.onAddToQueue}
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-sc-dim hover:text-sc-fg transition-all duration-150 hover:scale-115 active:scale-85 shrink-0 disabled:opacity-30 cursor-pointer"
-                    title="Add this track to the queue"
-                    aria-label="Add to queue"
-                  >
-                    <ListEnd className="w-[15px] h-[15px]" />
-                  </button>
                   <a
                     href={p.track.permalinkUrl}
                     target="_blank"
@@ -1580,26 +1598,6 @@ export function PlayerBar(p: Props) {
 
           {/* Right controls */}
           <div className="flex items-center gap-1 sm:gap-1.5 min-w-[240px] justify-end shrink-0">
-            {p.onTriggerEndOfQueue && (
-              <button
-                onClick={p.onTriggerEndOfQueue}
-                disabled={!p.track || p.loadingSimilarQueue}
-                className={clsx(
-                  'relative w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-115 active:scale-90 cursor-pointer disabled:opacity-25',
-                  p.loadingSimilarQueue
-                    ? 'text-sc-orange animate-spin'
-                    : 'text-sc-muted hover:text-sc-orange hover:bg-sc-fill/5'
-                )}
-                title="Fill the queue (build a Discover queue)"
-                aria-label="Fill the queue"
-              >
-                {p.loadingSimilarQueue ? (
-                  <Loader2 className="w-[16px] h-[16px] animate-spin" />
-                ) : (
-                  <ListPlus className="w-[16px] h-[16px]" />
-                )}
-              </button>
-            )}
             <button
               onClick={p.onOpenQueue}
               className="relative w-8 h-8 rounded-full flex items-center justify-center text-sc-muted hover:text-sc-fg transition-all duration-150 hover:scale-115 active:scale-90 cursor-pointer"

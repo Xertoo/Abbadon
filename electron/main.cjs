@@ -234,6 +234,83 @@ function isAllowedHost(hostname) {
   );
 }
 
+async function copyCookiesBetweenSessions(fromSession, toSession) {
+  try {
+    const cookies = await fromSession.cookies.get({});
+    for (const c of cookies) {
+      try {
+        const domain = (c.domain || '').replace(/^\./, '');
+        if (!domain) continue;
+        const protocol = c.secure ? 'https' : 'http';
+        await toSession.cookies.set({
+          url: `${protocol}://${domain}${c.path || '/'}`,
+          name: c.name,
+          value: c.value,
+          domain: c.domain,
+          path: c.path || '/',
+          secure: c.secure,
+          httpOnly: c.httpOnly,
+          expirationDate: c.expirationDate,
+          sameSite: c.sameSite,
+        });
+      } catch {
+        /* skip individual failed cookies */
+      }
+    }
+  } catch (err) {
+    console.warn('[cookies] copy failed:', err.message);
+  }
+}
+
+async function syncAllAuthCookies() {
+  const loginSess = session.fromPartition('persist:soundcloud');
+  await copyCookiesBetweenSessions(loginSess, session.defaultSession);
+}
+
+async function syncDefaultCookiesToPartition() {
+  const loginSess = session.fromPartition('persist:soundcloud');
+  await copyCookiesBetweenSessions(session.defaultSession, loginSess);
+}
+
+let dataDomeRefreshing = null;
+async function refreshDataDomeSession() {
+  if (dataDomeRefreshing) return dataDomeRefreshing;
+  dataDomeRefreshing = (async () => {
+    let probeWin = null;
+    try {
+      console.log('[datadome] refreshing DataDome challenge session in background...');
+      probeWin = new BrowserWindow({
+        show: false,
+        width: 800,
+        height: 600,
+        webPreferences: {
+          partition: 'persist:soundcloud',
+          nodeIntegration: false,
+          contextIsolation: true,
+        },
+      });
+      killMenu(probeWin);
+      await probeWin.loadURL('https://soundcloud.com/discover');
+      // Give Chromium 3.5 seconds to run DataDome JavaScript challenge and receive validated cookies
+      await new Promise((r) => setTimeout(r, 3500));
+      await syncAllAuthCookies();
+      console.log('[datadome] DataDome session successfully refreshed & synced');
+    } catch (e) {
+      console.warn('[datadome] refresh error:', e.message);
+    } finally {
+      if (probeWin && !probeWin.isDestroyed()) {
+        try {
+          probeWin.destroy();
+        } catch {
+          /* ignore */
+        }
+      }
+      dataDomeRefreshing = null;
+    }
+  })();
+  return dataDomeRefreshing;
+}
+
 ipcMain.handle('sc:fetch', async (_e, { url, method = 'GET', headers = {}, body = null }) => {
   let parsed;
   try {
@@ -247,19 +324,32 @@ ipcMain.handle('sc:fetch', async (_e, { url, method = 'GET', headers = {}, body 
     return { ok: false, status: 0, text: '', error: `host not allowed: ${parsed.hostname}` };
   }
 
-  try {
-    const requestHeaders = {
-      'User-Agent': UA,
-      Accept: isCdn ? '*/*' : 'application/json, text/javascript, */*; q=0.01',
-      ...(isCdn ? {} : { Origin: 'https://soundcloud.com' }),
-      Referer: 'https://soundcloud.com/',
-      ...headers,
-    };
+  // Ensure cookies are synced before any mutation or API call to api-v2
+  if (method !== 'GET' || parsed.hostname === 'api-v2.soundcloud.com') {
+    await syncAllAuthCookies();
+  }
 
-    // Use defaultSession for all API/scraping requests.
-    // After login, finish() copies auth cookies from persist:soundcloud into
-    // defaultSession so that authenticated endpoints work automatically.
-    // For CDN assets, credentials must be omitted to prevent Chromium CORS net::ERR_FAILED.
+  const chromeVer = (process.versions.chrome || '124').split('.')[0];
+  const requestHeaders = {
+    'User-Agent': UA,
+    Accept: isCdn ? '*/*' : 'application/json, text/javascript, */*; q=0.01',
+    'Accept-Language': 'en-US,en;q=0.9',
+    ...(isCdn
+      ? {}
+      : {
+          Origin: 'https://soundcloud.com',
+          'Sec-Ch-Ua': `"Chromium";v="${chromeVer}", "Not-A.Brand";v="99"`,
+          'Sec-Ch-Ua-Mobile': '?0',
+          'Sec-Ch-Ua-Platform': '"Windows"',
+          'Sec-Fetch-Dest': 'empty',
+          'Sec-Fetch-Mode': 'cors',
+          'Sec-Fetch-Site': 'same-site',
+        }),
+    Referer: 'https://soundcloud.com/',
+    ...headers,
+  };
+
+  const doFetch = async () => {
     const res = await session.defaultSession.fetch(url, {
       method,
       headers: requestHeaders,
@@ -267,13 +357,31 @@ ipcMain.handle('sc:fetch', async (_e, { url, method = 'GET', headers = {}, body 
       redirect: 'follow',
       credentials: isCdn ? 'omit' : 'include',
     });
-
+    const text = await res.text();
     return {
       ok: res.ok,
       status: res.status,
       headers: Object.fromEntries(res.headers.entries()),
-      text: await res.text(),
+      text,
     };
+  };
+
+  try {
+    let result = await doFetch();
+
+    // If 403 Forbidden with DataDome challenge response, automatically refresh DataDome session and retry once
+    if (
+      result.status === 403 &&
+      (result.text.includes('captcha-delivery.com') ||
+        result.text.includes('initialCid') ||
+        result.text.includes('datadome'))
+    ) {
+      console.log('[sc:fetch] DataDome challenge detected, solving in background...');
+      await refreshDataDomeSession();
+      result = await doFetch();
+    }
+
+    return result;
   } catch (err) {
     return { ok: false, status: 0, text: '', error: err instanceof Error ? err.message : 'network error' };
   }
@@ -576,33 +684,7 @@ ipcMain.handle('sc:login', async () => {
       // partition into the default session so that sc:fetch (which uses
       // defaultSession) automatically sends them with every API call.
       if (payload.ok) {
-        try {
-          const loginSession = session.fromPartition('persist:soundcloud');
-          // Get ALL cookies, not just soundcloud.com — the auth may span
-          // multiple subdomains (api-v2.soundcloud.com, sndcdn.com, etc.)
-          const allLoginCookies = await loginSession.cookies.get({});
-          console.log('[login] copying', allLoginCookies.length, 'cookies to defaultSession');
-          for (const c of allLoginCookies) {
-            try {
-              const domain = c.domain.replace(/^\./, '');
-              const protocol = c.secure ? 'https' : 'http';
-              await session.defaultSession.cookies.set({
-                url: `${protocol}://${domain}`,
-                name: c.name,
-                value: c.value,
-                domain: c.domain,
-                path: c.path || '/',
-                secure: c.secure,
-                httpOnly: c.httpOnly,
-                expirationDate: c.expirationDate,
-              });
-            } catch (e) {
-              console.log('[login] failed to copy cookie', c.name, e.message);
-            }
-          }
-        } catch (e) {
-          console.log('[login] cookie copy error', e.message);
-        }
+        await syncAllAuthCookies();
       }
 
       if (authWin && !authWin.isDestroyed()) authWin.destroy();
@@ -649,27 +731,7 @@ ipcMain.handle('sc:login', async () => {
      * session so sc:fetch can use them for authenticated API calls.
      */
     const syncCookiesToDefault = async () => {
-      try {
-        const loginSess = session.fromPartition('persist:soundcloud');
-        const scCookies = await loginSess.cookies.get({});
-        for (const c of scCookies) {
-          try {
-            await session.defaultSession.cookies.set({
-              url: c.secure ? `https://${c.domain.replace(/^\./, '')}` : `http://${c.domain.replace(/^\./, '')}`,
-              name: c.name,
-              value: c.value,
-              domain: c.domain,
-              path: c.path || '/',
-              secure: c.secure,
-              httpOnly: c.httpOnly,
-              expirationDate: c.expirationDate,
-            });
-          } catch { /* skip individual failures */ }
-        }
-        console.log('[login] synced', scCookies.length, 'cookies to defaultSession');
-      } catch (e) {
-        console.log('[login] syncCookies error:', e.message);
-      }
+      await syncAllAuthCookies();
     };
 
     const KNOWN_CLIENT_ID = 'dkevB9EsY4jIoSm8RfddPNUKyn6hurXF';
@@ -1520,6 +1582,13 @@ app.whenReady().then(async () => {
     await proxyManager.init(app, session);
   } catch (err) {
     console.log('[ProxyManager] Init error:', err.message);
+  }
+
+  // Restore authenticated session & DataDome cookies on startup
+  try {
+    await syncAllAuthCookies();
+  } catch (err) {
+    console.log('[cookies] Init sync error:', err.message);
   }
 
   if (process.platform === 'win32') {

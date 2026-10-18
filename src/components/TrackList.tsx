@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Play, Heart, MoreHorizontal, Plus, Compass, Eye, Sparkles } from 'lucide-react';
+import { Play, Heart, MoreHorizontal, Plus, Compass, Eye, Sparkles, ListPlus } from 'lucide-react';
 import clsx from 'clsx';
 import { Artwork } from './Artwork';
 import type { Track } from '../types';
@@ -19,6 +19,8 @@ interface Props {
   onOpenArtist?: (artist: { id: string; username: string; permalinkUrl?: string }) => void;
   /** Shows a compass button that seeds the "Find similar" view. */
   onFindSimilar?: (track: Track) => void;
+  /** Adds this track to the playback queue. */
+  onAddToQueue?: (track: Track) => void;
   numbered?: boolean;
   showArtwork?: boolean;
   /** Tighter rows, from Settings. Fits roughly a third more tracks per screen. */
@@ -52,6 +54,7 @@ export function TrackRow({
   onToggleLike,
   onOpenArtist,
   onFindSimilar,
+  onAddToQueue,
   showArtwork = true,
   compact,
   actions,
@@ -65,6 +68,7 @@ export function TrackRow({
   onToggleLike: (track: Track) => void;
   onOpenArtist?: (artist: { id: string; username: string; permalinkUrl?: string }) => void;
   onFindSimilar?: (track: Track) => void;
+  onAddToQueue?: (track: Track) => void;
   showArtwork?: boolean;
   compact?: boolean;
   actions?: React.ReactNode;
@@ -231,6 +235,19 @@ export function TrackRow({
             <Compass className="w-[15px] h-[15px]" />
           </button>
         )}
+        {onAddToQueue && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onAddToQueue(track);
+            }}
+            title="Add to queue"
+            aria-label="Add to queue"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-sc-dim opacity-0 group-hover:opacity-100 hover:text-sc-fg hover:scale-125 active:scale-75 transition-all duration-200 cursor-pointer"
+          >
+            <ListPlus className="w-[15px] h-[15px]" />
+          </button>
+        )}
         <span
           className="text-[12px] tabular-nums text-sc-muted w-9 text-right"
           title={
@@ -304,6 +321,7 @@ export function TrackList(props: Props) {
           onToggleLike={props.onToggleLike}
           onOpenArtist={props.onOpenArtist}
           onFindSimilar={props.onFindSimilar}
+          onAddToQueue={props.onAddToQueue}
           showArtwork={props.showArtwork}
           compact={props.compact}
           actions={props.renderActions?.(t)}

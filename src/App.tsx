@@ -2013,6 +2013,7 @@ if (typeof d.theme === 'string') {
               onToggleLike={toggleLike}
               onOpenArtist={openArtist}
               onFindSimilar={openSimilar}
+              onAddToQueue={addToQueue}
               onRefresh={() => void api.loadDiscover({ force: true })}
               renderActions={playlistAction}
             />
@@ -2051,6 +2052,7 @@ if (typeof d.theme === 'string') {
               onOpenArtist={openArtist}
               onOpenPlaylist={openPlaylist}
               onFindSimilar={openSimilar}
+              onAddToQueue={addToQueue}
               renderActions={playlistAction}
               compact={prefs.compactRows}
               showArtwork={prefs.showArtwork}
@@ -2072,6 +2074,7 @@ if (typeof d.theme === 'string') {
               onToggleLike={toggleLike}
               onOpenArtist={openArtist}
               onFindSimilar={openSimilar}
+              onAddToQueue={addToQueue}
               onOpenSearch={() => navTo('search')}
               renderActions={playlistAction}
               compact={prefs.compactRows}
@@ -2121,6 +2124,7 @@ if (typeof d.theme === 'string') {
               onToggleLike={toggleLike}
               onOpenArtist={openArtist}
               onFindSimilar={openSimilar}
+              onAddToQueue={addToQueue}
               signedIn={prefs.source === 'spotify' ? spotify.connected : Boolean(api.me)}
               onLogin={prefs.source === 'spotify' ? () => navTo('settings') : signIn}
               renderActions={playlistAction}
@@ -2141,6 +2145,7 @@ if (typeof d.theme === 'string') {
               onOpenArtist={openArtist}
               onBack={goBack}
               onPlayAll={(tracks) => tracks[0] && playTrack(tracks[0], tracks)}
+              onAddToQueue={addToQueue}
               signedIn={Boolean(api.me)}
               accountPlaylists={api.accountPlaylists}
               playlistTrackIds={(api.currentPlaylist?.tracks ?? []).map((t) => t.id)}

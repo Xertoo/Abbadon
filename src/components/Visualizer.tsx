@@ -999,11 +999,13 @@ export function EqPresets({
   onEq,
   count,
   className,
+  allowCustomSave = false,
 }: {
   eq: number[];
   onEq: (g: number[]) => void;
   count: BandCount;
   className?: string;
+  allowCustomSave?: boolean;
 }) {
   const [customPresets, setCustomPresets] = useState<Record<string, number[]>>(() => loadCustomPresets());
   const [isAdding, setIsAdding] = useState(false);
@@ -1050,7 +1052,7 @@ export function EqPresets({
           </span>
           <span className="text-[11px] font-semibold text-sc-orange-soft">{active ?? 'Custom'}</span>
         </div>
-        {!isAdding ? (
+        {allowCustomSave && (!isAdding ? (
           <button
             type="button"
             onClick={() => setIsAdding(true)}
@@ -1071,7 +1073,7 @@ export function EqPresets({
           >
             Cancel
           </button>
-        )}
+        ))}
       </div>
 
       {isAdding && (

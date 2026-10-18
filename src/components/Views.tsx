@@ -80,6 +80,7 @@ interface SearchProps {
   onOpenArtist: (u: User | { id: string; username: string }) => void;
   onOpenPlaylist: (p: Playlist) => void;
   onFindSimilar: (seed: Track) => void;
+  onAddToQueue?: (track: Track) => void;
   renderActions?: (track: Track) => React.ReactNode;
   compact?: boolean;
   showArtwork?: boolean;
@@ -227,6 +228,7 @@ export function SearchView(p: SearchProps) {
                   onToggleLike={p.onToggleLike}
                   onOpenArtist={p.onOpenArtist}
                   onFindSimilar={p.onFindSimilar}
+                  onAddToQueue={p.onAddToQueue}
                   compact={p.compact}
                   showArtwork={p.showArtwork}
                   renderActions={p.renderActions}
@@ -295,6 +297,7 @@ export function SearchView(p: SearchProps) {
             onToggleLike={p.onToggleLike}
             onOpenArtist={p.onOpenArtist}
             onFindSimilar={p.onFindSimilar}
+            onAddToQueue={p.onAddToQueue}
             compact={p.compact}
             showArtwork={p.showArtwork}
             renderActions={p.renderActions}
@@ -422,6 +425,7 @@ interface LibraryProps {
   onToggleLike: (t: Track) => void;
   onOpenArtist: (u: User | { id: string; username: string }) => void;
   onFindSimilar: (seed: Track) => void;
+  onAddToQueue?: (track: Track) => void;
   signedIn: boolean;
   onLogin: () => void;
   renderActions?: (track: Track) => React.ReactNode;
@@ -491,6 +495,7 @@ export function LibraryView(p: LibraryProps) {
             onToggleLike={p.onToggleLike}
             onOpenArtist={p.onOpenArtist}
             onFindSimilar={p.onFindSimilar}
+            onAddToQueue={p.onAddToQueue}
             compact={p.compact}
             showArtwork={p.showArtwork}
             renderActions={p.renderActions}
@@ -2001,7 +2006,7 @@ export function SettingsView({
             <EqResponseCurve eq={eq} onEq={onEq} bands={bands} height={180} />
           </div>
 
-          <EqPresets eq={eq} onEq={onEq} count={bandCount} />
+          <EqPresets eq={eq} onEq={onEq} count={bandCount} allowCustomSave />
         </div>
       </Disclosure>
 

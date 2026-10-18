@@ -15,12 +15,32 @@
   </p>
 
   <p>
+    <a href="https://github.com/Xertoo/abbadon/releases/latest">
+      <img src="https://img.shields.io/badge/Download_for_Windows-v1.0.0-FF5500?style=for-the-badge&logo=windows&logoColor=white" alt="Download Abbadon for Windows" />
+    </a>
+  </p>
+
+  <p>
+    <a href="#-download">Download</a> •
     <a href="#key-features">Key Features</a> •
     <a href="#quick-start">Quick Start</a> •
     <a href="#keyboard-shortcuts">Shortcuts</a> •
     <a href="#tech-stack">Tech Stack</a>
   </p>
 </div>
+
+---
+
+## 📥 Download
+
+The easiest way to get started is by grabbing the official Windows build:
+
+| Version | Description | Download |
+| --- | --- | --- |
+| **Windows Installer (`.exe`)** | Standard setup wizard. Creates Start Menu and Desktop shortcuts, and supports silent auto-updates. | [**Download Installer (v1.0.0)**](https://github.com/Xertoo/abbadon/releases/latest) |
+| **Portable Edition (`.exe`)** | Standalone executable. No installation required — download and run directly. | [**Download Portable (v1.0.0)**](https://github.com/Xertoo/abbadon/releases/latest) |
+
+> 💡 **First-time launch note:** If Windows SmartScreen displays *"Windows protected your PC"*, simply click **More info** → **Run anyway**. This is standard for newly published open-source applications.
 
 ---
 

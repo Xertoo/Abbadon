@@ -49,11 +49,6 @@ const { initAutoUpdater } = require('./autoUpdater.cjs');
   }
 })();
 
-// Hardware acceleration and zero-copy pipeline for smooth live resizing & fullscreen
-app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('enable-zero-copy');
-app.commandLine.appendSwitch('ignore-gpu-blocklist');
-
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
 const isDev = !app.isPackaged;
 

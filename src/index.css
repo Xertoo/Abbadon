@@ -576,21 +576,18 @@
 }
 
 /*
- * Smooth, silky spring entrance for Fullscreen / NowPlaying overlay
+ * Smooth, clean entrance for Fullscreen / NowPlaying overlay
  */
 @keyframes sc-fullscreen-enter {
   0% {
     opacity: 0;
-    transform: scale(0.975) translateY(8px);
   }
   100% {
     opacity: 1;
-    transform: scale(1) translateY(0);
   }
 }
 .animate-fullscreen {
-  animation: sc-fullscreen-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
-  will-change: transform, opacity;
+  animation: sc-fullscreen-enter 0.18s ease-out both;
 }
 
 /*

@@ -445,9 +445,9 @@ function NowPlaying({
   }, [p.track?.id]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-sc-bg animate-fullscreen will-change-transform">
+    <div className="fixed inset-0 z-50 flex flex-col bg-sc-bg animate-fullscreen">
       <div
-        className="absolute inset-0 -z-10 opacity-70 transition-opacity duration-700 pointer-events-none will-change-[opacity]"
+        className="absolute inset-0 -z-10 opacity-70 transition-opacity duration-500 pointer-events-none"
         style={{
           background: `radial-gradient(120% 90% at 50% 0%, hsla(${artworkColor.hue}, ${artworkColor.sat}%, ${artworkColor.light}%, 0.22), transparent 60%)`,
         }}
@@ -671,7 +671,7 @@ function NowPlaying({
                         ref={isActive ? activeLineRef : undefined}
                         onClick={() => p.onSeek(line.time)}
                         className={clsx(
-                          'cursor-pointer transition-all duration-300 ease-out select-none will-change-transform leading-relaxed origin-left',
+                          'cursor-pointer transition-all duration-300 ease-out select-none leading-relaxed origin-left',
                           isActive
                             ? 'text-2xl sm:text-3xl lg:text-4xl font-extrabold text-sc-orange drop-shadow-[0_4px_25px_rgba(255,85,0,0.6)] scale-105 translate-x-2'
                             : isPassed

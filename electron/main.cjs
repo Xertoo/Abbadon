@@ -49,6 +49,11 @@ const { initAutoUpdater } = require('./autoUpdater.cjs');
   }
 })();
 
+// Hardware acceleration and zero-copy pipeline for smooth live resizing & fullscreen
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
 const isDev = !app.isPackaged;
 
@@ -138,8 +143,8 @@ function createWindow() {
   win = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 1024,
-    minHeight: 640,
+    minWidth: 800,
+    minHeight: 560,
     show: false,
     backgroundColor: '#0b0b0d',
     autoHideMenuBar: true,
@@ -151,6 +156,7 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
       spellcheck: false,
+      backgroundThrottling: false,
       // EME/DRM (Widevine) is refused unless plugins are enabled. Spotify's Web
       // Playback SDK needs it for full-length decryption; without a CDM the
       // switch is inert and playback simply falls back to the SDK's own error.

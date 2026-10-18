@@ -127,13 +127,21 @@ export function Spectrum({
     let raf = 0;
     const dpr = window.devicePixelRatio || 1;
 
+    let resizeRaf = 0;
     const resize = () => {
       const rect = canvas.getBoundingClientRect();
-      canvas.width = Math.max(1, rect.width * dpr);
-      canvas.height = Math.max(1, rect.height * dpr);
+      const targetW = Math.max(1, Math.round(rect.width * dpr));
+      const targetH = Math.max(1, Math.round(rect.height * dpr));
+      if (targetW !== canvas.width || targetH !== canvas.height) {
+        canvas.width = targetW;
+        canvas.height = targetH;
+      }
     };
     resize();
-    const ro = new ResizeObserver(resize);
+    const ro = new ResizeObserver(() => {
+      cancelAnimationFrame(resizeRaf);
+      resizeRaf = requestAnimationFrame(resize);
+    });
     ro.observe(canvas);
 
     // Built once per mount and reused for the lifetime of the canvas.
@@ -186,6 +194,7 @@ export function Spectrum({
 
     return () => {
       cancelAnimationFrame(raf);
+      cancelAnimationFrame(resizeRaf);
       ro.disconnect();
     };
   }, [getFreq, active, bars, color, color2, mode, demo, threshold, sensitivity, smoothing]);

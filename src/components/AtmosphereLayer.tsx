@@ -276,14 +276,33 @@ export const AtmosphereLayer: React.FC<Props> = React.memo(
       // Signature of the settings the frozen (animations off) path would
       // otherwise never notice, so a slider still repaints a still layer.
       let lastSig = '';
-
+      let resizeScheduled = false;
       const resize = () => {
         const dpr = Math.min(2, window.devicePixelRatio || 1);
-        w = canvas.clientWidth || window.innerWidth;
-        h = canvas.clientHeight || window.innerHeight;
-        canvas.width = Math.max(1, Math.round(w * dpr));
-        canvas.height = Math.max(1, Math.round(h * dpr));
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const curW = canvas.clientWidth || window.innerWidth;
+        const curH = canvas.clientHeight || window.innerHeight;
+        const targetW = Math.max(1, Math.round(curW * dpr));
+        const targetH = Math.max(1, Math.round(curH * dpr));
+        if (targetW !== canvas.width || targetH !== canvas.height) {
+          w = curW;
+          h = curH;
+          canvas.width = targetW;
+          canvas.height = targetH;
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        } else {
+          w = curW;
+          h = curH;
+        }
+      };
+
+      const onWindowResize = () => {
+        if (!resizeScheduled) {
+          resizeScheduled = true;
+          requestAnimationFrame(() => {
+            resizeScheduled = false;
+            resize();
+          });
+        }
       };
 
       const buildStars = (count: number) => {
@@ -452,11 +471,11 @@ export const AtmosphereLayer: React.FC<Props> = React.memo(
       };
 
       resize();
-      window.addEventListener('resize', resize);
+      window.addEventListener('resize', onWindowResize, { passive: true });
       raf = requestAnimationFrame(loop);
       return () => {
         cancelAnimationFrame(raf);
-        window.removeEventListener('resize', resize);
+        window.removeEventListener('resize', onWindowResize);
       };
     }, []);
 

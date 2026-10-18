@@ -445,9 +445,9 @@ function NowPlaying({
   }, [p.track?.id]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-sc-bg animate-fade-in">
+    <div className="fixed inset-0 z-50 flex flex-col bg-sc-bg animate-fullscreen will-change-transform">
       <div
-        className="absolute inset-0 -z-10 opacity-70 transition-all duration-700 pointer-events-none"
+        className="absolute inset-0 -z-10 opacity-70 transition-opacity duration-700 pointer-events-none will-change-[opacity]"
         style={{
           background: `radial-gradient(120% 90% at 50% 0%, hsla(${artworkColor.hue}, ${artworkColor.sat}%, ${artworkColor.light}%, 0.22), transparent 60%)`,
         }}
@@ -1268,15 +1268,21 @@ export function PlayerBar(p: Props) {
 
   useEffect(() => {
     if (!footerRef.current) return;
+    let rafId = 0;
     const ro = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.contentRect) {
-          setBarWidth(entry.contentRect.width);
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const width = entries[0]?.contentRect?.width;
+        if (typeof width === 'number') {
+          setBarWidth((prev) => (Math.abs(prev - width) < 8 ? prev : width));
         }
-      }
+      });
     });
     ro.observe(footerRef.current);
-    return () => ro.disconnect();
+    return () => {
+      cancelAnimationFrame(rafId);
+      ro.disconnect();
+    };
   }, []);
 
   const isTight = Boolean(p.queueOpen && barWidth < 1050) || barWidth < 860;
@@ -1346,10 +1352,20 @@ export function PlayerBar(p: Props) {
    */
   const [eqWidth, setEqWidth] = useState(420);
   useEffect(() => {
-    const measure = () => setEqWidth(Math.min(560, Math.max(360, window.innerWidth - 48)));
+    let rafId = 0;
+    const measure = () => {
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const next = Math.min(560, Math.max(360, window.innerWidth - 48));
+        setEqWidth((prev) => (Math.abs(prev - next) < 12 ? prev : next));
+      });
+    };
     measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
+    window.addEventListener('resize', measure, { passive: true });
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', measure);
+    };
   }, []);
 
   return (

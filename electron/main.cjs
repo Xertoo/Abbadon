@@ -1169,7 +1169,14 @@ ipcMain.handle('sc:resolve-official-stream', async (_e, params) => {
  * ------------------------------------------------------------------ */
 
 const DEFAULT_DISCORD_CLIENT_ID = '1177081335727267940';
-let lastPlaybackState = { track: null, isPlaying: false, currentTime: 0, duration: 0 };
+let lastPlaybackState = {
+  track: null,
+  isPlaying: false,
+  currentTime: 0,
+  duration: 0,
+  friendCode: null,
+  shareDiscordFriendCode: false,
+};
 let rpcReconnectTimer = null;
 
 function getDiscordClientId() {
@@ -1195,13 +1202,39 @@ function connectDiscordRPC() {
 
     rpcClient.on('ready', () => {
       rpcConnected = true;
-      if (lastPlaybackState.track) {
+      try {
+        rpcClient.subscribe('ACTIVITY_JOIN').catch(() => {});
+        rpcClient.subscribe('ACTIVITY_JOIN_REQUEST').catch(() => {});
+      } catch {}
+
+      if (lastPlaybackState.track || lastPlaybackState.friendCode) {
         updateDiscordRPC(
           lastPlaybackState.track,
           lastPlaybackState.isPlaying,
           lastPlaybackState.currentTime,
-          lastPlaybackState.duration
+          lastPlaybackState.duration,
+          lastPlaybackState.friendCode,
+          lastPlaybackState.shareDiscordFriendCode
         );
+      }
+    });
+
+    rpcClient.on('ACTIVITY_JOIN', (data) => {
+      const secret = data && data.secret ? String(data.secret) : '';
+      const code = secret.replace(/^join_/, '').trim();
+      if (code && win && !win.isDestroyed()) {
+        win.webContents.send('sc:discord-join-friend', code);
+        if (win.isMinimized()) win.restore();
+        win.show();
+        win.focus();
+      }
+    });
+
+    rpcClient.on('ACTIVITY_JOIN_REQUEST', (user) => {
+      if (lastPlaybackState.shareDiscordFriendCode && rpcClient) {
+        try {
+          rpcClient.sendJoinInvite(user).catch(() => {});
+        } catch {}
       }
     });
 
@@ -1235,8 +1268,8 @@ function initDiscordRPC() {
   connectDiscordRPC();
 }
 
-function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0) {
-  lastPlaybackState = { track, isPlaying, currentTime, duration };
+function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0, friendCode = null, shareDiscordFriendCode = false) {
+  lastPlaybackState = { track, isPlaying, currentTime, duration, friendCode, shareDiscordFriendCode };
   if (!rpcClient || !rpcConnected) return;
 
   try {
@@ -1264,6 +1297,18 @@ function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0) {
       rawActivity.timestamps = {
         start: Math.floor(now - currentTime * 1000),
         end: Math.floor(now + (duration - currentTime) * 1000),
+      };
+    }
+
+    // Discord Rich Presence Party & Join Secret for mutual friends auto-connect
+    if (shareDiscordFriendCode && friendCode) {
+      const partyId = String(friendCode).replace(/[^a-zA-Z0-9_-]/g, '');
+      rawActivity.party = {
+        id: `abbadon_party_${partyId}`,
+        size: [1, 8],
+      };
+      rawActivity.secrets = {
+        join: `join_${friendCode}`,
       };
     }
 
@@ -1406,11 +1451,11 @@ function notifyTrack(track) {
   }
 }
 
-ipcMain.on('sc:player-state', (_e, { track, isPlaying, currentTime = 0, duration = 0 }) => {
+ipcMain.on('sc:player-state', (_e, { track, isPlaying, currentTime = 0, duration = 0, friendCode, shareDiscordFriendCode }) => {
   if (updateTrayFn) {
     updateTrayFn(track, isPlaying);
   }
-  updateDiscordRPC(track, isPlaying, currentTime, duration);
+  updateDiscordRPC(track, isPlaying, currentTime, duration, friendCode, shareDiscordFriendCode);
 
   if (track && track.id !== lastNotifiedTrackId && isPlaying) {
     lastNotifiedTrackId = track.id;
@@ -1419,8 +1464,31 @@ ipcMain.on('sc:player-state', (_e, { track, isPlaying, currentTime = 0, duration
 });
 
 /* ------------------------------------------------------------------ *
- * Lifecycle
+ * Deep Linking Protocol & Single Instance Lifecycle
  * ------------------------------------------------------------------ */
+
+function handleProtocolUrl(urlStr) {
+  if (!urlStr || typeof urlStr !== 'string') return;
+  const match = urlStr.match(/abbadon:\/\/(?:friend\/|join\/)?([A-Za-z0-9_-]+)/i);
+  if (match && match[1]) {
+    const friendCode = match[1];
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('sc:discord-join-friend', friendCode);
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+  }
+}
+
+// Register default protocol client for abbadon:// (e.g. abbadon://friend/SC-XXXX)
+if (process.defaultApp) {
+  if (process.argv.length >= 2) {
+    app.setAsDefaultProtocolClient('abbadon', process.execPath, [path.resolve(process.argv[1])]);
+  }
+} else {
+  app.setAsDefaultProtocolClient('abbadon');
+}
 
 /**
  * One instance per profile.
@@ -1437,11 +1505,18 @@ if (!gotLock) {
   app.quit();
 }
 
-app.on('second-instance', () => {
+app.on('second-instance', (_event, argv) => {
   if (!win) return;
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
+
+  if (Array.isArray(argv)) {
+    const deepLink = argv.find((arg) => typeof arg === 'string' && arg.startsWith('abbadon://'));
+    if (deepLink) {
+      handleProtocolUrl(deepLink);
+    }
+  }
 });
 
 app.whenReady().then(async () => {
@@ -1497,6 +1572,13 @@ app.whenReady().then(async () => {
   // at module load like the ipcMain handlers above.
   watchDownloads();
   createWindow();
+
+  const startupDeepLink = process.argv.find((arg) => typeof arg === 'string' && arg.startsWith('abbadon://'));
+  if (startupDeepLink && win) {
+    win.webContents.once('did-finish-load', () => {
+      handleProtocolUrl(startupDeepLink);
+    });
+  }
 
   // Initialize Auto-Updater
   try {

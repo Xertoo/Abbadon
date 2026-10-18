@@ -70,6 +70,12 @@ contextBridge.exposeInMainWorld('desktop', {
     ipcRenderer.send('sc:player-state', state);
   },
 
+  onDiscordJoinFriend: (cb) => {
+    const handler = (_e, code) => cb(code);
+    ipcRenderer.on('sc:discord-join-friend', handler);
+    return () => ipcRenderer.removeListener('sc:discord-join-friend', handler);
+  },
+
   /** Sets custom Discord Application Client ID */
   setDiscordClientId: (clientId) => ipcRenderer.invoke('sc:set-discord-client-id', clientId),
 

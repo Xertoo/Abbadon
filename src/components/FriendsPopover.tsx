@@ -133,7 +133,7 @@ export function FriendsPopover({
   };
 
   const copyDiscordInvite = () => {
-    const inviteText = `Join my music session on Abbadon! Friend code: ${profile.code}`;
+    const inviteText = `Join my music session on Abbadon! Click to add: abbadon://friend/${profile.code} (or enter friend code: ${profile.code})`;
     navigator.clipboard.writeText(inviteText);
     setCopiedInvite(true);
     setTimeout(() => setCopiedInvite(false), 2000);
@@ -790,6 +790,37 @@ export function FriendsPopover({
                     <Share2 className="w-3.5 h-3.5" />
                     <span>{copiedInvite ? 'Copied Invite to Clipboard!' : 'Copy Invite for Discord'}</span>
                   </button>
+
+                  {/* Discord Rich Presence Auto-Connect */}
+                  <div className="p-2.5 rounded-xl bg-[#5865F2]/10 border border-[#5865F2]/20 flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-[#5865F2] shrink-0" />
+                        <span className="text-xs font-bold text-sc-fg">Discord Auto-Connect</span>
+                      </div>
+                      <p className="text-[10.5px] text-sc-muted leading-tight mt-0.5">
+                        Adds a &quot;Join&quot; button on your Discord profile for mutual friends to add you with 1 click.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => updateProfile({ shareWithDiscord: !profile.shareWithDiscord })}
+                      className={clsx(
+                        'w-9 h-5 rounded-full p-0.5 transition-colors cursor-pointer shrink-0',
+                        profile.shareWithDiscord ? 'bg-[#5865F2]' : 'bg-white/10'
+                      )}
+                      role="switch"
+                      aria-checked={Boolean(profile.shareWithDiscord)}
+                      title="Toggle Discord auto-join on your Discord status"
+                    >
+                      <div
+                        className={clsx(
+                          'w-4 h-4 rounded-full bg-white transition-transform shadow-sm',
+                          profile.shareWithDiscord ? 'translate-x-4' : 'translate-x-0'
+                        )}
+                      />
+                    </button>
+                  </div>
                 </div>
               </div>
 

@@ -1368,8 +1368,20 @@ if (typeof d.theme === 'string') {
       isPlaying: playing,
       currentTime: time,
       duration: dur,
+      friendCode: listenTogether.profile.code,
+      shareDiscordFriendCode: Boolean(listenTogether.profile.shareWithDiscord),
     });
-  }, [track, playing, Math.floor(time / 5), dur]);
+  }, [track, playing, Math.floor(time / 5), dur, listenTogether.profile.code, listenTogether.profile.shareWithDiscord]);
+
+  // Discord Rich Presence & Deep-link friend auto-add listener
+  useEffect(() => {
+    if (!window.desktop?.onDiscordJoinFriend) return;
+    const unsub = window.desktop.onDiscordJoinFriend((code) => {
+      if (!code) return;
+      listenTogether.addFriend(code);
+    });
+    return () => unsub?.();
+  }, [listenTogether]);
 
   // Keyboard shortcuts
   useEffect(() => {

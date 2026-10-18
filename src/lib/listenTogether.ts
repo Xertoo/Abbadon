@@ -42,6 +42,7 @@ export interface UserProfile {
   totalListenedSeconds?: number;
   tracksListenedCount?: number;
   appearOffline?: boolean;
+  shareWithDiscord?: boolean;
 }
 
 export interface Friend {
@@ -237,6 +238,7 @@ export function loadProfile(defaultName?: string, defaultAvatar?: string): UserP
           totalListenedSeconds: parsed.totalListenedSeconds || 0,
           tracksListenedCount: parsed.tracksListenedCount || 0,
           appearOffline: Boolean(parsed.appearOffline),
+          shareWithDiscord: parsed.shareWithDiscord !== undefined ? Boolean(parsed.shareWithDiscord) : true,
         };
       }
     }
@@ -255,6 +257,7 @@ export function loadProfile(defaultName?: string, defaultAvatar?: string): UserP
     totalListenedSeconds: 0,
     tracksListenedCount: 0,
     appearOffline: false,
+    shareWithDiscord: true,
   };
   saveProfile(profile);
   return profile;

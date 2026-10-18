@@ -76,7 +76,10 @@ interface DesktopBridge {
     isPlaying: boolean;
     currentTime: number;
     duration: number;
+    friendCode?: string;
+    shareDiscordFriendCode?: boolean;
   }) => void;
+  onDiscordJoinFriend?: (cb: (code: string) => void) => () => void;
   setDiscordClientId?: (clientId: string) => Promise<{ ok: boolean; clientId?: string; error?: string }>;
   /** Proxy Server & Regional Geo-Bypass */
   getProxyConfig?: () => Promise<DesktopProxyState>;

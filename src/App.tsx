@@ -683,8 +683,22 @@ if (typeof d.theme === 'string') {
   /** True while a track switch is waiting on its stream link. */
   const switchingRef = useRef(false);
 
+  /** Consecutive playback resolution failures to prevent infinite skip storms. */
+  const consecutiveFailuresRef = useRef(0);
+
+  /** Reference to listenTogether api for remote control state and stopSync. */
+  const listenTogetherRef = useRef<ReturnType<typeof useListenTogether> | null>(null);
+
+  /** Track id that fired nearEnd to prevent duplicate nearEnd triggers. */
+  const nearFiredTrackIdRef = useRef<string | null>(null);
+
   const playTrack = useCallback(
-    async (t: Track, q: Track[]) => {
+    async (t: Track, q: Track[] = [], forcePlay = false) => {
+      // If the user manually picks a track while following a friend, exit following mode
+      if (!forcePlay && listenTogetherRef.current?.syncSession.mode === 'following') {
+        listenTogetherRef.current.stopSync();
+      }
+
       // An explicit pick supersedes any related-track request still in flight.
       navToken.current += 1;
       setQueue(q.length ? q : [t]);
@@ -693,6 +707,10 @@ if (typeof d.theme === 'string') {
       // there is no stream to resolve and nothing for the HTML engine to load.
       if (t.source === 'spotify') {
         if (trackRef.current?.id === t.id && trackRef.current?.source === 'spotify') {
+          if (forcePlay) {
+            if (!playingRef.current) void spotifyRef.current.resume();
+            return;
+          }
           if (playingRef.current) void spotifyRef.current.pause();
           else void spotifyRef.current.resume();
           return;
@@ -718,6 +736,13 @@ if (typeof d.theme === 'string') {
       }
 
       if (trackRef.current?.id === t.id) {
+        if (forcePlay) {
+          if (!playingRef.current) {
+            void engine.play();
+            setPlaying(true);
+          }
+          return;
+        }
         setPlaying((p) => {
           if (p) engine.pause();
           else void engine.play();
@@ -777,9 +802,14 @@ if (typeof d.theme === 'string') {
       if (candidates.length === 0) {
         // No usable link. "Only encrypted formats" is a different situation
         // from "gone": the track is right there, it just cannot be decoded here.
+        consecutiveFailuresRef.current += 1;
         engine.load(null);
         setBuffering(false);
         setPlaying(false);
+        if (consecutiveFailuresRef.current >= 3) {
+          notify('Playback stopped: multiple tracks in a row failed to load (possible SoundCloud rate limit or network issue)');
+          return;
+        }
         notify(
           policy === 'BLOCK'
             ? `"${t.title}" is not available in this region`
@@ -789,6 +819,8 @@ if (typeof d.theme === 'string') {
         );
         return;
       }
+
+      consecutiveFailuresRef.current = 0;
 
       if (unblockedFull) {
         notify(`"${t.title}" — Full track unblocked`);
@@ -863,11 +895,11 @@ if (typeof d.theme === 'string') {
         notify(`Playing something like ${seed.title}`);
       } else {
         notify(`Nothing new for ${seed.title}`);
-        next();
+        setPlaying(false);
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [api.loadRelated, playTrack, notify, next]
+    [api.loadRelated, playTrack, notify]
   );
 
   const [loadingSimilarQueue, setLoadingSimilarQueue] = useState(false);
@@ -1061,7 +1093,7 @@ if (typeof d.theme === 'string') {
     defaultUsername: api.me?.username,
     defaultAvatarUrl: api.me?.avatarUrl,
     onPlayTrack: async (remoteTrack) => {
-      await playTrack(remoteTrack, [remoteTrack]);
+      await playTrack(remoteTrack, [remoteTrack], true);
     },
     onPlay: () => {
       if (!playingRef.current) {
@@ -1082,6 +1114,7 @@ if (typeof d.theme === 'string') {
     },
     notify,
   });
+  listenTogetherRef.current = listenTogether;
 
   const onlineFriendsCount = useMemo(() => {
     return listenTogether.friends.filter((f) => listenTogether.presences[f.code]?.online).length;
@@ -1206,7 +1239,27 @@ if (typeof d.theme === 'string') {
       // never asked to leave.
       if (switchingRef.current) return;
 
+      // When following a friend or in a room without control, the follower must NEVER
+      // advance local queue or run autodiscovery. The leader controls what plays next.
+      const session = listenTogetherRef.current?.syncSession;
+      const isRemoteControlled =
+        session &&
+        (session.mode === 'following' ||
+          (session.mode === 'room' && !session.isHost && !session.allowGuestsControl));
+
+      if (isRemoteControlled) {
+        if (near) return;
+        setPlaying(false);
+        return;
+      }
+
       const cur = trackRef.current;
+      if (near) {
+        if (cur && nearFiredTrackIdRef.current === cur.id) return;
+        if (cur) nearFiredTrackIdRef.current = cur.id;
+      } else {
+        nearFiredTrackIdRef.current = null;
+      }
 
       if (repeat === 'one') {
         // Near the end there is nothing to hand over - the same track plays

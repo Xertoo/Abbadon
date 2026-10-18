@@ -1277,7 +1277,8 @@ function connectDiscordRPC() {
           lastPlaybackState.currentTime,
           lastPlaybackState.duration,
           lastPlaybackState.friendCode,
-          lastPlaybackState.shareDiscordFriendCode
+          lastPlaybackState.shareDiscordFriendCode,
+          lastPlaybackState.showDiscordButtons
         );
       }
     });
@@ -1324,7 +1325,7 @@ function scheduleRpcReconnect() {
     if (!rpcConnected) {
       connectDiscordRPC();
     }
-  }, 10000);
+  }, 6000);
 }
 
 function initDiscordRPC() {
@@ -1342,14 +1343,24 @@ function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0, frien
     }
 
     const now = Date.now();
+    const rawTitle = String(track.title || 'SoundCloud').trim();
+    const details = (rawTitle.length >= 2 ? rawTitle : rawTitle + '  ').slice(0, 128);
+    const rawArtist = String(track.artist || 'Unknown Artist').trim();
+    const state = `by ${rawArtist}`.slice(0, 128);
+
+    let artwork = track.artwork;
+    if (typeof artwork === 'string' && artwork.startsWith('http://')) {
+      artwork = artwork.replace('http://', 'https://');
+    }
+
     const rawActivity = {
-      type: 2, // 2 = LISTENING (displays music / headphones icon instead of game controller)
+      type: 2, // 2 = LISTENING
       name: 'Abbadon',
-      details: String(track.title).slice(0, 128),
-      state: `by ${track.artist}`.slice(0, 128),
+      details,
+      state,
       assets: {
-        large_image: track.artwork || 'icon',
-        large_text: String(track.title).slice(0, 128),
+        large_image: artwork || 'icon',
+        large_text: details,
         small_image: isPlaying ? 'play' : 'pause',
         small_text: isPlaying ? 'Playing on Abbadon' : 'Paused',
       },
@@ -1363,7 +1374,7 @@ function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0, frien
       };
     }
 
-    // Configurable Discord Presence Profile Buttons (Visible to you, mobile friends, and PC friends)
+    // Configurable Discord Presence Profile Buttons (Visible to others viewing profile)
     if (showDiscordButtons !== false) {
       rawActivity.buttons = [
         { label: 'Listen Together', url: 'https://github.com/Xertoo/abbadon' },
@@ -1371,10 +1382,14 @@ function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0, frien
       ];
     }
 
-    rpcClient.request('SET_ACTIVITY', {
-      pid: process.pid,
-      activity: rawActivity,
-    }).catch(() => {});
+    const send = (act) => rpcClient.request('SET_ACTIVITY', { pid: process.pid, activity: act });
+
+    send(rawActivity).catch((err) => {
+      // Fallback for older Discord clients that reject type: 2 (Listening) or buttons
+      const fallback = { ...rawActivity };
+      delete fallback.type;
+      send(fallback).catch(() => {});
+    });
   } catch {
     // Ignore RPC set errors
   }

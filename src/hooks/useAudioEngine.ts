@@ -341,6 +341,7 @@ interface Slot {
   src: string | null;
   fade: GainNode | null;
   hls?: Hls | null;
+  nearFired?: boolean;
 }
 
 function isHlsUrl(src: string): boolean {
@@ -362,6 +363,7 @@ function setSlotSource(
   }
 
   slot.src = src;
+  slot.nearFired = false;
 
   if (!src) {
     slot.el.removeAttribute('src');
@@ -544,7 +546,8 @@ export function useAudioEngine(): PlayerApi {
       };
       const near = () => {
         const ai = activeRef.current;
-        if (slotsRef.current[ai]?.el !== el) return;
+        const curSlot = slotsRef.current[ai];
+        if (curSlot?.el !== el) return;
         const cf = crossfadeState.seconds;
         if (cf <= 0) return;
         // The `ended` event arrives only after the element has stopped, by which
@@ -555,6 +558,8 @@ export function useAudioEngine(): PlayerApi {
         if (el.currentTime <= 1) return;
         if (!isFinite(el.duration)) return;
         if (el.duration - el.currentTime <= cf + 0.25) {
+          if (curSlot.nearFired) return;
+          curSlot.nearFired = true;
           nearEndRef.current.forEach((f) => f());
         }
       };
@@ -738,10 +743,16 @@ export function useAudioEngine(): PlayerApi {
   }, []);
 
   const seek = useCallback((t: number) => {
+    const ai = activeRef.current;
+    const curSlot = slotsRef.current[ai];
     const el = activeEl();
     if (!el) return;
     try {
       el.currentTime = t;
+      const cf = crossfadeState.seconds;
+      if (curSlot && isFinite(el.duration) && el.duration - t > cf + 1) {
+        curSlot.nearFired = false;
+      }
     } catch {
       /* not seekable yet */
     }

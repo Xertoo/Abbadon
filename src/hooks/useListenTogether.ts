@@ -726,7 +726,6 @@ export function useListenTogether({
       currentTime: number;
       timestamp: number;
     }) => {
-      if (isSyncApplyingRef.current) return;
       if (!remote.track) return;
 
       const transit = Math.max(0, (Date.now() - remote.timestamp) / 1000);
@@ -736,8 +735,13 @@ export function useListenTogether({
       const localPlaying = isPlayingRef.current;
       const localTime = currentTimeRef.current;
 
+      const isNewTrack = !localTrack || String(localTrack.id) !== String(remote.track.id);
+
+      // Jitter guard for non-track updates
+      if (!isNewTrack && isSyncApplyingRef.current) return;
+
       // Track change
-      if (!localTrack || localTrack.id !== remote.track.id) {
+      if (isNewTrack) {
         isSyncApplyingRef.current = true;
         void Promise.resolve(onPlayTrack(remote.track)).finally(() => {
           setTimeout(() => {
@@ -746,8 +750,8 @@ export function useListenTogether({
             else onPlay();
             setTimeout(() => {
               isSyncApplyingRef.current = false;
-            }, 600);
-          }, 500);
+            }, 300);
+          }, 250);
         });
         return;
       }
@@ -758,23 +762,23 @@ export function useListenTogether({
         onPlay();
         setTimeout(() => {
           isSyncApplyingRef.current = false;
-        }, 300);
+        }, 200);
       } else if (!remote.isPlaying && localPlaying) {
         isSyncApplyingRef.current = true;
         onPause();
         setTimeout(() => {
           isSyncApplyingRef.current = false;
-        }, 300);
+        }, 200);
       }
 
-      // Drift correction: if more than 1.8 seconds apart, adjust
+      // Drift correction: if more than 2 seconds apart, adjust
       const drift = Math.abs(localTime - targetTime);
-      if (drift > 1.8) {
+      if (drift > 2.0) {
         isSyncApplyingRef.current = true;
         onSeek(targetTime);
         setTimeout(() => {
           isSyncApplyingRef.current = false;
-        }, 300);
+        }, 200);
       }
     },
     [onPlayTrack, onPlay, onPause, onSeek]
@@ -788,7 +792,7 @@ export function useListenTogether({
       currentTime?: number;
       timestamp: number;
     }) => {
-      if (isSyncApplyingRef.current) return;
+      if (cmd.action !== 'PLAY_TRACK' && isSyncApplyingRef.current) return;
 
       const transit = Math.max(0, (Date.now() - cmd.timestamp) / 1000);
       const targetTime = Math.max(0, (cmd.currentTime || 0) + transit);
@@ -803,8 +807,8 @@ export function useListenTogether({
                 onPlay();
                 setTimeout(() => {
                   isSyncApplyingRef.current = false;
-                }, 600);
-              }, 500);
+                }, 300);
+              }, 250);
             });
           }
           break;
@@ -816,7 +820,7 @@ export function useListenTogether({
             onPlay();
             setTimeout(() => {
               isSyncApplyingRef.current = false;
-            }, 300);
+            }, 200);
           }
           break;
         }
@@ -827,7 +831,7 @@ export function useListenTogether({
             onPause();
             setTimeout(() => {
               isSyncApplyingRef.current = false;
-            }, 300);
+            }, 200);
           }
           break;
         }
@@ -837,7 +841,7 @@ export function useListenTogether({
           onSeek(targetTime);
           setTimeout(() => {
             isSyncApplyingRef.current = false;
-          }, 300);
+          }, 200);
           break;
         }
       }
@@ -1064,9 +1068,13 @@ export function useListenTogether({
         roomId: syncSession.roomId || null,
       });
 
-      // 2. If we are room host, broadcast sync command
+      // 2. Broadcast sync command: if room host/controller, OR if playing as a normal user/friend (not following someone else)
       const session = syncSessionRef.current;
-      if (session.mode === 'room' && (session.isHost || session.allowGuestsControl)) {
+      const canBroadcastSync =
+        (session.mode === 'room' && (session.isHost || session.allowGuestsControl)) ||
+        session.mode === 'idle';
+
+      if (canBroadcastSync) {
         if (trackChanged && currentTrack) {
           broadcast({
             type: 'SYNC_COMMAND',
@@ -1075,7 +1083,7 @@ export function useListenTogether({
             track: currentTrack,
             currentTime,
             timestamp: Date.now(),
-            roomId: session.roomId,
+            roomId: session.mode === 'room' ? session.roomId : undefined,
           });
         } else if (playChanged) {
           broadcast({
@@ -1084,7 +1092,7 @@ export function useListenTogether({
             action: isPlaying ? 'PLAY' : 'PAUSE',
             currentTime,
             timestamp: Date.now(),
-            roomId: session.roomId,
+            roomId: session.mode === 'room' ? session.roomId : undefined,
           });
         }
       }

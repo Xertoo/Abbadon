@@ -1,11 +1,9 @@
-import { useEffect } from 'react';
 import { Play, Heart, MoreHorizontal, Plus, Compass, Eye, Sparkles, ListPlus, ListStart } from 'lucide-react';
 import clsx from 'clsx';
 import { Artwork } from './Artwork';
 import type { Track } from '../types';
 import { EqBars } from './Visualizer';
 import { isSoundCloudTrack } from '../lib/audius';
-import { resolveStreamUrls } from '../lib/soundcloud';
 
 interface Props {
   tracks: Track[];
@@ -84,9 +82,6 @@ export function TrackRow({
     <div
       onDoubleClick={() => onPlay(track, queue)}
       onClick={() => onPlay(track, queue)}
-      onMouseEnter={() => {
-        void resolveStreamUrls(track.id).catch(() => {});
-      }}
       className={clsx(
         'group grid items-center gap-3.5 px-3.5 sm:px-4.5 rounded-2xl transition-all duration-300 cursor-default select-none animate-row-cascade border border-transparent backdrop-blur-xs',
         // Compact drops the vertical padding and the genre, which is what made
@@ -295,19 +290,6 @@ export function TrackRow({
 }
 
 export function TrackList(props: Props) {
-  useEffect(() => {
-    if (!props.tracks || props.tracks.length === 0) return;
-    const toWarm = props.tracks.slice(0, 4);
-    const timers: number[] = [];
-    toWarm.forEach((t, i) => {
-      const timer = window.setTimeout(() => {
-        void resolveStreamUrls(t.id).catch(() => {});
-      }, 350 * (i + 1));
-      timers.push(timer);
-    });
-    return () => timers.forEach((tm) => window.clearTimeout(tm));
-  }, [props.tracks]);
-
   if (props.tracks.length === 0) {
     return (
       <div className="py-16 text-center">

@@ -99,7 +99,7 @@ export interface Prefs {
   /** Proxy mode: built-in unblock pool or custom user proxy. */
   proxyMode: 'builtin' | 'custom';
   /** Preset for proxy / geo bypass. */
-  proxyPreset: 'system' | 'clash' | 'v2ray' | 'tor' | string;
+  proxyPreset: 'system' | string;
   /** Custom proxy protocol. */
   proxyCustomProtocol: 'http' | 'https' | 'socks5' | 'socks4';
   /** Custom proxy host/IP. */

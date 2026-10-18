@@ -1269,9 +1269,6 @@ function ProxyPanel({
 
   const presets = proxyState?.presets || [
     { id: 'system', name: 'System / Active VPN', flag: '🛡️', description: 'Uses Windows system proxy or active VPN (Cloudflare WARP, Proton, etc.)' },
-    { id: 'clash', name: 'Clash / Mihomo', flag: '⚡', description: 'Local proxy on 127.0.0.1:7890 (HTTP/SOCKS5)' },
-    { id: 'v2ray', name: 'v2rayN / Xray', flag: '🚀', description: 'Local SOCKS5 on 127.0.0.1:10808' },
-    { id: 'tor', name: 'Tor SOCKS5', flag: '🧅', description: 'Local Tor browser / service on 127.0.0.1:9050' },
   ];
 
   const activePreset = presets.find((p: any) => p.id === prefs.proxyPreset) || presets[0];
@@ -1342,7 +1339,10 @@ function ProxyPanel({
                 : 'border-sc-line bg-sc-panel-2/40 hover:border-sc-dim'
             )}
           >
-            <span className="text-[12.5px] font-bold text-sc-fg">⚡ Built-in Presets</span>
+            <div className="flex items-center gap-2">
+              <span className="text-base leading-none">🛡️</span>
+              <span className="text-[12.5px] font-bold text-sc-fg">System / Active VPN</span>
+            </div>
             {prefs.proxyMode === 'builtin' && <Check className="w-3.5 h-3.5 text-sc-orange" />}
           </button>
 
@@ -1357,45 +1357,23 @@ function ProxyPanel({
                 : 'border-sc-line bg-sc-panel-2/40 hover:border-sc-dim'
             )}
           >
-            <span className="text-[12.5px] font-bold text-sc-fg">🛠️ Custom Proxy</span>
+            <div className="flex items-center gap-2">
+              <span className="text-base leading-none">🛠️</span>
+              <span className="text-[12.5px] font-bold text-sc-fg">Custom Proxy</span>
+            </div>
             {prefs.proxyMode === 'custom' && <Check className="w-3.5 h-3.5 text-sc-orange" />}
           </button>
         </div>
 
-        {/* Built-in Presets */}
+        {/* System / Active VPN Info */}
         {prefs.proxyMode === 'builtin' && (
-          <div className="space-y-2.5 animate-fade-in">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-sc-muted">
-              Quick Presets
-            </div>
-
-            <div className="grid gap-2 sm:grid-cols-2">
-              {presets.map((p: any) => {
-                const isSelected = prefs.proxyPreset === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => handlePresetChange(p.id)}
-                    aria-pressed={isSelected}
-                    className={clsx(
-                      'p-2.5 rounded-xl border text-left transition-all cursor-pointer',
-                      isSelected
-                        ? 'border-sc-orange/60 bg-sc-orange/10 shadow-sm'
-                        : 'border-sc-line bg-sc-panel-2/40 hover:border-sc-dim'
-                    )}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-base leading-none">{p.flag}</span>
-                        <span className="text-[12px] font-bold text-sc-fg">{p.name}</span>
-                      </div>
-                      {isSelected && <Check className="w-3.5 h-3.5 text-sc-orange shrink-0" />}
-                    </div>
-                    <div className="text-[10.5px] text-sc-muted mt-0.5">{p.description}</div>
-                  </button>
-                );
-              })}
+          <div className="p-3.5 rounded-xl border border-sc-line bg-sc-panel-2/30 animate-fade-in flex items-start gap-3">
+            <span className="text-xl shrink-0">🛡️</span>
+            <div>
+              <div className="text-[12.5px] font-bold text-sc-fg">System / Active VPN</div>
+              <div className="text-[11px] text-sc-muted mt-0.5 leading-relaxed">
+                Uses Windows system proxy or active VPN (Cloudflare WARP, Proton, NordVPN, etc.) to route your traffic and unblock restricted tracks.
+              </div>
             </div>
           </div>
         )}
@@ -1567,7 +1545,6 @@ function ProxyPanel({
 function SoftwareUpdatesPanel() {
   const { updateState, checkForUpdates, downloadUpdate, quitAndInstall } = useAutoUpdater();
   const [checking, setChecking] = useState(false);
-  const [guideOpen, setGuideOpen] = useState(false);
 
   const handleCheck = async () => {
     setChecking(true);
@@ -1683,40 +1660,6 @@ function SoftwareUpdatesPanel() {
           </div>
         </div>
       )}
-
-      {/* Developer instructions toggle */}
-      <div className="pt-2 border-t border-white/[0.06]">
-        <button
-          type="button"
-          onClick={() => setGuideOpen((v) => !v)}
-          className="text-xs text-sc-muted hover:text-sc-fg font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
-        >
-          <span>ℹ How to publish updates for all users?</span>
-          <span className={clsx('text-[10px] transition-transform duration-200', guideOpen && 'rotate-180')}>▾</span>
-        </button>
-
-        {guideOpen && (
-          <div className="mt-3 p-3.5 rounded-xl bg-white/[0.02] border border-white/[0.06] text-xs text-sc-muted space-y-2 leading-relaxed animate-fade-in">
-            <p className="font-semibold text-sc-fg">
-              Publishing updates for all users works in 2 simple steps:
-            </p>
-            <ol className="list-decimal list-inside space-y-1 text-sc-muted pl-1">
-              <li>
-                Bump the version in <code className="text-sc-orange">package.json</code> (e.g. from <code className="text-sc-dim">1.0.0</code> to <code className="text-sc-orange">1.0.1</code>).
-              </li>
-              <li>
-                Run <code className="text-sc-orange">npm run release</code> in terminal.
-              </li>
-              <li>
-                The installer and <code className="text-sc-orange">latest.yml</code> file will be generated in the <code className="text-sc-dim">release/</code> folder.
-              </li>
-              <li>
-                Upload them to your GitHub Releases — all users running the application will automatically receive and download the update on startup!
-              </li>
-            </ol>
-          </div>
-        )}
-      </div>
     </div>
   );
 }

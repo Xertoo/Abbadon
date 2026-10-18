@@ -28,33 +28,6 @@ const PRESETS = [
     description: 'Uses Windows system proxy or active VPN (Cloudflare WARP, Proton, etc.)',
     mode: 'system',
   },
-  {
-    id: 'clash',
-    name: 'Clash / Mihomo',
-    flag: '⚡',
-    description: 'Local proxy on 127.0.0.1:7890 (HTTP/SOCKS5)',
-    protocol: 'http',
-    host: '127.0.0.1',
-    port: 7890,
-  },
-  {
-    id: 'v2ray',
-    name: 'v2rayN / Xray',
-    flag: '🚀',
-    description: 'Local SOCKS5 on 127.0.0.1:10808',
-    protocol: 'socks5',
-    host: '127.0.0.1',
-    port: 10808,
-  },
-  {
-    id: 'tor',
-    name: 'Tor SOCKS5',
-    flag: '🧅',
-    description: 'Local Tor browser / service on 127.0.0.1:9050',
-    protocol: 'socks5',
-    host: '127.0.0.1',
-    port: 9050,
-  },
 ];
 
 class ProxyManager {

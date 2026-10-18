@@ -1300,27 +1300,13 @@ function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0, frien
       };
     }
 
-    // Discord Rich Presence:
-    // Discord strictly forbids sending BOTH 'secrets' AND 'buttons' in the same activity (error 5005).
-    // If party/secrets are sent, Discord renders its native Join button for mutual friends.
-    // If not sharing friend code, Discord displays custom URL buttons.
-    if (shareDiscordFriendCode && friendCode) {
-      const partyId = String(friendCode).replace(/[^a-zA-Z0-9_-]/g, '');
-      rawActivity.party = {
-        id: `abbadon_party_${partyId}`,
-        size: [1, 8],
-      };
-      rawActivity.secrets = {
-        join: `join_${friendCode}`,
-      };
-    } else {
-      const buttons = [];
-      buttons.push({ label: 'Join on Abbadon', url: 'https://github.com/Xertoo/abbadon' });
-      if (track.permalinkUrl && typeof track.permalinkUrl === 'string' && track.permalinkUrl.startsWith('http')) {
-        buttons.push({ label: 'SoundCloud Track', url: track.permalinkUrl });
-      }
-      rawActivity.buttons = buttons.slice(0, 2);
+    // Discord Rich Presence Profile Buttons (Visible to you, mobile friends, and PC friends)
+    const buttons = [];
+    buttons.push({ label: 'Join on Abbadon', url: 'https://github.com/Xertoo/abbadon' });
+    if (track.permalinkUrl && typeof track.permalinkUrl === 'string' && track.permalinkUrl.startsWith('http')) {
+      buttons.push({ label: 'SoundCloud Track', url: track.permalinkUrl });
     }
+    rawActivity.buttons = buttons.slice(0, 2);
 
     rpcClient.request('SET_ACTIVITY', {
       pid: process.pid,

@@ -37,6 +37,27 @@ export function useAutoUpdater() {
     }
   }, []);
 
+  // Check for updates on startup
+  useEffect(() => {
+    const fn = window.desktop?.checkForUpdates;
+    if (fn) {
+      const timer = window.setTimeout(() => {
+        void fn().catch(() => {});
+      }, 1000);
+      return () => window.clearTimeout(timer);
+    }
+  }, []);
+
+  // Periodic update check every 3 hours while open
+  useEffect(() => {
+    const fn = window.desktop?.checkForUpdates;
+    if (!fn) return;
+    const interval = window.setInterval(() => {
+      void fn().catch(() => {});
+    }, 3 * 60 * 60 * 1000);
+    return () => window.clearInterval(interval);
+  }, []);
+
   const checkForUpdates = useCallback(async () => {
     if (!window.desktop?.checkForUpdates) return { ok: false, error: 'Update check is not supported in this environment' };
     setUpdateState((prev) => ({ ...prev, status: 'checking', error: null }));

@@ -80,7 +80,7 @@ function initAutoUpdater(win, isDev) {
       } catch (err) {
         console.log('[AutoUpdater] Startup check exception:', err.message);
       }
-    }, 6000);
+    }, 1200);
   }
 }
 

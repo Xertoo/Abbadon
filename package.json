@@ -2,7 +2,7 @@
   "name": "abbadon",
   "productName": "Abbadon",
   "private": true,
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Desktop SoundCloud player with rate-limit protection",
   "author": "Abbadon",
   "license": "MIT",
@@ -87,7 +87,8 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Abbadon",
       "installerIcon": "build/icon.ico",
-      "uninstallerIcon": "build/icon.ico"
+      "uninstallerIcon": "build/icon.ico",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "portable": {
       "artifactName": "Abbadon-portable.exe"

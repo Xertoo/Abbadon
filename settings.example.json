@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "Copy this file to %APPDATA%\\Abbadon\\settings.json (Windows)",
+    "or ~/Library/Application Support/Abbadon/settings.json (macOS).",
+    "Values here override what is stored in localStorage and are applied on launch.",
+    "Delete the file to go back to whatever the UI last saved."
+  ],
+
+  "_eqBands": "band count: 4 | 8 | 16. Default is 8. 'eq' is resampled onto this layout.",
+  "eqBands": 8,
+
+  "_eq": "eqBands numbers, -12..12 dB. Positive boosts.",
+  "_eqFreqs": {
+    "4": "60/250/1k/4k Hz",
+    "8": "31.5/63/125/250/500/1k/2k/4k Hz",
+    "16": "25/40/63/100/160/250/400/630/1k/1.6k/2.5k/4k/6.3k/10k/12.5k/16k Hz"
+  },
+  "eq": [5, 4, 3, 1, 0, 1, 3, 4],
+
+  "_visualizer": "one of: bars | wave | mirror | radial | pulse | off",
+  "visualizer": "radial",
+
+  "_theme": "one of: dark | light | red | blue | green | purple | orange | pink. Old ids (midnight, oled, dusk, daylight) are still accepted and mapped. An object like {\"accent\":\"#22d3ee\",\"mode\":\"dark\"} builds a one-off theme from any hex accent.",
+  "theme": "dark",
+
+  "_autodiscovery": "kept for compatibility; autodiscovery is now always on and only yields to Repeat or Shuffle",
+  "autodiscovery": "on",
+
+  "_proxy": "Geo-Bypass proxy to unlock region-restricted SoundCloud tracks. mode: builtin | custom. preset: auto | us | de | gb | nl.",
+  "proxy": {
+    "enabled": true,
+    "mode": "builtin",
+    "preset": "us"
+  }
+}

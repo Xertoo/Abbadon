@@ -1,0 +1,745 @@
+@import "tailwindcss";
+
+/* Without this, the scanner walks the packed `release/` output and keeps
+   regenerating utilities for class names that no longer exist in the source. */
+@source not "../release";
+@source not "../dist";
+@source not "../sc-bundle.mjs";
+
+/* ---------------------------------------------------------------- *
+ * Themes
+ *
+ * Surfaces and ink live in plain custom properties that are written onto
+ * <html> at runtime by src/lib/themes.ts, so a user-picked accent works
+ * through exactly the same path as a built-in theme. `@theme inline` maps
+ * them onto the Tailwind colour names the components actually use
+ * (bg-sc-panel, text-sc-muted, ...).
+ *
+ * The values below are the fallback for the very first paint, before React
+ * has applied the stored theme.
+ *
+ * --sc-fill is the "overlay ink": white in dark themes, near-black in light
+ * ones, so `bg-sc-fill/10` is a subtle overlay in either direction.
+ * ---------------------------------------------------------------- */
+
+:root {
+  color-scheme: dark;
+  --sc-bg: #0b0b0f;
+  --sc-panel: #13131a;
+  --sc-panel-2: #1b1b25;
+  --sc-line: #26262f;
+  --sc-fg: #ececf2;
+  --sc-muted: #b4b4c4;
+  --sc-dim: #87879b;
+  --sc-faint: #6a6a7c;
+  --sc-fill: 255 255 255;
+  --sc-on-accent: #ffffff;
+  --sc-scrollbar: #33333f;
+  --sc-scrollbar-hi: #4a4a5c;
+  --sc-skeleton-a: #16161e;
+  --sc-skeleton-b: #20202b;
+  --sc-accent: #6d5efc;
+  --sc-accent-2: #38e0d4;
+}
+
+@theme inline {
+  --color-sc-bg: var(--sc-bg);
+  --color-sc-panel: var(--sc-panel);
+  --color-sc-panel-2: var(--sc-panel-2);
+  --color-sc-line: var(--sc-line);
+  --color-sc-fg: var(--sc-fg);
+  --color-sc-muted: var(--sc-muted);
+  --color-sc-dim: var(--sc-dim);
+  --color-sc-faint: var(--sc-faint);
+  --color-sc-fill: rgb(var(--sc-fill) / <alpha-value>);
+  --color-sc-on-accent: var(--sc-on-accent);
+  --color-sc-scrollbar: var(--sc-scrollbar);
+  /* The accent follows the active theme, so every accent-coloured control in
+     the app follows it too without any component knowing the theme exists. */
+  --color-sc-orange: var(--sc-accent);
+  --color-sc-orange-soft: var(--sc-accent-2);
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--sc-bg);
+    color: var(--sc-fg);
+    font-family:
+      "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+    /* Colours are the only thing that changes between themes, so the swap is
+       animated once rather than every component re-laying out. */
+    transition:
+      background-color 220ms ease,
+      color 220ms ease;
+  }
+
+  ::selection {
+    background: color-mix(in oklab, var(--color-sc-orange) 40%, transparent);
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:active:not(:disabled), [role="button"]:active:not(:disabled) {
+    transform: scale(0.95);
+    transition: transform 120ms cubic-bezier(0.05, 0.9, 0.1, 1.05);
+  }
+}
+
+@layer utilities {
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--sc-scrollbar) transparent;
+  }
+  .scroll-thin::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .scroll-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb {
+    background: var(--sc-scrollbar);
+    border-radius: 99px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  .scroll-thin::-webkit-scrollbar-thumb:hover {
+    background: var(--sc-scrollbar-hi);
+    background-clip: content-box;
+  }
+
+  /*
+     The main pane's scrollbar: a floating pill.
+
+     The scrollbar is a strip of window chrome, so it is inset from the edge and
+     given a visible gap, which makes it read as something hovering over the
+     content rather than a bar glued to the frame. It stays nearly transparent at
+     rest and fills in on hover - both for the pane and, separately, when the
+     pointer is over the thumb itself, so the thumb can be aimed at. The Firefox
+     fallback above cannot do the inset, but keeps the same accent colour so the
+     two platforms at least agree on intent.
+  */
+  .scroll-rail {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--color-sc-orange) 60%, transparent) transparent;
+  }
+  .scroll-rail::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+  }
+  .scroll-rail::-webkit-scrollbar-track {
+    background: transparent;
+    border-left: 3px solid transparent;
+    border-right: 3px solid transparent;
+  }
+  .scroll-rail::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--color-sc-fg) 16%, transparent);
+    border-radius: 99px;
+    /* 14px of gutter minus 3px each side leaves an 8px pill that floats clear
+       of the window edge. */
+    border: 3px solid transparent;
+    background-clip: content-box;
+    padding: 0;
+  }
+  .scroll-rail:hover::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--color-sc-fg) 28%, transparent);
+    background-clip: content-box;
+  }
+  .scroll-rail::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--color-sc-orange) 70%, transparent);
+    background-clip: content-box;
+  }
+  .scroll-rail::-webkit-scrollbar-thumb:active {
+    background: var(--color-sc-orange);
+    background-clip: content-box;
+  }
+  .scroll-rail::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+
+  .glow-orange {
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--color-sc-orange) 45%, transparent),
+      0 8px 30px -8px color-mix(in oklab, var(--color-sc-orange) 60%, transparent);
+  }
+
+  .glow-accent {
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--color-sc-orange-soft) 40%, transparent),
+      0 10px 40px -10px color-mix(in oklab, var(--color-sc-orange) 70%, transparent);
+  }
+
+  /* ---------------------------------------------------------------- *
+   * Vision Pro Glassmorphism & Spatial Surfaces
+   * ---------------------------------------------------------------- */
+  .glass-panel {
+    background: color-mix(in srgb, var(--sc-panel) 62%, transparent);
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 20px 45px -15px rgba(0, 0, 0, 0.6);
+  }
+
+  .glass-card {
+    background: rgba(255, 255, 255, 0.032);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    transition: all 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  .glass-card:hover {
+    background: rgba(255, 255, 255, 0.075);
+    border-color: rgba(255, 255, 255, 0.18);
+    transform: translateY(-4px) scale(1.012);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), 0 24px 48px -12px rgba(0, 0, 0, 0.7);
+  }
+
+  .glass-dock {
+    background: color-mix(in srgb, var(--sc-panel) 68%, transparent);
+    backdrop-filter: blur(32px) saturate(190%);
+    -webkit-backdrop-filter: blur(32px) saturate(190%);
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 -12px 40px -10px rgba(0, 0, 0, 0.65);
+  }
+}
+
+/* ---------------------------------------------------------------- *
+ * Vision Pro Spatial Orbs & Equalizer Keyframes
+ * ---------------------------------------------------------------- */
+
+@keyframes orb-float-1 {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  33% { transform: translate3d(6%, 5%, 0) scale(1.12); }
+  66% { transform: translate3d(-4%, 3%, 0) scale(0.96); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes orb-float-2 {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  33% { transform: translate3d(-5%, -6%, 0) scale(1.08); }
+  66% { transform: translate3d(5%, -3%, 0) scale(0.92); }
+  100% { transform: translate3d(0, 0, 0) scale(1); }
+}
+
+@keyframes orb-pulse-breathe {
+  0%, 100% { opacity: 0.2; transform: scale(1); }
+  50% { opacity: 0.38; transform: scale(1.05); }
+}
+
+@keyframes eq-bounce-1 {
+  0%, 100% { height: 25%; }
+  50% { height: 95%; }
+}
+
+@keyframes eq-bounce-2 {
+  0%, 100% { height: 75%; }
+  50% { height: 30%; }
+}
+
+@keyframes eq-bounce-3 {
+  0%, 100% { height: 40%; }
+  50% { height: 100%; }
+}
+
+@keyframes eq-bounce-4 {
+  0%, 100% { height: 85%; }
+  50% { height: 20%; }
+}
+
+.animate-eq-1 { animation: eq-bounce-1 0.8s ease-in-out infinite; }
+.animate-eq-2 { animation: eq-bounce-2 0.65s ease-in-out infinite 0.15s; }
+.animate-eq-3 { animation: eq-bounce-3 0.9s ease-in-out infinite 0.3s; }
+.animate-eq-4 { animation: eq-bounce-4 0.75s ease-in-out infinite 0.1s; }
+
+/* ---------------------------------------------------------------- *
+ * Motion (Hyprland Spring Physics)
+ * ---------------------------------------------------------------- */
+
+@keyframes sc-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes sc-view-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.985);
+    filter: blur(8px);
+  }
+  60% {
+    opacity: 0.95;
+    transform: translateY(-1px) scale(1.002);
+    filter: blur(0px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0px);
+  }
+}
+
+.animate-view {
+  animation: sc-view-enter 0.38s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  will-change: transform, opacity, filter;
+}
+
+@keyframes sc-indeterminate {
+  0% { transform: translateX(-100%); }
+  50% { transform: translateX(120%); }
+  100% { transform: translateX(320%); }
+}
+
+.animate-indeterminate {
+  animation: sc-indeterminate 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/*
+ * Popover entrance with juicy Hyprland bounce effect.
+ */
+@keyframes sc-popover-bounce {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.88);
+  }
+  55% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.03);
+  }
+  80% {
+    transform: translateY(1px) scale(0.995);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-popover {
+  animation: sc-popover-bounce 0.38s cubic-bezier(0.05, 0.9, 0.1, 1.05) both;
+  transform-origin: var(--sc-pop-origin, bottom right);
+}
+
+.animate-bounce-in {
+  animation: sc-popover-bounce 0.38s cubic-bezier(0.05, 0.9, 0.1, 1.05) both;
+}
+
+/* Leaves towards the same anchor it came from. */
+@keyframes sc-popover-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px) scale(0.95);
+  }
+}
+
+.animate-popover-out {
+  animation: sc-popover-out 0.16s cubic-bezier(0.4, 0, 1, 1) both;
+  transform-origin: var(--sc-pop-origin, bottom right);
+}
+
+@keyframes sc-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes sc-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes sc-slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes sc-drawer-slide {
+  0% {
+    opacity: 0;
+    transform: translateX(100%);
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(-8px);
+  }
+  88% {
+    transform: translateX(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+.animate-drawer {
+  animation: sc-drawer-slide 0.42s cubic-bezier(0.05, 0.9, 0.1, 1.05) both;
+}
+
+@keyframes sc-pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-sc-orange) 45%, transparent),
+                0 4px 14px -2px color-mix(in oklab, var(--color-sc-orange) 30%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in oklab, var(--color-sc-orange) 0%, transparent),
+                0 6px 20px 2px color-mix(in oklab, var(--color-sc-orange) 60%, transparent);
+  }
+}
+
+.animate-pulse-glow {
+  animation: sc-pulse-glow 2.2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes sc-row-slide {
+  0% {
+    opacity: 0;
+    transform: translateY(14px) scale(0.98);
+  }
+  70% {
+    opacity: 1;
+    transform: translateY(-1.5px) scale(1.002);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-row-cascade {
+  animation: sc-row-slide 0.36s cubic-bezier(0.05, 0.9, 0.1, 1.05) both;
+  animation-delay: min(calc(var(--row-idx, 0) * 16ms), 260ms);
+}
+
+@keyframes sc-heart-pop {
+  0% {
+    transform: scale(0.5);
+  }
+  50% {
+    transform: scale(1.4);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.animate-heart-pop {
+  animation: sc-heart-pop 0.35s cubic-bezier(0.175, 0.885, 0.32, 1.275) both;
+}
+
+@keyframes sc-scale-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.65);
+  }
+  70% {
+    transform: scale(1.1);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-scale-in {
+  animation: sc-scale-in 0.28s cubic-bezier(0.05, 0.9, 0.1, 1.05) both;
+}
+
+@keyframes sc-toast-enter {
+  0% {
+    opacity: 0;
+    transform: translateY(24px) scale(0.92);
+  }
+  65% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-toast {
+  animation: sc-toast-enter 0.4s cubic-bezier(0.05, 0.9, 0.1, 1.05) both;
+}
+
+@keyframes sc-accordion-down {
+  0% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.99);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-accordion {
+  animation: sc-accordion-down 0.28s cubic-bezier(0.05, 0.9, 0.1, 1.05) both;
+}
+
+@keyframes sc-eq {
+  0%,
+  100% {
+    transform: scaleY(0.25);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes sc-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes sc-shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+.animate-fade-up {
+  animation: sc-fade-up 0.35s cubic-bezier(0.05, 0.9, 0.1, 1.05) both;
+}
+.animate-fade-in {
+  animation: sc-fade-in 0.28s ease both;
+}
+.animate-pop {
+  animation: sc-pop 0.28s cubic-bezier(0.05, 0.9, 0.1, 1.05) both;
+}
+
+/*
+ * Centred modal dialog bounce entrance.
+ */
+@keyframes sc-dialog-bounce {
+  0% {
+    opacity: 0;
+    transform: translateY(18px) scale(0.9);
+  }
+  58% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.025);
+  }
+  82% {
+    transform: translateY(1px) scale(0.996);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.animate-dialog {
+  animation: sc-dialog-bounce 0.42s cubic-bezier(0.05, 0.9, 0.1, 1.05) both;
+}
+
+/*
+ * View transitions. Every view mounts through <main>, so keying the wrapper on
+ * the active view replays this and the panels cross-fade instead of snapping.
+ * transform + opacity only, so it stays on the compositor.
+ */
+.view-enter {
+  animation: sc-hypr-window 0.38s cubic-bezier(0.05, 0.9, 0.1, 1.05) both;
+}
+
+@keyframes sc-view-in {
+  0% {
+    opacity: 0;
+    transform: translateY(16px) scale(0.965);
+  }
+  60% {
+    transform: translateY(-2px) scale(1.006);
+  }
+  85% {
+    transform: translateY(0.5px) scale(0.998);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/*
+ * Shared interaction timings. One place to retune the feel of every button,
+ * row and card, and only cheap properties are animated.
+ */
+@layer base {
+  button:not(:disabled),
+  a[href],
+  [role="button"]:not([aria-disabled="true"]) {
+    transition:
+      color 180ms ease,
+      background-color 180ms ease,
+      border-color 180ms ease,
+      opacity 180ms ease,
+      transform 200ms cubic-bezier(0.05, 0.9, 0.1, 1.05);
+  }
+}
+
+/* Rows and cards lift a little on hover, which reads as "alive" without
+   costing a layout pass on anything but themselves. */
+.lift {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 180ms ease,
+    background-color 180ms ease;
+}
+.lift:hover {
+  transform: translateY(-2px);
+}
+.animate-slide-up {
+  animation: sc-slide-up 0.3s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.animate-spin-slow {
+  animation: sc-spin 0.9s linear infinite;
+}
+
+.eq-bar {
+  animation: sc-eq 0.9s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+/*
+ * Music-reactive halo around the now-playing artwork.
+ *
+ * <AudioBloom /> writes --bloom-energy, --bloom-hue and --bloom-spin on the
+ * wrapper element, so these rules deliberately do NOT declare defaults for
+ * them: a local declaration would shadow the inherited value and the halo would
+ * sit frozen at whatever is written here. The fallbacks live in var() instead.
+ *
+ * Everything that changes per frame is limited to `opacity` and `transform`,
+ * which the compositor animates without repainting. The earlier version drove
+ * `filter: blur()` and gradient stops from JS, which re-rastered three
+ * gradients plus a 64px blur on every single frame and pinned the app to
+ * ~15fps. The blur is now static and baked into the layer.
+ */
+.audio-bloom-glow {
+  position: absolute;
+  inset: -22%;
+  border-radius: 9999px;
+  background:
+    radial-gradient(
+      42% 42% at 32% 28%,
+      hsl(calc(var(--bloom-hue, 244) + 20) var(--bloom-sat, 90%) calc(var(--bloom-light, 56%) + 6%)) 0%,
+      transparent 68%
+    ),
+    radial-gradient(
+      42% 42% at 70% 66%,
+      hsl(var(--bloom-hue, 244) var(--bloom-sat, 88%) var(--bloom-light, 56%)) 0%,
+      transparent 68%
+    ),
+    radial-gradient(
+      58% 58% at 50% 52%,
+      hsl(calc(var(--bloom-hue, 244) - 20) var(--bloom-sat, 92%) calc(var(--bloom-light, 56%) - 4%)) 0%,
+      transparent 70%
+    );
+  filter: blur(40px);
+  opacity: calc(0.28 + var(--bloom-energy, 0.4) * 0.62);
+  transform: scale(calc(0.86 + var(--bloom-energy, 0.4) * 0.28));
+  will-change: opacity, transform;
+  pointer-events: none;
+}
+
+.audio-bloom-ring {
+  position: absolute;
+  inset: -14%;
+  border-radius: 9999px;
+  background: conic-gradient(
+    from var(--bloom-spin, 0deg),
+    transparent 0deg,
+    hsl(var(--bloom-hue, 244) var(--bloom-sat, 90%) var(--bloom-light, 60%) / 0.5) 70deg,
+    transparent 150deg,
+    hsl(calc(var(--bloom-hue, 244) + 30) var(--bloom-sat, 90%) var(--bloom-light, 60%) / 0.36) 230deg,
+    transparent 330deg
+  );
+  filter: blur(18px);
+  mask: radial-gradient(
+    closest-side,
+    transparent 66%,
+    #000 74%,
+    #000 88%,
+    transparent 100%
+  );
+  /* Rotation is a pure transform, so it never invalidates the gradient. */
+  animation: sc-bloom-spin 14s linear infinite;
+  opacity: calc(0.3 + var(--bloom-energy, 0.4) * 0.5);
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+@keyframes sc-bloom-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--sc-skeleton-a) 25%,
+      var(--sc-skeleton-b) 37%,
+      var(--sc-skeleton-a) 63%
+    );
+    background-size: 200% 100%;
+    animation: sc-shimmer 1.4s ease infinite;
+  }
+
+/*
+ * Turning animations off.
+ *
+ * Two ways in, because they mean different things:
+ *
+ * - `.no-anim` is written onto <html> by the Settings toggle. It kills motion
+ *   outright, but keeps opacity changes, so a panel still appears rather than
+ *   simply not appearing at all.
+ * - `prefers-reduced-motion` covers the OS setting. It also shortens transitions
+ *   to zero, which is the right call for someone who set it at the OS level.
+ *
+ * Both are declared with `!important` because the rules above set `animation`
+ * shorthand on class selectors that would otherwise win on specificity.
+ */
+.no-anim .animate-view,
+.no-anim .animate-pulse-glow,
+.no-anim .animate-indeterminate {
+  animation: none !important;
+}

@@ -1168,7 +1168,7 @@ ipcMain.handle('sc:resolve-official-stream', async (_e, params) => {
  * Desktop Integrations: Tray, Discord RPC, Notifications
  * ------------------------------------------------------------------ */
 
-const DEFAULT_DISCORD_CLIENT_ID = '1177081335727267940';
+const DEFAULT_DISCORD_CLIENT_ID = '1556387651999899668';
 let lastPlaybackState = {
   track: null,
   isPlaying: false,
@@ -1300,7 +1300,10 @@ function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0, frien
       };
     }
 
-    // Discord Rich Presence Party & Join Secret for mutual friends auto-connect
+    // Discord Rich Presence:
+    // Discord strictly forbids sending BOTH 'secrets' AND 'buttons' in the same activity (error 5005).
+    // If party/secrets are sent, Discord renders its native Join button for mutual friends.
+    // If not sharing friend code, Discord displays custom URL buttons.
     if (shareDiscordFriendCode && friendCode) {
       const partyId = String(friendCode).replace(/[^a-zA-Z0-9_-]/g, '');
       rawActivity.party = {
@@ -1310,14 +1313,14 @@ function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0, frien
       rawActivity.secrets = {
         join: `join_${friendCode}`,
       };
+    } else {
+      const buttons = [];
+      if (track.permalinkUrl && typeof track.permalinkUrl === 'string' && track.permalinkUrl.startsWith('http')) {
+        buttons.push({ label: 'SoundCloud Track', url: track.permalinkUrl });
+      }
+      buttons.push({ label: 'Get Abbadon App', url: 'https://github.com/Xertoo/abbadon' });
+      rawActivity.buttons = buttons.slice(0, 2);
     }
-
-    const buttons = [];
-    if (track.permalinkUrl && typeof track.permalinkUrl === 'string' && track.permalinkUrl.startsWith('http')) {
-      buttons.push({ label: 'SoundCloud Track', url: track.permalinkUrl });
-    }
-    buttons.push({ label: 'Get Abbadon App', url: 'https://github.com/Xertoo/abbadon' });
-    rawActivity.buttons = buttons.slice(0, 2);
 
     rpcClient.request('SET_ACTIVITY', {
       pid: process.pid,

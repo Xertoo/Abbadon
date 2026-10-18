@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { Track, User } from '../types';
+import type { Friend, FriendPresence, SyncSession } from '../lib/listenTogether';
 import {
   Spectrum,
   EqBars,
@@ -44,7 +45,6 @@ import { RATE_MAX, RATE_MIN, RATE_STEPS, formatRate } from '../hooks/useAudioEng
 import { useArtworkColor } from '../lib/artworkColor';
 import { TrackComments } from './TrackComments';
 import { LyricsPanel } from './LyricsPanel';
-import { TrackListeners } from './TrackListeners';
 import {
   fetchLyrics,
   cachedLyrics,
@@ -123,6 +123,11 @@ interface Props {
   onOpenFriends?: () => void;
   isSyncActive?: boolean;
   syncTargetName?: string;
+  friends?: Friend[];
+  presences?: Record<string, FriendPresence>;
+  onFollowFriend?: (code: string) => void;
+  syncSession?: SyncSession;
+  onStopSync?: () => void;
 }
 
 function fmt(s: number): string {
@@ -336,6 +341,161 @@ function EqPanel({
   );
 }
 
+function FriendsListeningNow({
+  friends,
+  presences,
+  currentTrackId,
+  onFollowFriend,
+  syncSession,
+  onStopSync,
+}: {
+  friends?: Friend[];
+  presences?: Record<string, FriendPresence>;
+  currentTrackId?: string;
+  onFollowFriend?: (code: string) => void;
+  syncSession?: SyncSession;
+  onStopSync?: () => void;
+}) {
+  if (!friends || !presences) return null;
+
+  const activeFriends = friends
+    .map((f) => ({ friend: f, presence: presences[f.code] }))
+    .filter(({ presence }) => Boolean(presence && presence.track));
+
+  if (activeFriends.length === 0) return null;
+
+  activeFriends.sort((a, b) => {
+    const aPlaying = Boolean(a.presence?.isPlaying && a.presence?.online);
+    const bPlaying = Boolean(b.presence?.isPlaying && b.presence?.online);
+    if (aPlaying && !bPlaying) return -1;
+    if (!aPlaying && bPlaying) return 1;
+    const aTime = a.presence?.timestamp || a.presence?.lastSeen || 0;
+    const bTime = b.presence?.timestamp || b.presence?.lastSeen || 0;
+    return bTime - aTime;
+  });
+
+  const formatTimeAgo = (ts?: number) => {
+    if (!ts) return 'niedawno';
+    const diffSec = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    if (diffSec < 60) return 'przed chwilą';
+    const mins = Math.floor(diffSec / 60);
+    if (mins < 60) return `${mins} min temu`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours} godz. temu`;
+    const days = Math.floor(hours / 24);
+    return `${days} dni temu`;
+  };
+
+  return (
+    <div className="rounded-2xl border border-sc-line bg-sc-panel/60 p-4 animate-fade-in space-y-3">
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-bold uppercase tracking-wider text-sc-muted flex items-center gap-2">
+          <Users className="w-3.5 h-3.5 text-sc-orange" />
+          Znajomi słuchający muzyki ({activeFriends.length})
+        </span>
+      </div>
+
+      <div className="space-y-2 max-h-48 overflow-y-auto scroll-rail pr-1">
+        {activeFriends.map(({ friend, presence }) => {
+          if (!presence || !presence.track) return null;
+          const isSameTrack = currentTrackId && presence.track.id === currentTrackId;
+          const isPlaying = Boolean(presence.isPlaying && presence.online);
+          const isFollowing = syncSession?.mode === 'following' && syncSession?.targetCode === friend.code;
+
+          return (
+            <div
+              key={friend.code}
+              className={clsx(
+                'flex items-center justify-between gap-3 p-2.5 rounded-xl border transition-colors',
+                isSameTrack
+                  ? 'border-sc-orange/40 bg-sc-orange/[0.06]'
+                  : 'border-sc-line bg-black/20 hover:border-white/10'
+              )}
+            >
+              <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                <div className="relative shrink-0">
+                  {presence.avatarUrl ? (
+                    <img
+                      src={presence.avatarUrl}
+                      alt={friend.name}
+                      className="w-8 h-8 rounded-full object-cover ring-1 ring-white/10"
+                    />
+                  ) : (
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-sc-orange to-purple-600 flex items-center justify-center text-xs font-bold text-white shadow-xs">
+                      {friend.name.slice(0, 1).toUpperCase()}
+                    </div>
+                  )}
+                  <span
+                    className={clsx(
+                      'absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full ring-2 ring-sc-panel',
+                      presence.online ? 'bg-emerald-500' : 'bg-neutral-500'
+                    )}
+                  />
+                </div>
+
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs font-bold text-sc-fg truncate">{presence.name || friend.name}</span>
+                    {isSameTrack && (
+                      <span className="px-1.5 py-0.2 rounded-full bg-sc-orange/20 text-sc-orange text-[9px] font-bold">
+                        Ten sam utwór
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[11px] text-sc-muted truncate">
+                    <span className="text-sc-fg/80 truncate max-w-[140px] sm:max-w-[180px]">
+                      {presence.track.title}
+                    </span>
+                    <span>•</span>
+                    <span className="text-sc-dim truncate">{presence.track.artist}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-[10px] tabular-nums text-sc-dim">
+                  {isPlaying ? (
+                    <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      Teraz
+                    </span>
+                  ) : (
+                    formatTimeAgo(presence.timestamp || presence.lastSeen)
+                  )}
+                </span>
+
+                {onFollowFriend && presence.online && (
+                  isFollowing ? (
+                    <button
+                      type="button"
+                      onClick={onStopSync}
+                      className="px-2 py-1 rounded-lg bg-sc-orange text-sc-on-accent text-[10px] font-bold hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                      title="Syncing with friend - click to stop"
+                    >
+                      <Headphones className="w-3 h-3" />
+                      <span>Sync</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onFollowFriend(friend.code)}
+                      className="px-2 py-1 rounded-lg bg-white/5 hover:bg-sc-orange hover:text-sc-on-accent text-sc-muted text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                      title={`Listen with ${friend.name}`}
+                    >
+                      <Play className="w-3 h-3 fill-current" />
+                      <span>Listen</span>
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /** Full-screen "now playing" with large artwork and a full-width visualizer. */
 function NowPlaying({
   p,
@@ -343,12 +503,22 @@ function NowPlaying({
   eq,
   onEq,
   onOpenAdvanced,
+  friends,
+  presences,
+  onFollowFriend,
+  syncSession,
+  onStopSync,
 }: {
   p: Props;
   onClose: () => void;
   eq: number[];
   onEq: (g: number[]) => void;
   onOpenAdvanced: () => void;
+  friends?: Friend[];
+  presences?: Record<string, FriendPresence>;
+  onFollowFriend?: (code: string) => void;
+  syncSession?: SyncSession;
+  onStopSync?: () => void;
 }) {
   const artworkColor = useArtworkColor(p.track?.artwork, p.track?.id);
   const pct = p.duration > 0 ? Math.min(100, (p.currentTime / p.duration) * 100) : 0;
@@ -363,7 +533,7 @@ function NowPlaying({
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [karaokeMode, setKaraokeMode] = useState(() => {
     const saved = localStorage.getItem('sc_karaoke_fullscreen');
-    return saved === null ? true : saved === 'true';
+    return saved === null ? false : saved === 'true';
   });
 
   // Fullscreen Karaoke Synced Lyrics state
@@ -460,9 +630,9 @@ function NowPlaying({
             Now playing
           </div>
           {karaokeMode && (
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sc-orange/20 border border-sc-orange/40 text-[11px] font-bold uppercase tracking-wider text-sc-orange animate-pulse">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sc-orange/20 border border-sc-orange/40 text-[11px] font-bold uppercase tracking-wider text-sc-orange">
               <Mic2 className="w-3.5 h-3.5" />
-              Tryb Karaoke
+              Lyrics
             </span>
           )}
         </div>
@@ -482,10 +652,10 @@ function NowPlaying({
                 ? 'border-sc-orange bg-sc-orange text-white shadow-[0_0_15px_rgba(255,85,0,0.4)]'
                 : 'border-sc-line text-sc-muted hover:text-sc-fg hover:border-sc-orange/50'
             )}
-            title={karaokeMode ? 'Switch to standard view' : 'Turn on karaoke mode (live synchronized lyrics)'}
+            title={karaokeMode ? 'Switch to standard view' : 'Show synchronized lyrics'}
           >
             <Mic2 className="w-3.5 h-3.5" />
-            <span>{karaokeMode ? 'Exit Karaoke' : 'Karaoke Mode'}</span>
+            <span>{karaokeMode ? 'Close Lyrics' : 'Lyrics'}</span>
           </button>
           <button
             onClick={onClose}
@@ -636,7 +806,7 @@ function NowPlaying({
             <div className="flex items-center justify-between pb-4 border-b border-white/5 shrink-0">
               <span className="text-[12px] font-bold uppercase tracking-wider text-sc-muted flex items-center gap-2">
                 <Music4 className="w-4 h-4 text-sc-orange" />
-                {karaokeLyrics?.synced ? 'Synchronized Lyrics (Karaoke)' : 'Lyrics'}
+                {karaokeLyrics?.synced ? 'Synchronized Lyrics' : 'Lyrics'}
               </span>
               {karaokeLyrics?.synced && p.isPlaying && (
                 <label className="flex items-center gap-2 text-[11px] font-medium text-sc-dim cursor-pointer select-none">
@@ -740,28 +910,19 @@ function NowPlaying({
             that scrolls nothing. */}
         <div
           className={clsx(
-            'flex flex-col items-center justify-center gap-6 min-h-0 overflow-y-auto overflow-x-clip scroll-rail',
-            !commentsOpen && 'overflow-y-hidden'
+            'flex flex-col items-center min-h-0 overflow-hidden',
+            commentsOpen ? 'justify-start gap-3' : 'justify-center gap-6'
           )}
         >
           <div
             className={clsx(
-              'w-full flex items-center justify-center shrink-0',
-              // The artwork gives up height as the thread opens, so neither half
-              // has to push the other out of the window. The caps are the old
-              // artwork sizes divided by 0.64, because the padding below eats
-              // 36% of the box, which keeps the artwork itself the same size.
+              'w-full flex items-center justify-center shrink-0 transition-all duration-300',
               commentsOpen
-                ? 'max-w-[min(53vh,500px)]'
+                ? 'max-w-[min(36vh,320px)]'
                 : 'max-w-[min(87vh,720px)]'
             )}
           >
-            {/* 18% of padding on each side is slightly more than the halo's
-                bleed, and `overflow-clip` cuts it off there. The glow still
-                spills past the artwork - it just stops short of anything the
-                layout has to account for. */}
-            <div className="w-full p-[18%] overflow-clip">
-              {/* `relative` because the lyrics panel covers this frame. */}
+            <div className={clsx('w-full overflow-clip transition-all duration-300', commentsOpen ? 'p-[10%]' : 'p-[18%]')}>
               <div className="relative w-full">
                 <AudioBloom
                   getFreq={p.getFreq}
@@ -806,21 +967,20 @@ function NowPlaying({
           </div>
 
           {commentsOpen && p.track && (
-            <div className="w-full max-w-[min(64vh,620px)] shrink-0 animate-fade-in">
-              <div className="max-h-[46vh] overflow-y-auto overflow-x-clip pr-1 scroll-rail">
-                <TrackComments
-                  track={p.track}
-                  me={p.me ?? null}
-                  signedIn={p.signedIn ?? false}
-                  notify={p.notify ?? NOOP_NOTIFY}
-                  currentTime={p.currentTime}
-                  onSeekTo={p.onSeek}
-                  onOpenUser={p.onOpenArtist}
-                  onRequireSignIn={p.onRequireSignIn}
-                  hideHeader
-                  defaultOpen
-                />
-              </div>
+            <div className="w-full flex-1 min-h-0 max-w-[min(64vh,620px)] flex flex-col overflow-hidden animate-fade-in border-t border-white/10 pt-2">
+              <TrackComments
+                track={p.track}
+                me={p.me ?? null}
+                signedIn={p.signedIn ?? false}
+                notify={p.notify ?? NOOP_NOTIFY}
+                currentTime={p.currentTime}
+                onSeekTo={p.onSeek}
+                onOpenUser={p.onOpenArtist}
+                onRequireSignIn={p.onRequireSignIn}
+                hideHeader
+                defaultOpen
+                className="flex-1 min-h-0"
+              />
             </div>
           )}
         </div>
@@ -889,17 +1049,15 @@ function NowPlaying({
             )}
           </div>
 
-          {/* The audience only when it has something to say. Mounted either way, because
-              whether the list is empty is only knowable by asking, and an empty
-              labelled box in the middle of the view reads as a bug. */}
-          {p.track && (
-            <TrackListeners
-              track={p.track}
-              isPlaying={p.isPlaying}
-              onOpenUser={p.onOpenArtist}
-              inline
-            />
-          )}
+          {/* Friends who are currently or recently listening */}
+          <FriendsListeningNow
+            friends={friends}
+            presences={presences}
+            currentTrackId={p.track?.id}
+            onFollowFriend={onFollowFriend}
+            syncSession={syncSession}
+            onStopSync={onStopSync}
+          />
 
           {p.visualizer !== 'off' ? (
             <div className="rounded-2xl border border-sc-line bg-sc-panel/60 p-4 animate-fade-in space-y-2">
@@ -1377,6 +1535,11 @@ export function PlayerBar(p: Props) {
           eq={p.eq}
           onEq={p.onEq}
           onOpenAdvanced={openAdvanced}
+          friends={p.friends}
+          presences={p.presences}
+          onFollowFriend={p.onFollowFriend}
+          syncSession={p.syncSession}
+          onStopSync={p.onStopSync}
         />
       )}
 

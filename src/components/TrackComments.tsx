@@ -64,6 +64,7 @@ interface Props {
   hideHeader?: boolean;
   /** Lets a parent focus the composer when it opens the panel. */
   inputRef?: React.RefObject<HTMLTextAreaElement | null>;
+  className?: string;
 }
 
 export function TrackComments({
@@ -78,6 +79,7 @@ export function TrackComments({
   defaultOpen = false,
   hideHeader = false,
   inputRef: inputRefProp,
+  className,
 }: Props) {
   const [comments, setComments] = useState<Comment[]>([]);
   const [loading, setLoading] = useState(false);
@@ -155,7 +157,7 @@ export function TrackComments({
  * count, which is the only clue that a track has a thread at all.
  */
 return (
-    <div className="flex flex-col min-h-0">
+    <div className={clsx("flex flex-col min-h-0", className)}>
       {!hideHeader && (
         <button
           onClick={() => setOpen((v) => !v)}

@@ -2330,6 +2330,11 @@ if (typeof d.theme === 'string') {
           onOpenFriends={() => setFriendsDrawerOpen((o) => !o)}
           isSyncActive={listenTogether.syncSession.mode !== 'idle'}
           syncTargetName={listenTogether.syncSession.targetName || listenTogether.syncSession.roomName}
+          friends={listenTogether.friends}
+          presences={listenTogether.presences}
+          onFollowFriend={listenTogether.followFriend}
+          syncSession={listenTogether.syncSession}
+          onStopSync={listenTogether.stopSync}
           eq={eq}
           onEq={changeEq}
           visualizer={visualizer}

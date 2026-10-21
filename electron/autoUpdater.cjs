@@ -26,8 +26,8 @@ function initAutoUpdater(win, isDev) {
   mainWindow = win;
   updateState.currentVersion = app.getVersion();
 
-  // Configure update behavior
-  autoUpdater.autoDownload = true;
+  // Configure update behavior - do NOT auto-download without user consent
+  autoUpdater.autoDownload = false;
   autoUpdater.autoInstallOnAppQuit = true;
 
   autoUpdater.on('checking-for-update', () => {

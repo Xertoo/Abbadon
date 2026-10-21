@@ -12,6 +12,7 @@ export interface Track {
   artwork: string;
   genre: string;
   description?: string;
+  album?: string;
   permalinkUrl: string;
   playsCount?: number;
   likesCount?: number;

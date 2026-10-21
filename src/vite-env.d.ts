@@ -66,9 +66,25 @@ interface DesktopBridge {
   spotifyLogin: (clientId: string) => Promise<DesktopSpotifyTokenResult>;
   /** Exchanges a stored refresh token for a fresh access token. */
   spotifyRefresh: (clientId: string, refreshToken: string) => Promise<DesktopSpotifyTokenResult>;
-  /** Saves a signed CDN link into the OS Downloads folder. */
-  download: (url: string, title: string) => Promise<{ ok: boolean; file?: string; error?: string }>;
-  onDownload: (cb: (p: { state: string; file: string }) => void) => () => void;
+  /** Saves a signed CDN link into the OS Downloads/Music folder with full ID3 metadata. */
+  download: (
+    payload:
+      | string
+      | {
+          url: string;
+          title?: string;
+          artist?: string;
+          album?: string;
+          artwork?: string | null;
+          genre?: string;
+          year?: number | string;
+          downloadPath?: string;
+        },
+    legacyTitle?: string
+  ) => Promise<{ ok: boolean; file?: string; error?: string }>;
+  chooseDownloadFolder?: (currentPath?: string) => Promise<{ ok: boolean; path?: string; canceled?: boolean }>;
+  getDefaultDownloadDir?: () => Promise<string>;
+  onDownload: (cb: (p: { state: string; file: string; receivedBytes?: number; totalBytes?: number }) => void) => () => void;
   onMediaCommand: (cb: (action: 'toggle' | 'next' | 'prev' | 'stop') => void) => () => void;
   onNavCommand: (cb: (action: 'back' | 'forward') => void) => () => void;
   updatePlayerState?: (state: {

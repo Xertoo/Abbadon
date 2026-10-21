@@ -23,6 +23,7 @@ import {
   type StreamPolicy,
 } from '../lib/soundcloud';
 import { isSoundCloudTrack } from '../lib/audius';
+import { loadPrefs } from '../lib/prefs';
 import {
   addTrackLocally,
   removeTrackLocally,
@@ -827,13 +828,33 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
         // The signed CDN link is single-use, so a separate resolution is done
         // here rather than reusing the one the player is listening to.
         const { candidates } = await resolveStreamUrls(track.id);
-        const pick = candidates[0];
+        const pick =
+          candidates.find((c) => c.format.includes('progressive') || c.format.includes('mp3')) ||
+          candidates[0];
         if (!pick) {
           notify(`No downloadable stream for "${track.title}"`);
           return;
         }
-        const res = await bridge.download(pick.url, `${track.artist} - ${track.title}`);
-        if (!res.ok) notify(res.error ?? 'Download was refused');
+
+        const prefs = loadPrefs();
+        const res = await bridge.download({
+          url: pick.url,
+          title: track.title,
+          artist: track.artist,
+          album: track.album || track.title,
+          artwork: track.artwork,
+          genre: track.genre,
+          year: track.createdAt ? new Date(track.createdAt).getFullYear() : undefined,
+          downloadPath: prefs.downloadPath || undefined,
+        });
+
+        if (!res.ok) {
+          notify(res.error ?? 'Download was refused');
+        } else if (res.file) {
+          const parts = res.file.split(/[\\/]/);
+          const fileName = parts[parts.length - 1] || `${track.artist} - ${track.title}.mp3`;
+          notify(`Pobrano utwór: ${fileName}`);
+        }
       } catch {
         notify('Could not start that download');
       } finally {

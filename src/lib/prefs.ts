@@ -137,6 +137,8 @@ export interface Prefs {
   highQualityAudio: boolean;
   /** Automatically skip 30s leading/trailing copyright silences in tracks. */
   autoTrimSilence: boolean;
+  /** Custom destination folder for track downloads (empty string = default Windows Music). */
+  downloadPath: string;
 }
 
 const KEY = 'sc9000:prefs';
@@ -198,6 +200,7 @@ export function defaultPrefs(): Prefs {
     notificationsEnabled: true,
     highQualityAudio: true,
     autoTrimSilence: true,
+    downloadPath: '',
   };
 }
 
@@ -295,6 +298,8 @@ export function loadPrefs(): Prefs {
         typeof saved.highQualityAudio === 'boolean' ? saved.highQualityAudio : base.highQualityAudio,
       autoTrimSilence:
         typeof saved.autoTrimSilence === 'boolean' ? saved.autoTrimSilence : base.autoTrimSilence,
+      downloadPath:
+        typeof saved.downloadPath === 'string' ? saved.downloadPath : base.downloadPath,
     };
   } catch {
     return base;

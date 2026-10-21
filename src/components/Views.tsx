@@ -45,6 +45,7 @@ import {
   Server,
   Radio,
   Download,
+  Folder,
   ArrowUpCircle,
   Waves,
   Headphones,
@@ -1679,6 +1680,91 @@ function SoftwareUpdatesPanel() {
   );
 }
 
+function DownloadsFolderPanel({
+  downloadPath,
+  onChangePath,
+}: {
+  downloadPath: string;
+  onChangePath: (path: string) => void;
+}) {
+  const [defaultDir, setDefaultDir] = useState<string>('');
+
+  useEffect(() => {
+    window.desktop?.getDefaultDownloadDir?.().then((dir) => {
+      if (dir) setDefaultDir(dir);
+    });
+  }, []);
+
+  const activePath = downloadPath || defaultDir || 'Windows Music';
+
+  const handleChoose = async () => {
+    if (!window.desktop?.chooseDownloadFolder) return;
+    const res = await window.desktop.chooseDownloadFolder(downloadPath || defaultDir);
+    if (res?.ok && res.path) {
+      onChangePath(res.path);
+    }
+  };
+
+  const handleReset = () => {
+    onChangePath('');
+  };
+
+  return (
+    <div className="rounded-2xl border border-sc-line bg-sc-panel p-5 space-y-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-sc-orange/10 flex items-center justify-center text-sc-orange">
+            <Download className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="font-bold text-sc-fg text-sm">Downloads Folder</h3>
+            <p className="text-xs text-sc-muted mt-0.5">
+              Tracks are saved as MP3 with full ID3 tags (artist, title, cover art) in this folder.
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleChoose}
+            className="px-3.5 py-1.5 rounded-xl bg-sc-orange hover:bg-sc-orange/90 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-sc-orange/25 transition-all cursor-pointer active:scale-95"
+          >
+            <Folder className="w-3.5 h-3.5" />
+            Change Folder
+          </button>
+          {downloadPath && (
+            <button
+              type="button"
+              onClick={handleReset}
+              className="px-3 py-1.5 rounded-xl border border-sc-line text-xs font-medium text-sc-muted hover:text-sc-fg hover:border-neutral-500 transition-colors"
+              title="Reset to default Windows Music folder"
+            >
+              Reset to Default
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="p-3 rounded-xl border border-sc-line bg-sc-panel-2/40 flex items-center justify-between gap-3 text-xs">
+        <div className="min-w-0 flex-1">
+          <div className="text-[11px] uppercase tracking-wider font-semibold text-sc-muted">
+            Destination Path
+          </div>
+          <div className="text-[12.5px] font-mono text-sc-fg truncate mt-0.5 select-all" title={activePath}>
+            {activePath}
+          </div>
+        </div>
+        {!downloadPath && (
+          <span className="shrink-0 text-[11px] px-2.5 py-0.5 rounded-full bg-sc-orange/15 text-sc-orange font-medium">
+            Default (Windows Music)
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function SettingsView({
   prefs,
   onPref,
@@ -2653,6 +2739,11 @@ export function SettingsView({
           </Disclosure>
 
           <SoftwareUpdatesPanel />
+
+          <DownloadsFolderPanel
+            downloadPath={prefs.downloadPath}
+            onChangePath={(path) => onPref('downloadPath', path)}
+          />
 
           <ProxyPanel prefs={prefs} onPref={onPref} />
 

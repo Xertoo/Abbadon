@@ -38,6 +38,7 @@
     "electron-updater": "^6.8.9",
     "hls.js": "^1.7.3",
     "lucide-react": "^1.49.0",
+    "node-id3": "^0.2.9",
     "peerjs": "^1.5.5",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"

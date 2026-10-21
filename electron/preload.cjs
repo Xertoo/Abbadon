@@ -42,10 +42,17 @@ contextBridge.exposeInMainWorld('desktop', {
     ipcRenderer.invoke('spotify:refresh', { clientId, refreshToken }),
 
   /**
-   * Saves a signed CDN link through the session, into the OS Downloads
-   * folder. Only sndcdn.com links are accepted by the main process.
+   * Saves a signed CDN link through the session, into the OS Music/Downloads
+   * folder with full ID3 metadata tags (artist, title, album, year, artwork).
    */
-  download: (url, title) => ipcRenderer.invoke('sc:download', { url, title }),
+  download: (payload, legacyTitle) => {
+    if (typeof payload === 'string') {
+      return ipcRenderer.invoke('sc:download', { url: payload, title: legacyTitle });
+    }
+    return ipcRenderer.invoke('sc:download', payload);
+  },
+  chooseDownloadFolder: (currentPath) => ipcRenderer.invoke('dialog:chooseFolder', currentPath),
+  getDefaultDownloadDir: () => ipcRenderer.invoke('app:getDefaultDownloadDir'),
   /** Reports download lifecycle so the UI can say where the file went. */
   onDownload: (cb) => {
     const handler = (_e, payload) => cb(payload);

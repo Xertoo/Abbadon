@@ -10,10 +10,13 @@ const {
   Tray,
   Notification,
   net,
+  dialog,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const crypto = require('node:crypto');
+const { execFile } = require('node:child_process');
+const NodeID3 = require('node-id3');
 const { proxyManager, PRESETS } = require('./proxyManager.cjs');
 const { initAutoUpdater } = require('./autoUpdater.cjs');
 
@@ -941,14 +944,39 @@ ipcMain.handle('app-info', () => ({
 }));
 
 /* ------------------------------------------------------------------ *
- * Downloads
- *
- * The signed CDN link is single-use and short-lived, so it has to be handed to
- * the session as-is. `will-download` is where the filename is decided, because
- * by the time downloadURL() returns there is nothing left to rename.
+ * Downloads & yt-dlp backend
  * ------------------------------------------------------------------ */
 
+const getYtDlpPath = () => {
+  const candidates = [
+    path.join(__dirname, 'bin', 'yt-dlp.exe'),
+    path.join(__dirname, '..', 'bin', 'yt-dlp.exe'),
+    path.join(process.resourcesPath || '', 'electron', 'bin', 'yt-dlp.exe'),
+    path.join(process.resourcesPath || '', 'bin', 'yt-dlp.exe'),
+    path.join(app.getAppPath(), 'electron', 'bin', 'yt-dlp.exe'),
+    path.join(app.getAppPath(), 'bin', 'yt-dlp.exe'),
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch {}
+  }
+  return null;
+};
+
 const ILLEGAL_FILENAME = /[\\/:*?"<>|]/g;
+
+function getDefaultDownloadDir() {
+  try {
+    const musicDir = app.getPath('music');
+    if (musicDir && fs.existsSync(musicDir)) return musicDir;
+  } catch {}
+  try {
+    return app.getPath('downloads');
+  } catch {
+    return app.getPath('userData');
+  }
+}
 
 /** Keeps a track title from turning into a path or an invalid Windows name. */
 function safeFileName(name, fallback) {
@@ -957,23 +985,78 @@ function safeFileName(name, fallback) {
     .replace(/\s+/g, ' ')
     .trim()
     .replace(/[. ]+$/, '');
-  return (base || fallback || 'soundcloud').slice(0, 120);
+  return (base || fallback || 'track').slice(0, 140);
 }
 
-/** Only http(s) to a SoundCloud CDN or domain; anything else is refused outright. */
+function makeTrackFileName(artist, title) {
+  let combined = '';
+  const a = (artist || '').trim();
+  const t = (title || '').trim();
+  if (a && t) {
+    if (t.toLowerCase().startsWith(a.toLowerCase() + ' -') || t.toLowerCase().startsWith(a.toLowerCase() + ' –')) {
+      combined = t;
+    } else {
+      combined = `${a} - ${t}`;
+    }
+  } else {
+    combined = t || a || 'track';
+  }
+  const clean = safeFileName(combined, 'track');
+  return `${clean}.mp3`;
+}
+
+function getUniqueFilePath(dir, fileName) {
+  const ext = path.extname(fileName);
+  const base = path.basename(fileName, ext);
+  let target = path.join(dir, fileName);
+  let counter = 1;
+  while (fs.existsSync(target)) {
+    target = path.join(dir, `${base} (${counter})${ext}`);
+    counter++;
+  }
+  return target;
+}
+
+/** Only http(s) to permitted audio sources. */
 function isDownloadableUrl(url) {
   try {
     const parsed = new URL(url);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') return false;
+    const h = parsed.hostname.toLowerCase();
     return (
-      (parsed.protocol === 'https:' || parsed.protocol === 'http:') &&
-      isAllowedHost(parsed.hostname)
+      isAllowedHost(h) ||
+      h.endsWith('sndcdn.com') ||
+      h.endsWith('googlevideo.com') ||
+      h.endsWith('audius.co') ||
+      h.endsWith('youtube.com') ||
+      h.endsWith('youtu.be')
     );
   } catch {
     return false;
   }
 }
 
-/** Registers the save-path hook. Called once the app is ready. */
+async function fetchArtworkBuffer(artworkUrl) {
+  if (!artworkUrl || typeof artworkUrl !== 'string') return null;
+  const highResUrl = artworkUrl.replace(/-(?:large|t\d+x\d+|crop|badge|small)\.([a-zA-Z0-9]+)$/, '-t500x500.$1');
+  const urlsToTry = [highResUrl, artworkUrl];
+  for (const u of urlsToTry) {
+    try {
+      const resp = await net.fetch(u);
+      if (resp.ok) {
+        const ab = await resp.arrayBuffer();
+        const buf = Buffer.from(ab);
+        const mime = resp.headers.get('content-type') || (u.endsWith('.png') ? 'image/png' : 'image/jpeg');
+        return { buf, mime };
+      }
+    } catch {
+      // try next
+    }
+  }
+  return null;
+}
+
+/** Fallback listener for any default session downloads */
 function watchDownloads() {
   session.defaultSession.on('will-download', (_event, item) => {
     const suggested = item.getFilename();
@@ -986,8 +1069,8 @@ function watchDownloads() {
       }
     })();
 
-    const base = safeFileName(suggested.replace(/\.[^.]+$/, ''), 'soundcloud');
-    const target = path.join(app.getPath('downloads'), `${base}${ext}`);
+    const base = safeFileName(suggested.replace(/\.[^.]+$/, ''), 'download');
+    const target = getUniqueFilePath(getDefaultDownloadDir(), `${base}${ext}`);
 
     item.setSavePath(target);
     item.on('updated', (_e, state) => {
@@ -1003,18 +1086,145 @@ function watchDownloads() {
   });
 }
 
-ipcMain.handle('sc:download', async (_e, { url, title }) => {
-  if (!url || !isDownloadableUrl(url)) {
-    return { ok: false, error: 'refused: not a SoundCloud CDN link' };
+ipcMain.handle('app:getDefaultDownloadDir', () => {
+  return getDefaultDownloadDir();
+});
+
+ipcMain.handle('dialog:chooseFolder', async (_e, currentPath) => {
+  const defaultPath =
+    currentPath && typeof currentPath === 'string' && fs.existsSync(currentPath)
+      ? currentPath
+      : getDefaultDownloadDir();
+  const res = await dialog.showOpenDialog(win || BrowserWindow.getFocusedWindow(), {
+    title: 'Select Download Folder',
+    defaultPath,
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (res.canceled || !res.filePaths.length) {
+    return { ok: false, canceled: true };
   }
+  return { ok: true, path: res.filePaths[0] };
+});
+
+ipcMain.handle('sc:download', async (_e, payload) => {
+  const {
+    url,
+    title,
+    artist,
+    album,
+    artwork,
+    genre,
+    year,
+    downloadPath: customDownloadPath,
+  } = (typeof payload === 'string' ? { url: payload } : payload) || {};
+
+  if (!url || !isDownloadableUrl(url)) {
+    return { ok: false, error: 'refused: not a downloadable audio link' };
+  }
+  const dir =
+    customDownloadPath && typeof customDownloadPath === 'string' && fs.existsSync(customDownloadPath)
+      ? customDownloadPath
+      : getDefaultDownloadDir();
+
   try {
-    // The session only exists once the app is ready, and this handler is
-    // registered at module load, so the ready state is checked rather than
-    // assumed.
-    if (!app.isReady()) return { ok: false, error: 'app is not ready yet' };
-    session.defaultSession.downloadURL(url);
-    return { ok: true, file: path.join(app.getPath('downloads'), `${safeFileName(title, 'soundcloud')}`) };
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+  } catch (dirErr) {
+    return { ok: false, error: `Could not access or create directory: ${dir}` };
+  }
+
+  const fileName = makeTrackFileName(artist, title);
+  const targetFile = getUniqueFilePath(dir, fileName);
+  const tempFile = `${targetFile}.part`;
+
+  try {
+    if (url.includes('.m3u8')) {
+      const binPath = getYtDlpPath();
+      if (!binPath) {
+        return { ok: false, error: 'Cannot download HLS stream without yt-dlp binary' };
+      }
+      await new Promise((resolve, reject) => {
+        execFile(binPath, ['-o', tempFile, url], { timeout: 120000 }, (err) => {
+          if (err) reject(err);
+          else resolve();
+        });
+      });
+    } else {
+      const resp = await net.fetch(url);
+      if (!resp.ok) {
+        return { ok: false, error: `Download failed with HTTP ${resp.status}` };
+      }
+
+      const totalBytes = Number(resp.headers.get('content-length')) || 0;
+      let receivedBytes = 0;
+
+      const fileStream = fs.createWriteStream(tempFile);
+      const reader = resp.body.getReader();
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          fileStream.write(Buffer.from(value));
+          receivedBytes += value.length;
+          if (win && !win.isDestroyed() && totalBytes > 0) {
+            win.webContents.send('download:progress', {
+              state: 'progressing',
+              receivedBytes,
+              totalBytes,
+              file: targetFile,
+            });
+          }
+        }
+      } finally {
+        await new Promise((resolve) => fileStream.end(resolve));
+      }
+    }
+
+    if (fs.existsSync(tempFile)) {
+      fs.renameSync(tempFile, targetFile);
+    }
+
+    // Embed ID3 tags
+    try {
+      let artworkData = null;
+      if (artwork) {
+        artworkData = await fetchArtworkBuffer(artwork);
+      }
+
+      const tags = {
+        title: title || '',
+        artist: artist || '',
+        album: album || title || '',
+      };
+      if (year) tags.year = String(year);
+      if (genre) tags.genre = String(genre);
+      if (artworkData?.buf) {
+        tags.image = {
+          mime: artworkData.mime,
+          type: { id: 3, name: 'front cover' },
+          description: 'Front Cover',
+          imageBuffer: artworkData.buf,
+        };
+      }
+      NodeID3.write(tags, targetFile);
+    } catch (tagErr) {
+      console.warn('Failed to embed ID3 tags:', tagErr);
+    }
+
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('download:progress', {
+        state: 'completed',
+        file: targetFile,
+      });
+    }
+
+    return { ok: true, file: targetFile };
   } catch (err) {
+    try {
+      if (fs.existsSync(tempFile)) fs.unlinkSync(tempFile);
+    } catch {}
     return { ok: false, error: err instanceof Error ? err.message : 'download failed' };
   }
 });
@@ -1088,25 +1298,6 @@ ipcMain.handle('sc:refresh-proxies', () => {
 /* ------------------------------------------------------------------ *
  * Official Stream Resolver (Native yt-dlp backend for Go+/blocked songs)
  * ------------------------------------------------------------------ */
-
-const { execFile } = require('node:child_process');
-
-const getYtDlpPath = () => {
-  const candidates = [
-    path.join(__dirname, 'bin', 'yt-dlp.exe'),
-    path.join(__dirname, '..', 'bin', 'yt-dlp.exe'),
-    path.join(process.resourcesPath || '', 'electron', 'bin', 'yt-dlp.exe'),
-    path.join(process.resourcesPath || '', 'bin', 'yt-dlp.exe'),
-    path.join(app.getAppPath(), 'electron', 'bin', 'yt-dlp.exe'),
-    path.join(app.getAppPath(), 'bin', 'yt-dlp.exe'),
-  ];
-  for (const p of candidates) {
-    try {
-      if (fs.existsSync(p)) return p;
-    } catch {}
-  }
-  return null;
-};
 
 const officialStreamCache = new Map();
 const inFlightResolutions = new Map();

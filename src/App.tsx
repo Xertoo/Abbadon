@@ -1567,16 +1567,44 @@ if (typeof d.theme === 'string') {
     return () => window.clearTimeout(t);
   }, [volume, muted, prefs.rememberVolume, setPref]);
 
-  // Hardware media keys from the Electron shell
+  // Hardware media keys & Global Shortcuts from the Electron shell
   useEffect(() => {
-    const off = window.desktop?.onMediaCommand((action) => {
+    const off = window.desktop?.onMediaCommand((action: string) => {
       if (action === 'toggle') toggle();
       else if (action === 'next') next();
       else if (action === 'prev') prev();
+      else if (action === 'like') { if (track) void api.toggleLike(track); }
+      else if (action === 'shuffle') setShuffle((s) => !s);
+      else if (action === 'repeat') setRepeat((r) => (r === 'off' ? 'all' : r === 'all' ? 'one' : 'off'));
+      else if (action === 'volume-up') setVolume((v) => Math.min(1, Number((v + 0.05).toFixed(2))));
+      else if (action === 'volume-down') setVolume((v) => Math.max(0, Number((v - 0.05).toFixed(2))));
       else setPlaying(false);
     });
     return () => off?.();
-  }, [toggle, next, prev]);
+  }, [toggle, next, prev, setVolume, track, api]);
+
+  // Sync Global Shortcuts to Electron main process
+  useEffect(() => {
+    if (window.desktop?.updateGlobalShortcuts) {
+      window.desktop.updateGlobalShortcuts({
+        enabled: prefs.globalShortcutsEnabled,
+        toggle: prefs.shortcutToggle,
+        next: prefs.shortcutNext,
+        prev: prefs.shortcutPrev,
+        volumeUp: prefs.shortcutVolumeUp,
+        volumeDown: prefs.shortcutVolumeDown,
+        miniPlayer: prefs.shortcutMiniPlayer,
+      });
+    }
+  }, [
+    prefs.globalShortcutsEnabled,
+    prefs.shortcutToggle,
+    prefs.shortcutNext,
+    prefs.shortcutPrev,
+    prefs.shortcutVolumeUp,
+    prefs.shortcutVolumeDown,
+    prefs.shortcutMiniPlayer,
+  ]);
 
   // Desktop integration: Tray, Discord Rich Presence, and OS Notifications
   useEffect(() => {

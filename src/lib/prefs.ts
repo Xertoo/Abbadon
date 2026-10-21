@@ -139,6 +139,25 @@ export interface Prefs {
   autoTrimSilence: boolean;
   /** Custom destination folder for track downloads (empty string = default Windows Music). */
   downloadPath: string;
+  /** Mini Player preferences */
+  miniAlwaysOnTop: boolean;
+  miniOpacity: number;
+  miniBlur: 'none' | 'subtle' | 'frosted' | 'heavy' | 'solid';
+  miniShowProgress: boolean;
+  miniShowVolume: boolean;
+  miniShowVisualizer: boolean;
+  miniShowPrevNext: boolean;
+  miniShowLike: boolean;
+  miniShowShuffle: boolean;
+  miniShowRepeat: boolean;
+  /** Global Media Shortcuts */
+  globalShortcutsEnabled: boolean;
+  shortcutToggle: string;
+  shortcutNext: string;
+  shortcutPrev: string;
+  shortcutVolumeUp: string;
+  shortcutVolumeDown: string;
+  shortcutMiniPlayer: string;
 }
 
 const KEY = 'sc9000:prefs';
@@ -201,6 +220,23 @@ export function defaultPrefs(): Prefs {
     highQualityAudio: true,
     autoTrimSilence: true,
     downloadPath: '',
+    miniAlwaysOnTop: true,
+    miniOpacity: 0.92,
+    miniBlur: 'heavy',
+    miniShowProgress: true,
+    miniShowVolume: true,
+    miniShowVisualizer: true,
+    miniShowPrevNext: true,
+    miniShowLike: false,
+    miniShowShuffle: false,
+    miniShowRepeat: false,
+    globalShortcutsEnabled: true,
+    shortcutToggle: 'Ctrl+Alt+Space',
+    shortcutNext: 'Ctrl+Alt+Right',
+    shortcutPrev: 'Ctrl+Alt+Left',
+    shortcutVolumeUp: 'Ctrl+Alt+Up',
+    shortcutVolumeDown: 'Ctrl+Alt+Down',
+    shortcutMiniPlayer: 'Ctrl+Alt+M',
   };
 }
 
@@ -300,6 +336,40 @@ export function loadPrefs(): Prefs {
         typeof saved.autoTrimSilence === 'boolean' ? saved.autoTrimSilence : base.autoTrimSilence,
       downloadPath:
         typeof saved.downloadPath === 'string' ? saved.downloadPath : base.downloadPath,
+      miniAlwaysOnTop:
+        typeof saved.miniAlwaysOnTop === 'boolean' ? saved.miniAlwaysOnTop : base.miniAlwaysOnTop,
+      miniOpacity: clampRange(saved.miniOpacity, base.miniOpacity, 0.2, 1.0),
+      miniBlur: ['none', 'subtle', 'frosted', 'heavy', 'solid'].includes(saved.miniBlur as any)
+        ? (saved.miniBlur as any)
+        : base.miniBlur,
+      miniShowProgress:
+        typeof saved.miniShowProgress === 'boolean' ? saved.miniShowProgress : base.miniShowProgress,
+      miniShowVolume:
+        typeof saved.miniShowVolume === 'boolean' ? saved.miniShowVolume : base.miniShowVolume,
+      miniShowVisualizer:
+        typeof saved.miniShowVisualizer === 'boolean' ? saved.miniShowVisualizer : base.miniShowVisualizer,
+      miniShowPrevNext:
+        typeof saved.miniShowPrevNext === 'boolean' ? saved.miniShowPrevNext : base.miniShowPrevNext,
+      miniShowLike:
+        typeof saved.miniShowLike === 'boolean' ? saved.miniShowLike : base.miniShowLike,
+      miniShowShuffle:
+        typeof saved.miniShowShuffle === 'boolean' ? saved.miniShowShuffle : base.miniShowShuffle,
+      miniShowRepeat:
+        typeof saved.miniShowRepeat === 'boolean' ? saved.miniShowRepeat : base.miniShowRepeat,
+      globalShortcutsEnabled:
+        typeof saved.globalShortcutsEnabled === 'boolean' ? saved.globalShortcutsEnabled : base.globalShortcutsEnabled,
+      shortcutToggle:
+        typeof saved.shortcutToggle === 'string' && saved.shortcutToggle ? saved.shortcutToggle : base.shortcutToggle,
+      shortcutNext:
+        typeof saved.shortcutNext === 'string' && saved.shortcutNext ? saved.shortcutNext : base.shortcutNext,
+      shortcutPrev:
+        typeof saved.shortcutPrev === 'string' && saved.shortcutPrev ? saved.shortcutPrev : base.shortcutPrev,
+      shortcutVolumeUp:
+        typeof saved.shortcutVolumeUp === 'string' && saved.shortcutVolumeUp ? saved.shortcutVolumeUp : base.shortcutVolumeUp,
+      shortcutVolumeDown:
+        typeof saved.shortcutVolumeDown === 'string' && saved.shortcutVolumeDown ? saved.shortcutVolumeDown : base.shortcutVolumeDown,
+      shortcutMiniPlayer:
+        typeof saved.shortcutMiniPlayer === 'string' && saved.shortcutMiniPlayer ? saved.shortcutMiniPlayer : base.shortcutMiniPlayer,
     };
   } catch {
     return base;

@@ -1622,15 +1622,18 @@ ipcMain.handle('sc:set-discord-client-id', (_e, newId) => {
   }
 });
 
+let isMiniPinned = true;
+let miniCustomPos = null;
+
 function createTrayWindow() {
   if (trayWin && !trayWin.isDestroyed()) return trayWin;
   trayWin = new BrowserWindow({
     width: 360,
-    height: 195,
+    height: 205,
     show: false,
     frame: false,
     resizable: false,
-    alwaysOnTop: true,
+    alwaysOnTop: isMiniPinned,
     skipTaskbar: true,
     transparent: true,
     backgroundColor: '#00000000',
@@ -1651,8 +1654,14 @@ function createTrayWindow() {
   trayWin.loadURL(url);
 
   trayWin.on('blur', () => {
-    if (trayWin && !trayWin.isDestroyed() && trayWin.isVisible()) {
+    if (!isMiniPinned && trayWin && !trayWin.isDestroyed() && trayWin.isVisible()) {
       trayWin.hide();
+    }
+  });
+
+  trayWin.on('moved', () => {
+    if (trayWin && !trayWin.isDestroyed()) {
+      miniCustomPos = trayWin.getPosition();
     }
   });
 
@@ -1667,7 +1676,9 @@ function toggleTrayWindow() {
     trayWin.hide();
     return;
   }
-  if (tray) {
+  if (miniCustomPos && Array.isArray(miniCustomPos)) {
+    trayWin.setPosition(miniCustomPos[0], miniCustomPos[1], false);
+  } else if (tray) {
     const { screen } = require('electron');
     const trayBounds = tray.getBounds();
     const winBounds = trayWin.getBounds();
@@ -1687,9 +1698,11 @@ function toggleTrayWindow() {
     }
     trayWin.setPosition(x, y, false);
   }
+  trayWin.setAlwaysOnTop(isMiniPinned, 'screen-saver');
   trayWin.show();
   trayWin.focus();
   trayWin.webContents.send('sc:sync-tray-player', lastPlaybackState);
+  trayWin.webContents.send('sc:sync-mini-pinned', isMiniPinned);
 }
 
 function initTray() {
@@ -1830,6 +1843,12 @@ ipcMain.on('mini:command', (_e, { action, value }) => {
     }
   } else if (action === 'hide') {
     if (trayWin && !trayWin.isDestroyed()) trayWin.hide();
+  } else if (action === 'pin') {
+    isMiniPinned = Boolean(value);
+    if (trayWin && !trayWin.isDestroyed()) {
+      trayWin.setAlwaysOnTop(isMiniPinned, 'screen-saver');
+      trayWin.webContents.send('sc:sync-mini-pinned', isMiniPinned);
+    }
   } else if (action === 'seek') {
     if (win && !win.isDestroyed()) {
       win.webContents.send('seek-command', value);
@@ -1899,6 +1918,75 @@ app.on('second-instance', (_event, argv) => {
       handleProtocolUrl(deepLink);
     }
   }
+});
+
+let userShortcuts = {
+  enabled: true,
+  toggle: 'Ctrl+Alt+Space',
+  next: 'Ctrl+Alt+Right',
+  prev: 'Ctrl+Alt+Left',
+  volumeUp: 'Ctrl+Alt+Up',
+  volumeDown: 'Ctrl+Alt+Down',
+  miniPlayer: 'Ctrl+Alt+M',
+};
+
+function registerAllGlobalShortcuts() {
+  globalShortcut.unregisterAll();
+
+  // Always register hardware media keys
+  const hardwareKeys = {
+    MediaPlayPause: 'toggle',
+    MediaNextTrack: 'next',
+    MediaPreviousTrack: 'prev',
+    MediaStop: 'stop',
+  };
+  for (const [accel, action] of Object.entries(hardwareKeys)) {
+    try {
+      globalShortcut.register(accel, () => {
+        if (win && !win.isDestroyed()) win.webContents.send('media-command', action);
+      });
+    } catch {}
+  }
+
+  if (!userShortcuts.enabled) return;
+
+  const mapping = [
+    { key: userShortcuts.toggle, action: 'toggle' },
+    { key: userShortcuts.next, action: 'next' },
+    { key: userShortcuts.prev, action: 'prev' },
+    { key: userShortcuts.volumeUp, action: 'volume-up' },
+    { key: userShortcuts.volumeDown, action: 'volume-down' },
+    { key: userShortcuts.miniPlayer, action: 'mini-toggle' },
+  ];
+
+  for (const item of mapping) {
+    if (item.key && typeof item.key === 'string' && item.key.trim()) {
+      try {
+        globalShortcut.register(item.key.trim(), () => {
+          if (item.action === 'mini-toggle') {
+            toggleTrayWindow();
+          } else if (win && !win.isDestroyed()) {
+            win.webContents.send('media-command', item.action);
+          }
+        });
+      } catch (err) {
+        console.warn(`[shortcuts] Failed to register: ${item.key}`, err?.message);
+      }
+    }
+  }
+}
+
+ipcMain.handle('shortcuts:update', (_e, shortcuts) => {
+  if (shortcuts && typeof shortcuts === 'object') {
+    userShortcuts = { ...userShortcuts, ...shortcuts };
+    registerAllGlobalShortcuts();
+    return { ok: true };
+  }
+  return { ok: false, error: 'Invalid shortcut payload' };
+});
+
+ipcMain.handle('shortcuts:get', () => {
+  return { ok: true, shortcuts: userShortcuts };
 });
 
 app.whenReady().then(async () => {
@@ -1980,22 +2068,7 @@ app.whenReady().then(async () => {
   updateTrayFn = initTray();
   initDiscordRPC();
 
-  // Hardware media keys routed to the renderer.
-  const keys = {
-    MediaPlayPause: 'toggle',
-    MediaNextTrack: 'next',
-    MediaPreviousTrack: 'prev',
-    MediaStop: 'stop',
-  };
-  for (const [accel, action] of Object.entries(keys)) {
-    try {
-      globalShortcut.register(accel, () => {
-        if (win) win.webContents.send('media-command', action);
-      });
-    } catch {
-      /* accelerator unavailable on this keyboard */
-    }
-  }
+  registerAllGlobalShortcuts();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

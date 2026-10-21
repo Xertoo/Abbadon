@@ -83,6 +83,11 @@ contextBridge.exposeInMainWorld('desktop', {
     ipcRenderer.on('sc:sync-tray-player', handler);
     return () => ipcRenderer.removeListener('sc:sync-tray-player', handler);
   },
+  onMiniPinnedSync: (cb) => {
+    const handler = (_e, pinned) => cb(pinned);
+    ipcRenderer.on('sc:sync-mini-pinned', handler);
+    return () => ipcRenderer.removeListener('sc:sync-mini-pinned', handler);
+  },
   sendMiniCommand: (action, value) => {
     ipcRenderer.send('mini:command', { action, value });
   },
@@ -127,4 +132,7 @@ contextBridge.exposeInMainWorld('desktop', {
     ipcRenderer.on('updater:status-changed', handler);
     return () => ipcRenderer.removeListener('updater:status-changed', handler);
   },
+  /** Global media shortcuts */
+  updateGlobalShortcuts: (shortcuts) => ipcRenderer.invoke('shortcuts:update', shortcuts),
+  getGlobalShortcuts: () => ipcRenderer.invoke('shortcuts:get'),
 });

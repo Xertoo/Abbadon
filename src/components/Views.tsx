@@ -51,6 +51,16 @@ import {
   Headphones,
   Keyboard,
   Scissors,
+  Pin,
+  Maximize2,
+  Eye,
+  Heart,
+  Shuffle,
+  Repeat,
+  Play,
+  SkipBack,
+  SkipForward,
+  X,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAutoUpdater } from '../hooks/useAutoUpdater';
@@ -1765,6 +1775,465 @@ function DownloadsFolderPanel({
   );
 }
 
+function MiniPlayerSettingsPanel({
+  prefs,
+  onPref,
+}: {
+  prefs: Prefs;
+  onPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
+}) {
+  const BLUR_OPTIONS = [
+    { id: 'none', label: 'Brak / Transparent', desc: 'Pełna przezroczystość bez rozmycia tła' },
+    { id: 'subtle', label: 'Lekki blur', desc: 'Subtelne rozmycie szkła (8px)' },
+    { id: 'frosted', label: 'Matowe szkło', desc: 'Eleganckie matowe szkło akrylowe (16px)' },
+    { id: 'heavy', label: 'Głęboki akryl', desc: 'Mocne, nasycone rozmycie tła (40px)' },
+    { id: 'solid', label: 'Pełne krycie (Solid)', desc: 'Klasyczne tło bez przezroczystości' },
+  ] as const;
+
+  const BUTTON_TOGGLES: { key: keyof Prefs; label: string; desc: string }[] = [
+    { key: 'miniShowPrevNext', label: 'Poprzedni / Następny utwór', desc: 'Przyciski przewijania do poprzedniego i następnego utworu' },
+    { key: 'miniShowVolume', label: 'Suwak głośności i wyciszenie', desc: 'Kontrola poziomu dźwięku z możliwością szybkiego wyciszenia' },
+    { key: 'miniShowProgress', label: 'Pasek postępu i czas', desc: 'Interaktywny pasek przewijania pozycji utworu' },
+    { key: 'miniShowVisualizer', label: 'Animowane słupki spektrum', desc: 'Mini wizualizator częstotliwości audio dopasowany do motywu' },
+    { key: 'miniShowLike', label: 'Przycisk Polub (Serduszko)', desc: 'Szybkie dodawanie utworu do polubionych' },
+    { key: 'miniShowShuffle', label: 'Przycisk Losowo (Shuffle)', desc: 'Włączanie i wyłączanie losowej kolejności' },
+    { key: 'miniShowRepeat', label: 'Przycisk Powtarzaj (Repeat)', desc: 'Przełączanie trybu pętli (jeden / wszystkie / wyłączony)' },
+    { key: 'miniAlwaysOnTop', label: 'Zawsze na wierzchu (Always on Top)', desc: 'Domyślne przypinanie okna ponad innymi aplikacjami' },
+  ];
+
+  const previewBlurClass =
+    prefs.miniBlur === 'none'
+      ? 'backdrop-blur-none'
+      : prefs.miniBlur === 'subtle'
+        ? 'backdrop-blur-sm'
+        : prefs.miniBlur === 'frosted'
+          ? 'backdrop-blur-md'
+          : prefs.miniBlur === 'solid'
+            ? ''
+            : 'backdrop-blur-2xl';
+
+  const previewOpacity = prefs.miniBlur === 'solid' ? 1 : (prefs.miniOpacity ?? 0.92);
+  const previewBgStyle: React.CSSProperties = {
+    backgroundColor:
+      prefs.miniBlur === 'solid'
+        ? 'var(--sc-bg)'
+        : `color-mix(in srgb, var(--sc-bg) ${Math.round(previewOpacity * 100)}%, transparent)`,
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Live Interactive Preview Box */}
+      <div className="rounded-2xl border border-sc-line bg-sc-panel/40 p-5 space-y-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-wider font-semibold text-sc-orange flex items-center gap-1.5">
+              <Eye className="w-3.5 h-3.5" />
+              Podgląd na żywo (Live Preview)
+            </div>
+            <p className="text-[11.5px] text-sc-muted mt-0.5">
+              Tak będzie prezentować się okno Twojego mini playera na pulpicie. Zmiany są widoczne w czasie rzeczywistym.
+            </p>
+          </div>
+          <span className="text-[10px] px-2 py-0.5 rounded-full bg-sc-orange/15 text-sc-orange font-bold uppercase tracking-wider">
+            360 × 205 px
+          </span>
+        </div>
+
+        {/* Backdrop simulation container */}
+        <div className="relative rounded-xl overflow-hidden p-6 flex items-center justify-center border border-dashed border-sc-line/60 bg-gradient-to-br from-indigo-950/30 via-neutral-900/40 to-purple-950/30">
+          <div className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:16px_16px]" />
+
+          {/* Actual Mini Player Mockup */}
+          <div
+            style={previewBgStyle}
+            className={`w-[360px] h-[195px] box-border ${previewBlurClass} text-sc-fg select-none border border-sc-line/70 rounded-2xl p-3 flex flex-col justify-between shadow-2xl relative transition-all duration-200`}
+          >
+            {/* Top Bar */}
+            <div className="flex items-center justify-between gap-2 border-b border-sc-line/40 pb-1.5">
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-sc-orange animate-pulse" />
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-sc-muted">Abbadon Mini</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div
+                  className={`p-1 rounded-lg ${
+                    prefs.miniAlwaysOnTop
+                      ? 'text-sc-orange bg-sc-orange/15'
+                      : 'text-sc-muted'
+                  }`}
+                  title="Pineska Always on Top"
+                >
+                  <Pin className={`w-3.5 h-3.5 ${prefs.miniAlwaysOnTop ? 'rotate-45 fill-current' : ''}`} />
+                </div>
+                <div className="p-1 rounded-lg text-sc-muted">
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </div>
+                <div className="p-1 rounded-lg text-sc-muted">
+                  <X className="w-3.5 h-3.5" />
+                </div>
+              </div>
+            </div>
+
+            {/* Center Track */}
+            <div className="flex items-center gap-3 my-0.5">
+              <div className="relative w-11 h-11 rounded-xl overflow-hidden bg-sc-fill/10 border border-sc-line shrink-0 shadow-md flex items-center justify-center text-sc-orange">
+                <Music className="w-5 h-5" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="text-[12.5px] font-semibold text-sc-fg truncate leading-tight">
+                  Midnight City
+                </div>
+                <div className="text-[11px] text-sc-muted truncate leading-normal mt-0.5">
+                  M83
+                </div>
+                {prefs.miniShowVisualizer && (
+                  <div className="flex items-end gap-0.5 h-2.5 mt-1">
+                    {[0.4, 0.8, 0.6, 1.0, 0.5, 0.9, 0.7, 0.3].map((h, i) => (
+                      <div
+                        key={i}
+                        className="w-1 bg-gradient-to-t from-sc-orange to-sc-orange-soft rounded-full transition-all"
+                        style={{ height: `${h * 100}%` }}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+              {prefs.miniShowLike && (
+                <div className="p-1.5 rounded-lg text-sc-orange">
+                  <Heart className="w-4 h-4 fill-current" />
+                </div>
+              )}
+            </div>
+
+            {/* Progress Slider */}
+            {prefs.miniShowProgress && (
+              <div className="flex items-center gap-2 text-[10px] text-sc-muted tabular-nums py-0.5">
+                <span>1:24</span>
+                <div className="flex-1 h-1 bg-sc-fill/15 rounded-lg overflow-hidden relative">
+                  <div className="h-full bg-sc-orange w-1/3 rounded-lg" />
+                </div>
+                <span>4:03</span>
+              </div>
+            )}
+
+            {/* Bottom Controls */}
+            <div className="flex items-center justify-between pt-0.5">
+              {prefs.miniShowVolume ? (
+                <div className="flex items-center gap-1.5 w-24 text-sc-muted">
+                  <Volume2 className="w-3.5 h-3.5" />
+                  <div className="w-16 h-1 bg-sc-fill/15 rounded-lg overflow-hidden">
+                    <div className="h-full bg-sc-orange w-3/4 rounded-lg" />
+                  </div>
+                </div>
+              ) : (
+                <div className="w-1" />
+              )}
+
+              <div className="flex items-center gap-1.5">
+                {prefs.miniShowShuffle && (
+                  <div className="p-1.5 text-sc-muted">
+                    <Shuffle className="w-3.5 h-3.5" />
+                  </div>
+                )}
+                {prefs.miniShowPrevNext && (
+                  <div className="p-1.5 text-sc-muted">
+                    <SkipBack className="w-4 h-4" />
+                  </div>
+                )}
+                <div className="w-8 h-8 rounded-full bg-sc-orange text-sc-on-accent flex items-center justify-center shadow-lg shadow-sc-orange/25">
+                  <Play className="w-4 h-4 fill-current ml-0.5" />
+                </div>
+                {prefs.miniShowPrevNext && (
+                  <div className="p-1.5 text-sc-muted">
+                    <SkipForward className="w-4 h-4" />
+                  </div>
+                )}
+                {prefs.miniShowRepeat && (
+                  <div className="p-1.5 text-sc-muted">
+                    <Repeat className="w-3.5 h-3.5" />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 1. Blur Type Selection */}
+      <div className="space-y-3">
+        <label className="text-[12.5px] font-bold text-sc-fg flex items-center gap-2">
+          <span>Typ rozmycia tła (Backdrop Blur)</span>
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          {BLUR_OPTIONS.map((opt) => (
+            <button
+              key={opt.id}
+              type="button"
+              onClick={() => onPref('miniBlur', opt.id)}
+              className={clsx(
+                'text-left rounded-xl border p-3 transition-all relative cursor-pointer',
+                prefs.miniBlur === opt.id
+                  ? 'border-sc-orange/60 bg-sc-orange/10'
+                  : 'border-sc-line bg-sc-panel-2/40 hover:border-sc-dim'
+              )}
+            >
+              <div className="flex items-center justify-between gap-1">
+                <span className="text-[12.5px] font-bold text-sc-fg">{opt.label}</span>
+                {prefs.miniBlur === opt.id && <Check className="w-3.5 h-3.5 text-sc-orange shrink-0" />}
+              </div>
+              <div className="text-[11px] text-sc-muted mt-0.5 leading-snug">{opt.desc}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 2. Opacity Slider (if not solid) */}
+      {prefs.miniBlur !== 'solid' && (
+        <div className="p-4 rounded-xl border border-sc-line bg-sc-panel-2/30 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-bold text-sc-fg">Przezroczystość tła (Opacity)</span>
+            <span className="font-mono text-sc-orange font-bold">
+              {Math.round((prefs.miniOpacity ?? 0.92) * 100)}%
+            </span>
+          </div>
+          <input
+            type="range"
+            min={0.2}
+            max={1.0}
+            step={0.02}
+            value={prefs.miniOpacity ?? 0.92}
+            onChange={(e) => onPref('miniOpacity', parseFloat(e.target.value))}
+            className="w-full h-1.5 bg-sc-fill/15 rounded-lg appearance-none cursor-pointer accent-[var(--color-sc-orange)]"
+          />
+          <div className="flex justify-between text-[10px] text-sc-dim">
+            <span>20% (Bardzo przezroczysty)</span>
+            <span>100% (Kryjący)</span>
+          </div>
+        </div>
+      )}
+
+      {/* 3. Button Visibility Toggles */}
+      <div className="space-y-3">
+        <label className="text-[12.5px] font-bold text-sc-fg">
+          Wyświetlane elementy i przyciski
+        </label>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {BUTTON_TOGGLES.map((t) => {
+            const active = Boolean(prefs[t.key]);
+            return (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => onPref(t.key, !active as any)}
+                className={clsx(
+                  'flex items-start justify-between gap-3 p-3 rounded-xl border text-left transition-all cursor-pointer',
+                  active
+                    ? 'border-sc-orange/50 bg-sc-orange/10'
+                    : 'border-sc-line bg-sc-panel-2/30 hover:border-sc-dim'
+                )}
+              >
+                <div className="min-w-0">
+                  <div className="text-[12.5px] font-bold text-sc-fg">{t.label}</div>
+                  <div className="text-[11px] text-sc-muted mt-0.5 leading-snug">{t.desc}</div>
+                </div>
+                <div
+                  className={clsx(
+                    'w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all mt-0.5',
+                    active
+                      ? 'bg-sc-orange border-sc-orange text-white'
+                      : 'border-sc-line bg-sc-panel'
+                  )}
+                >
+                  {active && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GlobalShortcutsPanel({
+  prefs,
+  onPref,
+}: {
+  prefs: Prefs;
+  onPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
+}) {
+  const [recordingKey, setRecordingKey] = useState<string | null>(null);
+
+  const SHORTCUT_ROWS: {
+    key: keyof Prefs;
+    label: string;
+    desc: string;
+    defaultVal: string;
+  }[] = [
+    {
+      key: 'shortcutToggle',
+      label: 'Play / Pause (Odtwarzaj / Wstrzymaj)',
+      desc: 'Wznawia lub pauzuje aktualnie odtwarzany utwór',
+      defaultVal: 'Ctrl+Alt+Space',
+    },
+    {
+      key: 'shortcutNext',
+      label: 'Następny utwór (Next Track)',
+      desc: 'Przechodzi do kolejnego utworu w kolejce',
+      defaultVal: 'Ctrl+Alt+Right',
+    },
+    {
+      key: 'shortcutPrev',
+      label: 'Poprzedni utwór (Previous Track)',
+      desc: 'Cofa do poprzedniego utworu lub na początek',
+      defaultVal: 'Ctrl+Alt+Left',
+    },
+    {
+      key: 'shortcutVolumeUp',
+      label: 'Zwiększ głośność (Volume Up)',
+      desc: 'Podgłaśnia odtwarzacz o +5%',
+      defaultVal: 'Ctrl+Alt+Up',
+    },
+    {
+      key: 'shortcutVolumeDown',
+      label: 'Zmniejsz głośność (Volume Down)',
+      desc: 'Ścisza odtwarzacz o -5%',
+      defaultVal: 'Ctrl+Alt+Down',
+    },
+    {
+      key: 'shortcutMiniPlayer',
+      label: 'Przełącz Mini Player',
+      desc: 'Szybkie otwieranie / ukrywanie pływającego mini playera',
+      defaultVal: 'Ctrl+Alt+M',
+    },
+  ];
+
+  const handleKeyDown = (e: React.KeyboardEvent, prefKey: keyof Prefs) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    // Ignore standalone modifier presses
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+
+    const parts: string[] = [];
+    if (e.ctrlKey) parts.push('Ctrl');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+    if (e.metaKey) parts.push('Meta');
+
+    let keyName = e.code.replace('Key', '').replace('Digit', '');
+    if (e.key === ' ') keyName = 'Space';
+    else if (e.key === 'ArrowUp') keyName = 'Up';
+    else if (e.key === 'ArrowDown') keyName = 'Down';
+    else if (e.key === 'ArrowLeft') keyName = 'Left';
+    else if (e.key === 'ArrowRight') keyName = 'Right';
+    else if (e.key.length === 1) keyName = e.key.toUpperCase();
+
+    if (parts.length === 0) parts.push('Ctrl', 'Alt');
+    parts.push(keyName);
+
+    const combo = parts.join('+');
+    onPref(prefKey, combo as any);
+    setRecordingKey(null);
+  };
+
+  const resetAllDefaults = () => {
+    SHORTCUT_ROWS.forEach((r) => {
+      onPref(r.key, r.defaultVal as any);
+    });
+    onPref('globalShortcutsEnabled', true);
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Master Toggle */}
+      <div className="flex items-center justify-between p-3.5 rounded-xl border border-sc-line bg-sc-panel-2/30">
+        <div>
+          <div className="text-[13px] font-bold text-sc-fg">Globalne skróty multimedialne</div>
+          <div className="text-[11.5px] text-sc-muted mt-0.5">
+            Działają w całym systemie Windows, również przy zminimalizowanej aplikacji i podczas gier.
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => onPref('globalShortcutsEnabled', !prefs.globalShortcutsEnabled)}
+          className={clsx(
+            'px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer',
+            prefs.globalShortcutsEnabled
+              ? 'bg-sc-orange text-white shadow-md shadow-sc-orange/20'
+              : 'border border-sc-line bg-sc-panel text-sc-muted hover:text-sc-fg'
+          )}
+        >
+          {prefs.globalShortcutsEnabled ? 'Włączone' : 'Wyłączone'}
+        </button>
+      </div>
+
+      {/* Shortcut list */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+        {SHORTCUT_ROWS.map((row) => {
+          const val = String(prefs[row.key] || row.defaultVal);
+          const isRecording = recordingKey === row.key;
+
+          return (
+            <div
+              key={row.key}
+              className={clsx(
+                'p-3 rounded-xl border transition-all flex flex-col justify-between gap-2',
+                isRecording
+                  ? 'border-sc-orange bg-sc-orange/10 ring-2 ring-sc-orange/30'
+                  : 'border-sc-line bg-sc-panel-2/40'
+              )}
+            >
+              <div className="min-w-0">
+                <div className="text-[12.5px] font-bold text-sc-fg">{row.label}</div>
+                <div className="text-[10.5px] text-sc-muted mt-0.5 leading-snug">{row.desc}</div>
+              </div>
+
+              <div className="flex items-center gap-2 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setRecordingKey(isRecording ? null : (row.key as string))}
+                  onKeyDown={(e) => isRecording && handleKeyDown(e, row.key)}
+                  className={clsx(
+                    'flex-1 py-1.5 px-3 rounded-lg text-xs font-mono font-bold text-center border transition-all cursor-pointer select-none',
+                    isRecording
+                      ? 'bg-sc-orange text-white border-sc-orange animate-pulse'
+                      : 'bg-sc-panel border-sc-line text-sc-fg hover:border-sc-dim hover:text-sc-orange'
+                  )}
+                  title="Kliknij, aby zmienić skrót klawiszowy"
+                >
+                  {isRecording ? 'Wciśnij klawisze...' : val}
+                </button>
+
+                {val !== row.defaultVal && (
+                  <button
+                    type="button"
+                    onClick={() => onPref(row.key, row.defaultVal as any)}
+                    className="p-1.5 text-sc-muted hover:text-sc-fg text-[11px] rounded-lg border border-sc-line hover:border-sc-dim transition-colors cursor-pointer"
+                    title="Przywróć domyślny skrót"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="flex justify-end pt-1">
+        <button
+          type="button"
+          onClick={resetAllDefaults}
+          className="px-3 py-1.5 text-xs text-sc-muted hover:text-sc-fg border border-sc-line rounded-xl hover:border-sc-dim transition-colors cursor-pointer"
+        >
+          Przywróć wszystkie domyślne skróty
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function SettingsView({
   prefs,
   onPref,
@@ -2017,6 +2486,17 @@ export function SettingsView({
               <EqPresets eq={eq} onEq={onEq} count={bandCount} allowCustomSave />
             </div>
           </Disclosure>
+
+          <Disclosure
+            title="Global Media Keybinds"
+            subtitle="System-wide shortcuts to control playback anywhere on your PC"
+            icon={<Keyboard className="w-[18px] h-[18px] text-sc-orange" />}
+            defaultOpen={false}
+          >
+            <div className="pt-4">
+              <GlobalShortcutsPanel prefs={prefs} onPref={onPref} />
+            </div>
+          </Disclosure>
         </div>
       </div>
 
@@ -2121,6 +2601,18 @@ export function SettingsView({
               onChange={(v) => onPref('rememberVolume', v)}
             />
           </div>
+        </div>
+      </div>
+
+      {/* MINI PLAYER & FLOATING WINDOW */}
+      <div className="pt-4">
+        <SectionHeader
+          title="Mini Player & Floating Window"
+          subtitle="Configure draggable floating mini player, buttons, live preview, blur and transparency"
+          icon={<Maximize2 className="w-4 h-4 text-sc-orange" />}
+        />
+        <div className="rounded-2xl border border-sc-line bg-sc-panel p-5">
+          <MiniPlayerSettingsPanel prefs={prefs} onPref={onPref} />
         </div>
       </div>
 

@@ -98,7 +98,10 @@ interface DesktopBridge {
     volume?: number;
   }) => void;
   onTrayStateSync?: (cb: (_e: unknown, state: any) => void) => () => void;
+  onMiniPinnedSync?: (cb: (pinned: boolean) => void) => () => void;
   sendMiniCommand?: (action: string, value?: unknown) => void;
+  updateGlobalShortcuts?: (shortcuts: Record<string, any>) => Promise<{ ok: boolean; error?: string }>;
+  getGlobalShortcuts?: () => Promise<{ ok: boolean; shortcuts: Record<string, any> }>;
   onSeekCommand?: (cb: (time: number) => void) => () => void;
   onVolumeCommand?: (cb: (vol: number) => void) => () => void;
   onDiscordJoinFriend?: (cb: (code: string) => void) => () => void;

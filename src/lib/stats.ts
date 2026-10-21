@@ -4,7 +4,7 @@ export interface ListeningStats {
   totalPlays: number;
   totalListeningSeconds: number;
   trackCounts: Record<string, { track: Track; count: number; lastPlayed: number }>;
-  artistCounts: Record<string, { artist: string; count: number; avatarUrl?: string }>;
+  artistCounts: Record<string, { artist: string; count: number; avatarUrl?: string; artistId?: string; artistUrl?: string }>;
   dailyPlays: Record<string, number>; // "YYYY-MM-DD" -> count
   dailyTrackPlays?: Record<string, Record<string, { track: Track; count: number; lastPlayed: number }>>;
 }
@@ -73,7 +73,9 @@ export function recordCompletedPlay(track: Track): ListeningStats {
     stats.artistCounts[artistName] = {
       artist: artistName,
       count: (prevArtist?.count || 0) + 1,
-      avatarUrl: track.artwork,
+      avatarUrl: track.artwork || prevArtist?.avatarUrl,
+      artistId: track.artistId || prevArtist?.artistId,
+      artistUrl: track.artistUrl || prevArtist?.artistUrl,
     };
   }
 
@@ -157,7 +159,10 @@ export function getTopTracks(stats: ListeningStats, limit = 10): { track: Track;
     .slice(0, limit);
 }
 
-export function getTopArtists(stats: ListeningStats, limit = 10): { artist: string; count: number; avatarUrl?: string }[] {
+export function getTopArtists(
+  stats: ListeningStats,
+  limit = 10
+): { artist: string; count: number; avatarUrl?: string; artistId?: string; artistUrl?: string }[] {
   return Object.values(stats.artistCounts)
     .sort((a, b) => b.count - a.count)
     .slice(0, limit);

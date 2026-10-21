@@ -528,11 +528,27 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
       // account it likes, which is how an artist with 14 tracks showed as
       // empty.
       let user = u;
-      if (!user.id) {
-        const resolved = await guard(
+      const cleanId = String(user.id || '').replace(/^soundcloud:users:/, '');
+      const hasValidNumericId = Boolean(cleanId && /^\d+$/.test(cleanId));
+      if (!hasValidNumericId) {
+        let resolved = await guard(
           async () => mapUser(await sc.userByPermalink(user.permalinkUrl || user.username)),
           null
         );
+        if (!resolved) {
+          try {
+            const searchRes = await sc.searchUsers(user.username, 5);
+            if (searchRes.collection && searchRes.collection.length > 0) {
+              const match =
+                searchRes.collection.find(
+                  (usr) => usr.username?.toLowerCase() === user.username.toLowerCase()
+                ) || searchRes.collection[0];
+              resolved = mapUser(match);
+            }
+          } catch {
+            /* ignore */
+          }
+        }
         if (!resolved) {
           notify(`Could not find the SoundCloud user "${u.username}"`);
           setCurrentPlaylist(null);

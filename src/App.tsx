@@ -750,6 +750,11 @@ if (typeof d.theme === 'string') {
       }
 
       if (trackRef.current?.id === t.id) {
+        if (switchingRef.current) {
+          // Track is already in the middle of loading/switching; ignore duplicate rapid clicks
+          return;
+        }
+
         const active = engine.getActive();
         const hasValidAudio =
           active &&
@@ -757,13 +762,18 @@ if (typeof d.theme === 'string') {
           !active.error &&
           streamsRef.current.length > 0;
 
-        if (hasValidAudio && !forcePlay) {
-          setPlaying((p) => {
-            if (p) engine.pause();
-            else void engine.play();
-            return !p;
-          });
-          return;
+        if (hasValidAudio) {
+          if (!forcePlay) {
+            setPlaying((p) => {
+              if (p) engine.pause();
+              else void engine.play();
+              return !p;
+            });
+            return;
+          } else if (playingRef.current) {
+            // Already actively playing this track; ignore redundant start command
+            return;
+          }
         }
       }
 
@@ -1901,26 +1911,39 @@ if (typeof d.theme === 'string') {
    * 500 on the way), so an id we already have is never re-resolved.
    */
   const openArtist = useCallback(
-    (artist: User | { id: string; username: string; permalinkUrl?: string }) => {
+    (
+      artist:
+        | User
+        | { id?: string; username: string; permalinkUrl?: string; artistId?: string; artistUrl?: string }
+    ) => {
+      const numericId =
+        'artistId' in artist && artist.artistId && /^\d+$/.test(artist.artistId)
+          ? artist.artistId
+          : 'id' in artist && artist.id && /^\d+$/.test(String(artist.id).replace(/^soundcloud:users:/, ''))
+          ? String(artist.id).replace(/^soundcloud:users:/, '')
+          : '';
+
+      const permalink =
+        'artistUrl' in artist && artist.artistUrl
+          ? artist.artistUrl
+          : 'permalinkUrl' in artist && artist.permalinkUrl
+          ? artist.permalinkUrl
+          : `https://soundcloud.com/${encodeURIComponent(artist.username)}`;
+
       const user: User = {
-        id: artist.id,
+        id: numericId,
         username: artist.username,
-        fullName: 'fullName' in artist ? artist.fullName : artist.username,
-        avatarUrl: 'avatarUrl' in artist ? artist.avatarUrl : '',
-        permalinkUrl:
-          'permalinkUrl' in artist && artist.permalinkUrl
-            ? artist.permalinkUrl
-            : `https://soundcloud.com/${encodeURIComponent(artist.username)}`,
+        fullName: 'fullName' in artist && artist.fullName ? artist.fullName : artist.username,
+        avatarUrl: 'avatarUrl' in artist && artist.avatarUrl ? artist.avatarUrl : '',
+        permalinkUrl: permalink,
         followersCount: 'followersCount' in artist ? artist.followersCount : 0,
-        // Dropped here before, which made the artist header show "Following –"
-        // for every profile reached through this path.
         followingsCount:
           'followingsCount' in artist ? artist.followingsCount : undefined,
         trackCount: 'trackCount' in artist ? artist.trackCount : 0,
         location: 'location' in artist ? artist.location : '',
       };
       setView('playlist');
-      pushNav({ view: 'artist', user, key: `artist:${user.id}` });
+      pushNav({ view: 'artist', user, key: `artist:${user.id || user.username}` });
       void api.loadUserTracks(user);
     },
     [api, pushNav]
@@ -2563,7 +2586,7 @@ if (typeof d.theme === 'string') {
             <StatsView
               friends={listenTogether.friends}
               presences={listenTogether.presences}
-              onPlayTrack={(t) => void playTrack(t, [t], true)}
+              onPlayTrack={(t, q) => void playTrack(t, q || [t])}
               onOpenArtist={(artist) => void openArtist(artist)}
             />
           )}

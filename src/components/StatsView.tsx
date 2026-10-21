@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useRef } from 'react';
 import {
   BarChart3,
   Clock,
@@ -31,8 +31,8 @@ import clsx from 'clsx';
 interface Props {
   friends: Friend[];
   presences: Record<string, FriendPresence>;
-  onPlayTrack: (track: Track) => void;
-  onOpenArtist?: (artist: { id: string; username: string }) => void;
+  onPlayTrack: (track: Track, queue?: Track[]) => void;
+  onOpenArtist?: (artist: { id?: string; username: string; artistId?: string; artistUrl?: string }) => void;
 }
 
 type ZoomLevel = 'week' | 'month' | 'year';
@@ -168,6 +168,20 @@ export function StatsView({ friends, presences, onPlayTrack, onOpenArtist }: Pro
   const [zoomAnimClass, setZoomAnimClass] = useState<string>('scale-100 opacity-100');
   const [slideDirection, setSlideDirection] = useState<SlideDirection>(null);
   const [slideKey, setSlideKey] = useState<number>(0);
+
+  // Debounced track player to prevent double click races
+  const lastPlayClickRef = useRef<{ id: string; time: number }>({ id: '', time: 0 });
+  const handleTrackClick = useCallback(
+    (t: Track, q: Track[]) => {
+      const now = Date.now();
+      if (lastPlayClickRef.current.id === t.id && now - lastPlayClickRef.current.time < 350) {
+        return;
+      }
+      lastPlayClickRef.current = { id: t.id, time: now };
+      onPlayTrack(t, q);
+    },
+    [onPlayTrack]
+  );
 
   // Trigger smooth zoom transition animation
   const triggerZoom = useCallback((newLevel: ZoomLevel, newDate?: Date) => {
@@ -658,7 +672,7 @@ export function StatsView({ friends, presences, onPlayTrack, onOpenArtist }: Pro
                     {selectedDayTracks.map(({ track, count }, idx) => (
                       <div
                         key={track.id}
-                        onClick={() => onPlayTrack(track)}
+                        onClick={() => handleTrackClick(track, selectedDayTracks.map((d) => d.track))}
                         className="group flex items-center justify-between p-2.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/5 hover:border-orange-500/40 transition-all cursor-pointer shadow-sm hover:shadow-orange-500/5"
                       >
                         <div className="flex items-center gap-3 min-w-0">
@@ -869,7 +883,14 @@ export function StatsView({ friends, presences, onPlayTrack, onOpenArtist }: Pro
               {topArtists.slice(0, 6).map((a, idx) => (
                 <div
                   key={a.artist}
-                  onClick={() => onOpenArtist?.({ id: a.artist, username: a.artist })}
+                  onClick={() =>
+                    onOpenArtist?.({
+                      id: a.artistId || '',
+                      username: a.artist,
+                      artistId: a.artistId,
+                      artistUrl: a.artistUrl,
+                    })
+                  }
                   className="flex items-center justify-between p-2 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] transition-colors cursor-pointer group"
                 >
                   <div className="flex items-center gap-3 min-w-0">
@@ -908,7 +929,7 @@ export function StatsView({ friends, presences, onPlayTrack, onOpenArtist }: Pro
               {topTracks.slice(0, 6).map(({ track, count }, idx) => (
                 <div
                   key={track.id}
-                  onClick={() => onPlayTrack(track)}
+                  onClick={() => handleTrackClick(track, topTracks.map((t) => t.track))}
                   className="group flex items-center justify-between py-2 px-2.5 rounded-xl hover:bg-white/[0.05] transition-colors cursor-pointer"
                 >
                   <div className="flex items-center gap-3 min-w-0">

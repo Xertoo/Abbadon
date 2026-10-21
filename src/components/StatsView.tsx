@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from 'react';
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react';
 import {
   BarChart3,
   Clock,
@@ -11,7 +11,6 @@ import {
   Calendar,
   ChevronLeft,
   ChevronRight,
-  ZoomOut,
 } from 'lucide-react';
 import { Artwork } from './Artwork';
 import type { Track } from '../types';
@@ -33,6 +32,7 @@ interface Props {
   presences: Record<string, FriendPresence>;
   onPlayTrack: (track: Track, queue?: Track[]) => void;
   onOpenArtist?: (artist: { id?: string; username: string; artistId?: string; artistUrl?: string }) => void;
+  initialFriendCode?: string;
 }
 
 type ZoomLevel = 'week' | 'month' | 'year';
@@ -157,15 +157,23 @@ function getBarIntensity(count: number, maxCount: number, isSelected: boolean) {
   };
 }
 
-export function StatsView({ friends, presences, onPlayTrack, onOpenArtist }: Props) {
+export function StatsView({ friends, presences, onPlayTrack, onOpenArtist, initialFriendCode }: Props) {
   const [stats] = useState<ListeningStats>(() => loadListeningStats());
-  const [selectedFriendCode, setSelectedFriendCode] = useState<string>(friends[0]?.code || '');
+  const [selectedFriendCode, setSelectedFriendCode] = useState<string>(
+    initialFriendCode || friends[0]?.code || ''
+  );
+
+  // Synchronize when initialFriendCode is provided from outside
+  useEffect(() => {
+    if (initialFriendCode) {
+      setSelectedFriendCode(initialFriendCode);
+    }
+  }, [initialFriendCode]);
 
   // Navigation & Zoom State
   const [zoomLevel, setZoomLevel] = useState<ZoomLevel>('week');
   const [cursorDate, setCursorDate] = useState<Date>(() => new Date());
   const [selectedDayDate, setSelectedDayDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
-  const [zoomAnimClass, setZoomAnimClass] = useState<string>('scale-100 opacity-100');
   const [slideDirection, setSlideDirection] = useState<SlideDirection>(null);
   const [slideKey, setSlideKey] = useState<number>(0);
 
@@ -183,22 +191,14 @@ export function StatsView({ friends, presences, onPlayTrack, onOpenArtist }: Pro
     [onPlayTrack]
   );
 
-  // Trigger smooth zoom transition animation
+  // Stable, immediate switcher without chaotic pop-in/pop-out bounce
   const triggerZoom = useCallback((newLevel: ZoomLevel, newDate?: Date) => {
+    if (newDate) {
+      setCursorDate(newDate);
+      setSelectedDayDate(newDate.toISOString().slice(0, 10));
+    }
+    setZoomLevel(newLevel);
     setSlideDirection(null);
-    setZoomAnimClass('scale-95 opacity-0 pointer-events-none');
-    setTimeout(() => {
-      if (newDate) {
-        setCursorDate(newDate);
-        setSelectedDayDate(newDate.toISOString().slice(0, 10));
-      }
-      setZoomLevel(newLevel);
-      setSlideKey((k) => k + 1);
-      setZoomAnimClass('scale-105 opacity-0');
-      requestAnimationFrame(() => {
-        setZoomAnimClass('scale-100 opacity-100 transition-all duration-300 ease-out');
-      });
-    }, 150);
   }, []);
 
   // Arrow navigation handlers with left/right column slide animation
@@ -492,78 +492,58 @@ export function StatsView({ friends, presences, onPlayTrack, onOpenArtist }: Pro
                 <h3 className="text-base font-bold text-white tracking-tight">{periodData.title}</h3>
               </div>
               <p className="text-[11px] text-white/40 mt-0.5">
-                {zoomLevel === 'week' && 'Click any day to view track plays, or use Zoom Out to see the month'}
-                {zoomLevel === 'month' && 'Click any day bar to drill down into its 7-day week'}
-                {zoomLevel === 'year' && 'Click any month card to view its daily breakdown'}
+                {zoomLevel === 'week' && 'Click any day to inspect tracks played on that day'}
+                {zoomLevel === 'month' && 'Calendar view of plays this month (click a day to inspect its week)'}
+                {zoomLevel === 'year' && 'Monthly activity breakdown for the year (click a month to inspect)'}
               </p>
             </div>
           </div>
 
-          {/* Right: Zoom Level Switcher */}
-          <div className="flex items-center gap-2">
-            <div className="flex items-center p-1 rounded-2xl bg-black/40 border border-white/10">
-              <button
-                type="button"
-                onClick={() => triggerZoom('week')}
-                className={clsx(
-                  'px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1',
-                  zoomLevel === 'week'
-                    ? 'bg-orange-500 text-black shadow-md shadow-orange-500/30'
-                    : 'text-white/60 hover:text-white hover:bg-white/5'
-                )}
-              >
-                Week
-              </button>
-              <button
-                type="button"
-                onClick={() => triggerZoom('month')}
-                className={clsx(
-                  'px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1',
-                  zoomLevel === 'month'
-                    ? 'bg-orange-500 text-black shadow-md shadow-orange-500/30'
-                    : 'text-white/60 hover:text-white hover:bg-white/5'
-                )}
-              >
-                Month
-              </button>
-              <button
-                type="button"
-                onClick={() => triggerZoom('year')}
-                className={clsx(
-                  'px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1',
-                  zoomLevel === 'year'
-                    ? 'bg-orange-500 text-black shadow-md shadow-orange-500/30'
-                    : 'text-white/60 hover:text-white hover:bg-white/5'
-                )}
-              >
-                Year
-              </button>
-            </div>
-
-            {/* Quick Zoom Out Button */}
-            {zoomLevel !== 'year' && (
-              <button
-                type="button"
-                onClick={() => triggerZoom(zoomLevel === 'week' ? 'month' : 'year')}
-                title="Zoom Out"
-                className="flex items-center gap-1 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/80 hover:text-white transition-all cursor-pointer active:scale-95"
-              >
-                <ZoomOut className="w-3.5 h-3.5 text-orange-400" />
-                <span>Zoom Out</span>
-              </button>
-            )}
+          {/* Right: Fixed-position Zoom Level Switcher (Week | Month | Year) - fully anchored */}
+          <div className="shrink-0 flex items-center p-1 rounded-2xl bg-black/40 border border-white/10 select-none">
+            <button
+              type="button"
+              onClick={() => triggerZoom('week')}
+              className={clsx(
+                'w-16 py-1.5 rounded-xl text-xs font-bold text-center transition-all cursor-pointer',
+                zoomLevel === 'week'
+                  ? 'bg-orange-500 text-black shadow-md shadow-orange-500/30 font-black'
+                  : 'text-white/60 hover:text-white hover:bg-white/5'
+              )}
+            >
+              Week
+            </button>
+            <button
+              type="button"
+              onClick={() => triggerZoom('month')}
+              className={clsx(
+                'w-16 py-1.5 rounded-xl text-xs font-bold text-center transition-all cursor-pointer',
+                zoomLevel === 'month'
+                  ? 'bg-orange-500 text-black shadow-md shadow-orange-500/30 font-black'
+                  : 'text-white/60 hover:text-white hover:bg-white/5'
+              )}
+            >
+              Month
+            </button>
+            <button
+              type="button"
+              onClick={() => triggerZoom('year')}
+              className={clsx(
+                'w-16 py-1.5 rounded-xl text-xs font-bold text-center transition-all cursor-pointer',
+                zoomLevel === 'year'
+                  ? 'bg-orange-500 text-black shadow-md shadow-orange-500/30 font-black'
+                  : 'text-white/60 hover:text-white hover:bg-white/5'
+              )}
+            >
+              Year
+            </button>
           </div>
         </div>
 
-        {/* Dynamic Visualizer Chart Area with Smooth Pop-Out and Left/Right Slide Animations */}
+        {/* Dynamic Visualizer Chart Area with Stable Layout */}
         <div
           key={`${zoomLevel}-${slideKey}`}
-          className={clsx(
-            'transition-all duration-300 transform',
-            zoomAnimClass,
-            slideDirection === 'left' && 'animate-in slide-in-from-left-6 duration-200',
-            slideDirection === 'right' && 'animate-in slide-in-from-right-6 duration-200'
-          )}
+          className="min-h-[280px] transition-opacity duration-200"
         >
           {/* LEVEL 1: WEEK VIEW (7 Days) */}
           {zoomLevel === 'week' && (
@@ -746,7 +726,7 @@ export function StatsView({ friends, presences, onPlayTrack, onOpenArtist }: Pro
                         setSelectedDayDate(d.date);
                         triggerZoom('week', d.rawDate);
                       }}
-                      title={`${d.date}: ${d.count} ${d.count === 1 ? 'play' : 'plays'}. Click to zoom into Monday – Sunday week`}
+                      title={`${d.date}: ${d.count} ${d.count === 1 ? 'play' : 'plays'}. Click to view Monday – Sunday week`}
                       style={{ boxShadow: glow }}
                       className={clsx(
                         'aspect-square rounded-xl border p-1 sm:p-2 flex flex-col justify-between cursor-pointer transition-all duration-200 select-none group hover:scale-[1.04] active:scale-95',
@@ -785,7 +765,7 @@ export function StatsView({ friends, presences, onPlayTrack, onOpenArtist }: Pro
 
               {/* Legend & Guide */}
               <div className="flex items-center justify-between flex-wrap gap-3 mt-4 pt-3 border-t border-white/[0.06] text-xs text-white/40">
-                <span className="text-[11px]">Click any square tile to zoom into its Monday – Sunday week</span>
+                <span className="text-[11px]">Click any square tile to view its Monday – Sunday week</span>
 
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] text-white/40">Less</span>
@@ -814,7 +794,7 @@ export function StatsView({ friends, presences, onPlayTrack, onOpenArtist }: Pro
                       onClick={() =>
                         triggerZoom('month', new Date(cursorDate.getFullYear(), m.monthIndex, 1))
                       }
-                      title={`Click to zoom into ${MONTH_NAMES[m.monthIndex]}`}
+                      title={`Click to view ${MONTH_NAMES[m.monthIndex]}`}
                       className={clsx(
                         'p-4 rounded-2xl border transition-all cursor-pointer group flex flex-col justify-between hover:scale-[1.03] active:scale-95',
                         isCurrentMonth
@@ -858,7 +838,7 @@ export function StatsView({ friends, presences, onPlayTrack, onOpenArtist }: Pro
                 })}
               </div>
               <div className="text-center mt-4 text-xs text-white/40">
-                Click any month to zoom in and see every day&apos;s activity
+                Click any month to view its daily breakdown
               </div>
             </div>
           )}

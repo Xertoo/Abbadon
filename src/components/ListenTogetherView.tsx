@@ -28,7 +28,9 @@ import {
   Smile,
   ListMusic,
   Plus,
+  BarChart3,
 } from 'lucide-react';
+import { FriendStatsModal } from './FriendStatsModal';
 import clsx from 'clsx';
 import { Artwork } from './Artwork';
 import { fmtTime } from '../lib/soundcloud';
@@ -83,6 +85,9 @@ interface Props {
   onRemoveTrackFromCollab?: (playlistId: string, trackId: string | number) => void;
   onDeleteCollabPlaylist?: (playlistId: string) => void;
   onPlayCollabPlaylist?: (tracks: Track[]) => void;
+  onOpenFriendInStatsView?: (code: string) => void;
+  onPlayTrack?: (track: Track, queue?: Track[]) => void;
+  onOpenArtist?: (artist: { id?: string; username: string; artistId?: string; artistUrl?: string }) => void;
 }
 
 export function ListenTogetherView({
@@ -123,7 +128,11 @@ export function ListenTogetherView({
   onRemoveTrackFromCollab,
   onDeleteCollabPlaylist,
   onPlayCollabPlaylist,
+  onOpenFriendInStatsView,
+  onPlayTrack,
+  onOpenArtist,
 }: Props) {
+  const [statsFriend, setStatsFriend] = useState<Friend | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
   const [friendCodeInput, setFriendCodeInput] = useState('');
   const [friendNameInput, setFriendNameInput] = useState('');
@@ -698,6 +707,13 @@ export function ListenTogetherView({
                       </div>
 
                       <div className="flex items-center gap-1 shrink-0">
+                        <button
+                          onClick={() => setStatsFriend(friend)}
+                          title={`View ${friend.name}'s statistics`}
+                          className="p-1.5 rounded-lg text-sc-dim hover:text-purple-400 hover:bg-purple-500/10 transition-colors cursor-pointer"
+                        >
+                          <BarChart3 className="w-3.5 h-3.5" />
+                        </button>
                         {!isOnline && (
                           <button
                             onClick={() => onConnectToFriend(friend.code)}
@@ -1303,6 +1319,17 @@ export function ListenTogetherView({
             </div>
           )}
         </div>
+      )}
+      {statsFriend && (
+        <FriendStatsModal
+          friend={statsFriend}
+          presence={presences[statsFriend.code]}
+          isOpen={Boolean(statsFriend)}
+          onClose={() => setStatsFriend(null)}
+          onOpenInFullStats={onOpenFriendInStatsView}
+          onPlayTrack={onPlayTrack}
+          onOpenArtist={onOpenArtist}
+        />
       )}
     </div>
   );

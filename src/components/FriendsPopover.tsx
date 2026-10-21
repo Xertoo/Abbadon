@@ -25,9 +25,11 @@ import {
   EyeOff,
   Play,
   Volume2,
+  BarChart3,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { Artwork } from './Artwork';
+import { FriendStatsModal } from './FriendStatsModal';
 import { fmtTime } from '../lib/soundcloud';
 import type { Track, User } from '../types';
 import {
@@ -77,6 +79,9 @@ interface Props {
   onSendChatMessage: (text: string) => void;
   onSendReaction: (emoji: string) => void;
   onConnectToFriend: (code: string) => void;
+  onOpenFriendInStatsView?: (code: string) => void;
+  onPlayTrack?: (track: Track, queue?: Track[]) => void;
+  onOpenArtist?: (artist: { id?: string; username: string; artistId?: string; artistUrl?: string }) => void;
 }
 
 export function FriendsPopover({
@@ -113,8 +118,12 @@ export function FriendsPopover({
   onSendChatMessage,
   onSendReaction,
   onConnectToFriend,
+  onOpenFriendInStatsView,
+  onPlayTrack,
+  onOpenArtist,
 }: Props) {
   const [activeTab, setActiveTab] = useState<'friends' | 'room' | 'profile'>('friends');
+  const [statsFriend, setStatsFriend] = useState<Friend | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [friendCodeInput, setFriendCodeInput] = useState('');
@@ -595,6 +604,14 @@ export function FriendsPopover({
                             )}
 
                             <button
+                              onClick={() => setStatsFriend(f)}
+                              title={`View ${f.name}'s statistics`}
+                              className="w-6 h-6 rounded-lg text-sc-dim hover:text-purple-400 hover:bg-white/5 flex items-center justify-center transition-all cursor-pointer"
+                            >
+                              <BarChart3 className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
                               onClick={() => onRemoveFriend(f.code)}
                               title="Remove friend"
                               className="w-6 h-6 rounded-lg text-sc-dim hover:text-red-400 hover:bg-white/5 flex items-center justify-center transition-all cursor-pointer"
@@ -670,13 +687,22 @@ export function FriendsPopover({
                           <span className="truncate">{f.name}</span>
                           <span className="text-[10px] text-sc-dim font-mono">({f.code})</span>
                         </div>
-                        <button
-                          onClick={() => onRemoveFriend(f.code)}
-                          title="Remove friend"
-                          className="text-sc-dim hover:text-red-400 p-1 cursor-pointer"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                        </button>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={() => setStatsFriend(f)}
+                            title={`View ${f.name}'s statistics`}
+                            className="text-sc-dim hover:text-purple-400 p-1 cursor-pointer transition-colors"
+                          >
+                            <BarChart3 className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => onRemoveFriend(f.code)}
+                            title="Remove friend"
+                            className="text-sc-dim hover:text-red-400 p-1 cursor-pointer transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1003,6 +1029,17 @@ export function FriendsPopover({
           )}
         </div>
       </div>
+      {statsFriend && (
+        <FriendStatsModal
+          friend={statsFriend}
+          presence={presences[statsFriend.code]}
+          isOpen={Boolean(statsFriend)}
+          onClose={() => setStatsFriend(null)}
+          onOpenInFullStats={onOpenFriendInStatsView}
+          onPlayTrack={onPlayTrack}
+          onOpenArtist={onOpenArtist}
+        />
+      )}
     </>
   );
 }

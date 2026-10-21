@@ -1875,26 +1875,6 @@ export function PlayerBar(p: Props) {
               )}
             </button>
 
-            {/* Friends & Activity Button */}
-            {p.onOpenFriends && (p.isSyncActive || !isTight) && (
-              <button
-                onClick={p.onOpenFriends}
-                className={clsx(
-                  'relative w-8 h-8 rounded-full flex items-center justify-center transition-all duration-150 hover:scale-115 active:scale-90 cursor-pointer',
-                  p.isSyncActive
-                    ? 'text-sc-orange bg-sc-orange/15 shadow-xs ring-1 ring-sc-orange/40'
-                    : 'text-sc-muted hover:text-sc-fg'
-                )}
-                title={p.isSyncActive ? `Listening with ${p.syncTargetName || 'friend'}` : 'Friends & Activity'}
-                aria-label="Friends"
-              >
-                <Users className="w-[17px] h-[17px]" />
-                {p.isSyncActive && (
-                  <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-sc-orange animate-ping" />
-                )}
-              </button>
-            )}
-
             {/* Karaoke Synced Lyrics Button */}
             {(lyricsOpen || !isCompact) && (
               <button

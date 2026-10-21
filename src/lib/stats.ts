@@ -169,6 +169,13 @@ export function getTopArtists(
 }
 
 const FRIEND_ARTISTS_KEY = 'abbadon:friend_artists:';
+const FRIEND_TRACKS_KEY = 'abbadon:friend_tracks:';
+
+export interface FriendTrackEntry {
+  track: Track;
+  count: number;
+  lastPlayed: number;
+}
 
 export function recordFriendTrack(friendCode: string, track: Track): void {
   if (!friendCode || !track || !track.artist) return;
@@ -183,6 +190,43 @@ export function recordFriendTrack(friendCode: string, track: Track): void {
     }
   } catch {
     /* quota */
+  }
+
+  // Also record track entry
+  try {
+    const tKey = `${FRIEND_TRACKS_KEY}${friendCode}`;
+    const rawT = localStorage.getItem(tKey);
+    const map: Record<string, FriendTrackEntry> = rawT ? JSON.parse(rawT) : {};
+    const tId = String(track.id);
+    const existing = map[tId];
+    map[tId] = {
+      track,
+      count: (existing?.count || 0) + 1,
+      lastPlayed: Date.now(),
+    };
+    const entries = Object.values(map)
+      .sort((a, b) => b.lastPlayed - a.lastPlayed)
+      .slice(0, 50);
+    const nextMap: Record<string, FriendTrackEntry> = {};
+    for (const e of entries) {
+      nextMap[String(e.track.id)] = e;
+    }
+    localStorage.setItem(tKey, JSON.stringify(nextMap));
+  } catch {
+    /* quota */
+  }
+}
+
+export function getFriendObservedTracks(friendCode: string): FriendTrackEntry[] {
+  if (!friendCode) return [];
+  try {
+    const key = `${FRIEND_TRACKS_KEY}${friendCode}`;
+    const raw = localStorage.getItem(key);
+    if (!raw) return [];
+    const map: Record<string, FriendTrackEntry> = JSON.parse(raw);
+    return Object.values(map).sort((a, b) => b.count - a.count || b.lastPlayed - a.lastPlayed);
+  } catch {
+    return [];
   }
 }
 

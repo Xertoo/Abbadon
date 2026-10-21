@@ -295,6 +295,7 @@ export default function App() {
   const [manualPending, setManualPending] = useState(false);
   const [queueOpen, setQueueOpen] = useState(false);
   const [friendsDrawerOpen, setFriendsDrawerOpen] = useState(false);
+  const [statsFriendCode, setStatsFriendCode] = useState<string | null>(null);
   const [heardleOpen, setHeardleOpen] = useState(false);
 
   // Player state
@@ -2222,8 +2223,8 @@ if (typeof d.theme === 'string') {
           </div>
 
           {/* Right: Friends button & own profile */}
-          <div className="flex items-center gap-2.5 z-10 shrink-0">
-            {/* Friends popover trigger button with radiant bloom online friends badge */}
+          <div className="flex items-center gap-2 z-10 shrink-0">
+            {/* Friends popover trigger button - bare icon with subtle online outline glow, no distracting blinking */}
             <button
               onClick={() => setFriendsDrawerOpen((prev) => !prev)}
               title={
@@ -2235,21 +2236,23 @@ if (typeof d.theme === 'string') {
               }
               aria-label="Friends and Activity"
               className={clsx(
-                'relative h-9 px-2.5 rounded-full flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer',
+                'relative p-2 rounded-xl flex items-center justify-center transition-all duration-200 cursor-pointer hover:scale-110 active:scale-95 group',
                 friendsDrawerOpen
-                  ? 'bg-sc-orange text-sc-on-accent shadow-md scale-105'
-                  : 'bg-white/5 hover:bg-white/10 text-sc-muted hover:text-sc-fg hover:scale-105 active:scale-95 border border-white/5'
+                  ? 'text-sc-orange'
+                  : onlineFriendsCount > 0
+                    ? 'text-emerald-400'
+                    : 'text-sc-muted hover:text-sc-fg'
               )}
             >
-              <Users className="w-4 h-4" />
+              <Users
+                className={clsx(
+                  'w-5 h-5 transition-all duration-300',
+                  onlineFriendsCount > 0 &&
+                    'drop-shadow-[0_0_8px_rgba(52,211,153,0.85)] filter stroke-[2.2]'
+                )}
+              />
               {onlineFriendsCount > 0 && (
-                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/80 shadow-[0_0_14px_rgba(16,185,129,0.75),0_0_28px_rgba(16,185,129,0.4)] text-emerald-300 font-extrabold text-[11px] tabular-nums tracking-wide animate-pulse">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,1)]" />
-                  {onlineFriendsCount}
-                </span>
-              )}
-              {listenTogether.syncSession.mode !== 'idle' && (
-                <span className="w-2 h-2 rounded-full bg-sc-orange animate-ping" />
+                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399] ring-2 ring-sc-bg" />
               )}
             </button>
 
@@ -2579,6 +2582,12 @@ if (typeof d.theme === 'string') {
                   void playTrack(tracks[0], tracks, true);
                 }
               }}
+              onOpenFriendInStatsView={(code) => {
+                setStatsFriendCode(code);
+                setView('stats');
+              }}
+              onPlayTrack={(t) => void playTrack(t, [t])}
+              onOpenArtist={(artist) => void openArtist(artist)}
             />
           )}
 
@@ -2588,6 +2597,7 @@ if (typeof d.theme === 'string') {
               presences={listenTogether.presences}
               onPlayTrack={(t, q) => void playTrack(t, q || [t])}
               onOpenArtist={(artist) => void openArtist(artist)}
+              initialFriendCode={statsFriendCode || undefined}
             />
           )}
           </div>
@@ -2759,6 +2769,13 @@ if (typeof d.theme === 'string') {
         onSendChatMessage={listenTogether.sendChatMessage}
         onSendReaction={listenTogether.sendReaction}
         onConnectToFriend={listenTogether.connectToFriend}
+        onOpenFriendInStatsView={(code) => {
+          setStatsFriendCode(code);
+          setView('stats');
+          setFriendsDrawerOpen(false);
+        }}
+        onPlayTrack={(t) => void playTrack(t, [t])}
+        onOpenArtist={(artist) => void openArtist(artist)}
       />
 
       {queueOpen && (

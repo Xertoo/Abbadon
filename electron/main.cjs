@@ -1444,7 +1444,12 @@ function getDiscordClientId() {
   try {
     const raw = require('node:fs').readFileSync(file, 'utf8');
     const parsed = JSON.parse(raw);
-    if (parsed.discordClientId && typeof parsed.discordClientId === 'string' && parsed.discordClientId.trim()) {
+    if (
+      parsed.discordClientId &&
+      typeof parsed.discordClientId === 'string' &&
+      parsed.discordClientId.trim() &&
+      parsed.discordClientId.trim() !== '1177081335727267940'
+    ) {
       return parsed.discordClientId.trim();
     }
   } catch {}

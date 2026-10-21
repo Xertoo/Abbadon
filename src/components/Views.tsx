@@ -2287,25 +2287,6 @@ export function SettingsView({
   const bands = bandsFor(bandCount);
   const [eqOpen, setEqOpen] = useState(focusSection === 'equalizer');
   const [visOpen, setVisOpen] = useState(focusSection === 'visualizer');
-  const [customDiscordId, setCustomDiscordId] = useState('');
-  const [savedDiscordMsg, setSavedDiscordMsg] = useState('');
-
-  useEffect(() => {
-    void window.desktop?.loadSettings?.().then((res) => {
-      if (res && res.ok && res.data && typeof res.data === 'object') {
-        const d = res.data as { discordClientId?: string };
-        if (d.discordClientId) setCustomDiscordId(d.discordClientId);
-      }
-    });
-  }, []);
-
-  const handleSaveDiscordId = async () => {
-    if (window.desktop?.setDiscordClientId) {
-      await window.desktop.setDiscordClientId(customDiscordId);
-      setSavedDiscordMsg('Saved!');
-      setTimeout(() => setSavedDiscordMsg(''), 2500);
-    }
-  };
 
   useEffect(() => {
     if (focusSection === 'equalizer') {
@@ -3114,37 +3095,25 @@ export function SettingsView({
         <div className="space-y-4">
           <Disclosure
             title="Discord Rich Presence"
-            subtitle="Displays music status on your Discord profile"
+            subtitle="Automatycznie wyświetla słuchany utwór na Twoim profilu Discord"
             icon={<Music className="w-[18px] h-[18px] text-sc-orange" />}
           >
             <div className="pt-4 space-y-3">
-              <p className="text-[12px] text-sc-muted max-w-[60ch]">
-                Status is active with the music listening icon (Listening to). To display a custom name like <strong>Abbadon</strong> instead of the default, create a free application named <strong>Abbadon</strong> on the{' '}
-                <a
-                  href="https://discord.com/developers/applications"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-sc-orange underline hover:text-sc-orange/80 cursor-pointer"
-                >
-                  Discord Developer Portal
-                </a>
-                , and paste its <strong>Application ID</strong> below:
-              </p>
-              <div className="flex gap-2 max-w-md">
-                <input
-                  type="text"
-                  placeholder="1177081335727267940 (Default)"
-                  value={customDiscordId}
-                  onChange={(e) => setCustomDiscordId(e.target.value)}
-                  className="flex-1 rounded-xl border border-sc-line bg-sc-panel-2/60 px-3 py-1.5 text-xs text-sc-fg font-mono outline-none focus:border-sc-orange"
-                />
-                <button
-                  type="button"
-                  onClick={handleSaveDiscordId}
-                  className="rounded-xl bg-sc-orange px-4 py-1.5 text-xs font-bold text-white hover:brightness-110 active:scale-95 transition-all cursor-pointer"
-                >
-                  {savedDiscordMsg || 'Save'}
-                </button>
+              <div className="p-3.5 rounded-xl border border-sc-line bg-sc-panel-2/40 flex items-start gap-3">
+                <div className="w-8 h-8 rounded-lg bg-[#5865F2]/20 text-[#8592ff] flex items-center justify-center shrink-0 mt-0.5">
+                  <Music className="w-4 h-4" />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-[12.5px] font-bold text-sc-fg flex items-center gap-2">
+                    Oficjalna integracja Abbadon na Discordzie
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/15 text-emerald-400">
+                      Aktywna
+                    </span>
+                  </div>
+                  <p className="text-[11.5px] text-sc-muted leading-relaxed">
+                    Aplikacja automatycznie łączy się z Twoim Discordem i wyświetla status <strong>„Słucha Abbadon”</strong> z okładką albumu, tytułem utworu, wykonawcą oraz przyciskami do wspólnego słuchania z przyjaciółmi.
+                  </p>
+                </div>
               </div>
             </div>
           </Disclosure>

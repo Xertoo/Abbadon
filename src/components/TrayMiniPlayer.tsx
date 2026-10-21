@@ -86,6 +86,15 @@ export function TrayMiniPlayer() {
     }
   }, []);
 
+  // Sync mini player prefs from main window via IPC
+  useEffect(() => {
+    if (window.desktop?.onMiniPrefsSync) {
+      return window.desktop.onMiniPrefsSync((newPrefs) => {
+        if (newPrefs) setPrefs(newPrefs);
+      });
+    }
+  }, []);
+
   useEffect(() => {
     // Listen for state sync from main process
     const handleSync = (_e: unknown, synced: PlaybackState) => {
@@ -143,29 +152,66 @@ export function TrayMiniPlayer() {
   const track = state.track;
 
   // Background blur and transparency styles
-  const blurClass =
-    prefs.miniBlur === 'none'
-      ? 'backdrop-blur-none'
-      : prefs.miniBlur === 'subtle'
-        ? 'backdrop-blur-sm'
-        : prefs.miniBlur === 'frosted'
-          ? 'backdrop-blur-md'
-          : prefs.miniBlur === 'solid'
-            ? ''
-            : 'backdrop-blur-2xl';
+  const getGlassStyle = () => {
+    const blur = prefs.miniBlur || 'heavy';
+    const op = blur === 'solid' ? 1 : (prefs.miniOpacity ?? 0.88);
 
-  const opacity = prefs.miniBlur === 'solid' ? 1 : (prefs.miniOpacity ?? 0.92);
-  const bgStyle: React.CSSProperties = {
-    backgroundColor:
-      prefs.miniBlur === 'solid'
-        ? 'var(--sc-bg)'
-        : `color-mix(in srgb, var(--sc-bg) ${Math.round(opacity * 100)}%, transparent)`,
+    if (blur === 'solid') {
+      return {
+        className: 'border border-sc-line/80 shadow-2xl',
+        style: {
+          backgroundColor: 'var(--sc-bg, #0b0b0f)',
+        },
+      };
+    }
+
+    if (blur === 'none') {
+      return {
+        className: 'border border-white/15 shadow-2xl',
+        style: {
+          backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(op * 100)}%, transparent)`,
+        },
+      };
+    }
+
+    if (blur === 'subtle') {
+      return {
+        className: 'backdrop-blur-md border border-white/20 shadow-2xl',
+        style: {
+          backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(Math.min(0.85, op) * 100)}%, transparent)`,
+          boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.15), 0 12px 36px rgba(0, 0, 0, 0.55)',
+        },
+      };
+    }
+
+    if (blur === 'frosted') {
+      return {
+        className: 'backdrop-blur-xl border border-white/30 shadow-2xl',
+        style: {
+          backgroundImage: 'linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.01) 100%)',
+          backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(Math.min(0.88, op) * 100)}%, transparent)`,
+          boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.25), 0 16px 44px rgba(0, 0, 0, 0.65)',
+        },
+      };
+    }
+
+    // heavy (acrylic)
+    return {
+      className: 'backdrop-blur-3xl border border-white/25 shadow-2xl',
+      style: {
+        backgroundImage: 'radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.08) 0%, transparent 75%)',
+        backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(op * 100)}%, transparent)`,
+        boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.35), 0 20px 50px rgba(0, 0, 0, 0.75)',
+      },
+    };
   };
+
+  const glass = getGlassStyle();
 
   return (
     <div
-      style={bgStyle}
-      className={`w-full h-full box-border ${blurClass} text-sc-fg select-none border border-sc-line/70 rounded-2xl p-3 flex flex-col justify-between shadow-2xl overflow-hidden font-sans`}
+      style={glass.style}
+      className={`w-full h-full box-border ${glass.className} text-sc-fg select-none rounded-2xl p-3 flex flex-col justify-between overflow-hidden font-sans transition-all duration-200`}
     >
       {/* Top Bar: Logo & Draggable area & Actions */}
       <div

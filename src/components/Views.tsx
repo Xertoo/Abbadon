@@ -1783,11 +1783,11 @@ function MiniPlayerSettingsPanel({
   onPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
 }) {
   const BLUR_OPTIONS = [
-    { id: 'none', label: 'Brak / Transparent', desc: 'Pełna przezroczystość bez rozmycia tła' },
-    { id: 'subtle', label: 'Lekki blur', desc: 'Subtelne rozmycie szkła (8px)' },
-    { id: 'frosted', label: 'Matowe szkło', desc: 'Eleganckie matowe szkło akrylowe (16px)' },
-    { id: 'heavy', label: 'Głęboki akryl', desc: 'Mocne, nasycone rozmycie tła (40px)' },
-    { id: 'solid', label: 'Pełne krycie (Solid)', desc: 'Klasyczne tło bez przezroczystości' },
+    { id: 'none', label: 'Brak / Transparent', desc: 'Pełna przezroczystość bez rozmycia (krystaliczne szkło)', defaultOpacity: 0.38 },
+    { id: 'subtle', label: 'Lekki blur', desc: 'Subtelne rozmycie szkła z delikatnym refleksem (12px)', defaultOpacity: 0.65 },
+    { id: 'frosted', label: 'Matowe szkło (Frosted)', desc: 'Satynowe, mleczne szkło z wyraźnym rozmyciem (24px)', defaultOpacity: 0.78 },
+    { id: 'heavy', label: 'Głęboki akryl (Acrylic)', desc: 'Mocne, nasycone rozmycie w stylu Fluent Acrylic (48px)', defaultOpacity: 0.88 },
+    { id: 'solid', label: 'Pełne krycie (Solid)', desc: 'Klasyczne tło bez przezroczystości (100% nieprzezroczyste)', defaultOpacity: 1.0 },
   ] as const;
 
   const BUTTON_TOGGLES: { key: keyof Prefs; label: string; desc: string }[] = [
@@ -1801,24 +1801,61 @@ function MiniPlayerSettingsPanel({
     { key: 'miniAlwaysOnTop', label: 'Zawsze na wierzchu (Always on Top)', desc: 'Domyślne przypinanie okna ponad innymi aplikacjami' },
   ];
 
-  const previewBlurClass =
-    prefs.miniBlur === 'none'
-      ? 'backdrop-blur-none'
-      : prefs.miniBlur === 'subtle'
-        ? 'backdrop-blur-sm'
-        : prefs.miniBlur === 'frosted'
-          ? 'backdrop-blur-md'
-          : prefs.miniBlur === 'solid'
-            ? ''
-            : 'backdrop-blur-2xl';
+  const getPreviewGlassStyle = () => {
+    const blur = prefs.miniBlur || 'heavy';
+    const op = blur === 'solid' ? 1 : (prefs.miniOpacity ?? 0.88);
 
-  const previewOpacity = prefs.miniBlur === 'solid' ? 1 : (prefs.miniOpacity ?? 0.92);
-  const previewBgStyle: React.CSSProperties = {
-    backgroundColor:
-      prefs.miniBlur === 'solid'
-        ? 'var(--sc-bg)'
-        : `color-mix(in srgb, var(--sc-bg) ${Math.round(previewOpacity * 100)}%, transparent)`,
+    if (blur === 'solid') {
+      return {
+        className: 'border border-sc-line/80 shadow-2xl',
+        style: {
+          backgroundColor: 'var(--sc-bg, #0b0b0f)',
+        },
+      };
+    }
+
+    if (blur === 'none') {
+      return {
+        className: 'border border-white/20 shadow-2xl',
+        style: {
+          backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(op * 100)}%, transparent)`,
+        },
+      };
+    }
+
+    if (blur === 'subtle') {
+      return {
+        className: 'backdrop-blur-md border border-white/25 shadow-2xl',
+        style: {
+          backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(Math.min(0.85, op) * 100)}%, transparent)`,
+          boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.2), 0 12px 36px rgba(0, 0, 0, 0.55)',
+        },
+      };
+    }
+
+    if (blur === 'frosted') {
+      return {
+        className: 'backdrop-blur-xl border border-white/35 shadow-2xl',
+        style: {
+          backgroundImage: 'linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.02) 100%)',
+          backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(Math.min(0.85, op) * 100)}%, transparent)`,
+          boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.3), 0 16px 44px rgba(0, 0, 0, 0.65)',
+        },
+      };
+    }
+
+    // heavy (acrylic)
+    return {
+      className: 'backdrop-blur-3xl border border-white/30 shadow-2xl',
+      style: {
+        backgroundImage: 'radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.1) 0%, transparent 75%)',
+        backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(op * 100)}%, transparent)`,
+        boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.35), 0 20px 50px rgba(0, 0, 0, 0.75)',
+      },
+    };
   };
+
+  const previewGlass = getPreviewGlassStyle();
 
   return (
     <div className="space-y-6">
@@ -1839,14 +1876,38 @@ function MiniPlayerSettingsPanel({
           </span>
         </div>
 
-        {/* Backdrop simulation container */}
-        <div className="relative rounded-xl overflow-hidden p-6 flex items-center justify-center border border-dashed border-sc-line/60 bg-gradient-to-br from-indigo-950/30 via-neutral-900/40 to-purple-950/30">
-          <div className="absolute inset-0 opacity-20 pointer-events-none bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:16px_16px]" />
+        {/* Desktop Wallpaper Simulation Container */}
+        <div className="relative rounded-2xl overflow-hidden p-8 flex items-center justify-center border border-sc-line bg-[#07070c] min-h-[290px]">
+          {/* Wallpaper simulation elements behind mini player */}
+          <div className="absolute inset-0 pointer-events-none select-none overflow-hidden">
+            {/* Colorful glowing ambient orbs */}
+            <div className="absolute top-2 left-6 w-56 h-56 rounded-full bg-gradient-to-tr from-cyan-500/40 via-blue-600/30 to-purple-600/30 blur-2xl opacity-75" />
+            <div className="absolute bottom-2 right-8 w-60 h-60 rounded-full bg-gradient-to-bl from-orange-500/50 via-rose-500/40 to-amber-500/30 blur-2xl opacity-80" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-32 rounded-full bg-emerald-500/20 blur-3xl opacity-60" />
+
+            {/* Sharp desktop wallpaper pattern & typography */}
+            <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:20px_20px]" />
+            <div className="absolute top-3 left-5 flex items-center gap-2 text-[11px] font-mono text-cyan-400/80 font-bold tracking-widest uppercase">
+              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+              Desktop Screen Wallpaper
+            </div>
+            <div className="absolute bottom-3 right-6 text-right">
+              <div className="text-[26px] font-black tracking-tight text-white/25 select-none font-sans leading-none">
+                ABBADON 2026
+              </div>
+              <div className="text-[9.5px] font-mono text-white/40 tracking-widest uppercase mt-1">
+                High-Resolution Audio Engine • Ultra Glass
+              </div>
+            </div>
+            {/* High contrast geometric accent lines across the center so blur difference is super crisp */}
+            <div className="absolute top-[38%] left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400/40 to-transparent" />
+            <div className="absolute bottom-[38%] left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-orange-400/40 to-transparent" />
+          </div>
 
           {/* Actual Mini Player Mockup */}
           <div
-            style={previewBgStyle}
-            className={`w-[360px] h-[195px] box-border ${previewBlurClass} text-sc-fg select-none border border-sc-line/70 rounded-2xl p-3 flex flex-col justify-between shadow-2xl relative transition-all duration-200`}
+            style={previewGlass.style}
+            className={`w-[360px] h-[195px] box-border ${previewGlass.className} text-sc-fg select-none rounded-2xl p-3 flex flex-col justify-between relative transition-all duration-300 z-10`}
           >
             {/* Top Bar */}
             <div className="flex items-center justify-between gap-2 border-b border-sc-line/40 pb-1.5">
@@ -1969,7 +2030,10 @@ function MiniPlayerSettingsPanel({
             <button
               key={opt.id}
               type="button"
-              onClick={() => onPref('miniBlur', opt.id)}
+              onClick={() => {
+                onPref('miniBlur', opt.id);
+                onPref('miniOpacity', opt.defaultOpacity);
+              }}
               className={clsx(
                 'text-left rounded-xl border p-3 transition-all relative cursor-pointer',
                 prefs.miniBlur === opt.id

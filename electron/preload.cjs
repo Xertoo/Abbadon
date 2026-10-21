@@ -91,6 +91,14 @@ contextBridge.exposeInMainWorld('desktop', {
   sendMiniCommand: (action, value) => {
     ipcRenderer.send('mini:command', { action, value });
   },
+  sendMiniPrefs: (prefs) => {
+    ipcRenderer.send('mini:prefs', prefs);
+  },
+  onMiniPrefsSync: (cb) => {
+    const handler = (_e, prefs) => cb(prefs);
+    ipcRenderer.on('sc:sync-mini-prefs', handler);
+    return () => ipcRenderer.removeListener('sc:sync-mini-prefs', handler);
+  },
   onSeekCommand: (cb) => {
     const handler = (_e, time) => cb(time);
     ipcRenderer.on('seek-command', handler);

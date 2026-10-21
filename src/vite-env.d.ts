@@ -100,6 +100,8 @@ interface DesktopBridge {
   onTrayStateSync?: (cb: (_e: unknown, state: any) => void) => () => void;
   onMiniPinnedSync?: (cb: (pinned: boolean) => void) => () => void;
   sendMiniCommand?: (action: string, value?: unknown) => void;
+  sendMiniPrefs?: (prefs: any) => void;
+  onMiniPrefsSync?: (cb: (prefs: any) => void) => () => void;
   updateGlobalShortcuts?: (shortcuts: Record<string, any>) => Promise<{ ok: boolean; error?: string }>;
   getGlobalShortcuts?: () => Promise<{ ok: boolean; shortcuts: Record<string, any> }>;
   onSeekCommand?: (cb: (time: number) => void) => () => void;

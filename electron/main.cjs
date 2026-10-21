@@ -1629,6 +1629,20 @@ ipcMain.handle('sc:set-discord-client-id', (_e, newId) => {
 
 let isMiniPinned = true;
 let miniCustomPos = null;
+let lastMiniPrefs = null;
+
+function applyMiniWindowMaterial(blurMode) {
+  if (!trayWin || trayWin.isDestroyed()) return;
+  try {
+    if (blurMode === 'heavy' || blurMode === 'frosted') {
+      trayWin.setBackgroundMaterial('acrylic');
+    } else if (blurMode === 'subtle') {
+      trayWin.setBackgroundMaterial('mica');
+    } else {
+      trayWin.setBackgroundMaterial('none');
+    }
+  } catch {}
+}
 
 function createTrayWindow() {
   if (trayWin && !trayWin.isDestroyed()) return trayWin;
@@ -1704,11 +1718,23 @@ function toggleTrayWindow() {
     trayWin.setPosition(x, y, false);
   }
   trayWin.setAlwaysOnTop(isMiniPinned, 'screen-saver');
+  if (lastMiniPrefs) {
+    applyMiniWindowMaterial(lastMiniPrefs.miniBlur);
+    trayWin.webContents.send('sc:sync-mini-prefs', lastMiniPrefs);
+  }
   trayWin.show();
   trayWin.focus();
   trayWin.webContents.send('sc:sync-tray-player', lastPlaybackState);
   trayWin.webContents.send('sc:sync-mini-pinned', isMiniPinned);
 }
+
+ipcMain.on('mini:prefs', (_e, prefs) => {
+  lastMiniPrefs = prefs;
+  if (trayWin && !trayWin.isDestroyed()) {
+    applyMiniWindowMaterial(prefs?.miniBlur);
+    trayWin.webContents.send('sc:sync-mini-prefs', prefs);
+  }
+});
 
 function initTray() {
   if (tray) return updateTrayMenu;

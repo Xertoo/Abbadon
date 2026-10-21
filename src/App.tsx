@@ -1606,6 +1606,24 @@ if (typeof d.theme === 'string') {
     prefs.shortcutMiniPlayer,
   ]);
 
+  // Sync Mini Player preferences to Electron main process & tray window
+  useEffect(() => {
+    if (window.desktop?.sendMiniPrefs) {
+      window.desktop.sendMiniPrefs(prefs);
+    }
+  }, [
+    prefs.miniBlur,
+    prefs.miniOpacity,
+    prefs.miniAlwaysOnTop,
+    prefs.miniShowProgress,
+    prefs.miniShowVolume,
+    prefs.miniShowVisualizer,
+    prefs.miniShowPrevNext,
+    prefs.miniShowLike,
+    prefs.miniShowShuffle,
+    prefs.miniShowRepeat,
+  ]);
+
   // Desktop integration: Tray, Discord Rich Presence, and OS Notifications
   useEffect(() => {
     if (!window.desktop?.updatePlayerState) return;

@@ -150,7 +150,6 @@ export function TrayMiniPlayer() {
   };
 
   const track = state.track;
-  const artwork = track?.artwork;
 
   // Background blur and transparency styles
   const getGlassStyle = () => {
@@ -217,42 +216,6 @@ export function TrayMiniPlayer() {
       style={glass.style}
       className={`w-full h-full box-border ${glass.className} text-sc-fg select-none rounded-2xl p-3 flex flex-col justify-between overflow-hidden font-sans relative transition-all duration-200`}
     >
-      {/* Ambient Artwork Glass Background Layer */}
-      {prefs.miniBlur !== 'none' && prefs.miniBlur !== 'solid' && (
-        <div className="absolute inset-0 pointer-events-none overflow-hidden -z-10 rounded-2xl">
-          {artwork ? (
-            <img
-              src={artwork}
-              alt=""
-              className="w-full h-full object-cover scale-150 select-none transition-all duration-700"
-              style={{
-                filter:
-                  prefs.miniBlur === 'subtle'
-                    ? 'blur(16px) saturate(1.4)'
-                    : prefs.miniBlur === 'frosted'
-                      ? 'blur(32px) saturate(1.7) brightness(0.9)'
-                      : 'blur(52px) saturate(2.1) brightness(0.75)',
-                opacity: Math.max(0.12, (1 - (prefs.miniOpacity ?? 0.65)) * 0.8),
-              }}
-            />
-          ) : (
-            <div
-              className="w-full h-full scale-125 select-none transition-all duration-700"
-              style={{
-                background:
-                  'radial-gradient(circle at 75% 25%, var(--sc-orange, #ff5500) 0%, transparent 60%), radial-gradient(circle at 25% 75%, var(--sc-accent-2, #38e0d4) 0%, transparent 60%)',
-                filter:
-                  prefs.miniBlur === 'subtle'
-                    ? 'blur(20px)'
-                    : prefs.miniBlur === 'frosted'
-                      ? 'blur(36px)'
-                      : 'blur(56px)',
-                opacity: Math.max(0.10, (1 - (prefs.miniOpacity ?? 0.65)) * 0.45),
-              }}
-            />
-          )}
-        </div>
-      )}
       {/* Top Bar: Logo & Draggable area & Actions */}
       <div
         className="flex items-center justify-between gap-2 border-b border-sc-line/40 pb-1.5 cursor-grab active:cursor-grabbing select-none"

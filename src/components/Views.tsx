@@ -1937,26 +1937,6 @@ function MiniPlayerSettingsPanel({
             style={previewGlass.style}
             className={`w-[360px] h-[195px] box-border ${previewGlass.className} text-sc-fg select-none rounded-2xl p-3 flex flex-col justify-between relative transition-all duration-300 z-10 overflow-hidden`}
           >
-            {/* Ambient Artwork Glass Background Layer */}
-            {prefs.miniBlur !== 'none' && prefs.miniBlur !== 'solid' && (
-              <div className="absolute inset-0 pointer-events-none overflow-hidden -z-10 rounded-2xl">
-                <div
-                  className="w-full h-full scale-125 select-none transition-all duration-500"
-                  style={{
-                    background:
-                      'radial-gradient(circle at 75% 25%, #ff5500 0%, transparent 60%), radial-gradient(circle at 25% 75%, #6366f1 0%, transparent 60%)',
-                    filter:
-                      prefs.miniBlur === 'subtle'
-                        ? 'blur(16px)'
-                        : prefs.miniBlur === 'frosted'
-                          ? 'blur(30px)'
-                          : 'blur(50px)',
-                    opacity: Math.max(0.12, (1 - (prefs.miniOpacity ?? 0.65)) * 0.55),
-                  }}
-                />
-              </div>
-            )}
-
             {/* Top Bar */}
             <div className="flex items-center justify-between gap-2 border-b border-sc-line/40 pb-1.5">
               <div className="flex items-center gap-1.5">

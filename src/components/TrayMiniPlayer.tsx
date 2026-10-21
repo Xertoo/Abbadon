@@ -169,7 +169,7 @@ export function TrayMiniPlayer() {
 
     if (blur === 'none') {
       return {
-        className: 'border border-white/20 shadow-2xl',
+        className: 'border border-white/15 shadow-2xl',
         style: {
           backgroundColor: baseBg,
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
@@ -195,7 +195,6 @@ export function TrayMiniPlayer() {
       return {
         className: 'border border-white/35 shadow-2xl',
         style: {
-          backgroundImage: 'linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.02) 100%)',
           backgroundColor: baseBg,
           boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.25), 0 16px 44px rgba(0, 0, 0, 0.65)',
           backdropFilter: 'blur(20px)',
@@ -208,7 +207,6 @@ export function TrayMiniPlayer() {
     return {
       className: 'border border-white/30 shadow-2xl',
       style: {
-        backgroundImage: 'radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.12) 0%, transparent 75%)',
         backgroundColor: baseBg,
         boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.35), 0 20px 50px rgba(0, 0, 0, 0.75)',
         backdropFilter: 'blur(36px)',

@@ -38,6 +38,7 @@ import {
   type RoomChatMessage,
   type RoomReaction,
   type IncomingInvite,
+  type IncomingSessionRequest,
   type ProfileThemeColor,
   AVATAR_PRESETS,
 } from '../lib/listenTogether';
@@ -51,6 +52,8 @@ interface Props {
   presences: Record<string, FriendPresence>;
   connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error';
   syncSession: SyncSession;
+  incomingSessionRequests?: IncomingSessionRequest[];
+  pendingOutgoingRequestTo?: string | null;
   incomingInvites: IncomingInvite[];
   chatMessages: RoomChatMessage[];
   reactions: RoomReaction[];
@@ -61,6 +64,10 @@ interface Props {
   onRemoveFriend: (code: string) => void;
   onRenameFriend: (code: string, newName: string) => void;
   onFollowFriend: (code: string) => void;
+  onRequestListenTogether?: (code: string) => void;
+  onAcceptSessionRequest?: (id: string) => void;
+  onDeclineSessionRequest?: (id: string) => void;
+  onCancelSessionRequest?: () => void;
   onStopSync: () => void;
   onInviteFriend: (code: string) => void;
   onAcceptInvite: (invite: IncomingInvite) => void;
@@ -81,6 +88,8 @@ export function FriendsPopover({
   presences,
   connectionStatus,
   syncSession,
+  incomingSessionRequests = [],
+  pendingOutgoingRequestTo,
   incomingInvites,
   chatMessages,
   reactions,
@@ -91,6 +100,10 @@ export function FriendsPopover({
   onRemoveFriend,
   onRenameFriend,
   onFollowFriend,
+  onRequestListenTogether,
+  onAcceptSessionRequest,
+  onDeclineSessionRequest,
+  onCancelSessionRequest,
   onStopSync,
   onInviteFriend,
   onAcceptInvite,
@@ -315,6 +328,39 @@ export function FriendsPopover({
           </div>
         )}
 
+        {/* Incoming Session Requests Alert */}
+        {incomingSessionRequests.length > 0 && (
+          <div className="p-3 bg-sc-orange/15 border-b border-sc-orange/30 shrink-0 space-y-2">
+            {incomingSessionRequests.map((req) => (
+              <div key={req.id} className="flex items-center justify-between gap-2 text-xs">
+                <div className="min-w-0 flex-1">
+                  <span className="font-bold text-sc-orange">{req.senderName}</span>
+                  <span className="text-sc-fg"> invited you to listen together!</span>
+                  {req.track && (
+                    <p className="text-[11px] text-sc-muted truncate mt-0.5">
+                      Track: {req.track.title}
+                    </p>
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => onAcceptSessionRequest?.(req.id)}
+                    className="px-2.5 py-1 rounded-lg bg-sc-orange text-sc-on-accent text-[11px] font-bold hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                  >
+                    Accept
+                  </button>
+                  <button
+                    onClick={() => onDeclineSessionRequest?.(req.id)}
+                    className="w-6 h-6 rounded-lg text-sc-muted hover:text-sc-fg hover:bg-white/5 flex items-center justify-center text-xs cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Incoming Invites Alert */}
         {incomingInvites.length > 0 && (
           <div className="p-3 bg-sc-orange/10 border-b border-sc-orange/20 shrink-0 space-y-2">
@@ -322,7 +368,7 @@ export function FriendsPopover({
               <div key={invite.id} className="flex items-center justify-between gap-2 text-xs">
                 <div className="min-w-0 flex-1">
                   <span className="font-bold text-sc-orange">{invite.senderName}</span>
-                  <span className="text-sc-muted"> invites you to listen: </span>
+                  <span className="text-sc-muted"> invited you to Jam room: </span>
                   <p className="font-semibold text-sc-fg truncate">{invite.track.title}</p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -408,6 +454,32 @@ export function FriendsPopover({
           {/* TAB 1: FRIENDS & ACTIVITY */}
           {activeTab === 'friends' && (
             <div className="space-y-4">
+              {/* Active Co-Listening Banner */}
+              {syncSession.mode === 'co-listening' && (
+                <div className="p-3 rounded-2xl bg-gradient-to-r from-sc-orange/20 to-purple-600/20 border border-sc-orange/40 flex items-center justify-between gap-3 shadow-lg">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-full bg-sc-orange text-sc-on-accent flex items-center justify-center shrink-0 shadow-sm">
+                      <Headphones className="w-4 h-4 animate-bounce" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-sc-fg">Listen Together</span>
+                        <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 text-[9px] font-extrabold uppercase">Active</span>
+                      </div>
+                      <p className="text-[11px] text-sc-muted truncate">
+                        with <span className="text-sc-orange font-semibold">{syncSession.partnerName || syncSession.partnerCode}</span> • Real-time dual control
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={onStopSync}
+                    className="px-2.5 py-1 rounded-xl bg-white/10 hover:bg-red-500/80 hover:text-white text-sc-muted text-xs font-bold transition-all cursor-pointer shrink-0"
+                  >
+                    Disconnect
+                  </button>
+                </div>
+              )}
+
               {/* Quick Add Friend Bar */}
               <form onSubmit={handleAddFriend} className="space-y-2">
                 <div className="flex items-center gap-1.5">
@@ -450,14 +522,16 @@ export function FriendsPopover({
                     const currentPos = presence?.currentTime ?? 0;
                     const trackDur = presence?.duration || friendTrack?.duration || 0;
                     const progressPct = trackDur > 0 ? Math.min(100, Math.max(0, (currentPos / trackDur) * 100)) : 0;
-                    const isFollowingThisFriend = syncSession.mode === 'following' && syncSession.targetCode === f.code;
+                    const isCoListening = syncSession.mode === 'co-listening' && syncSession.partnerCode === f.code;
+                    const isFollowing = syncSession.mode === 'following' && syncSession.targetCode === f.code;
+                    const isPending = pendingOutgoingRequestTo === f.code;
 
                     return (
                       <div
                         key={f.code}
                         className={clsx(
                           'p-3 rounded-2xl border transition-all duration-200 space-y-2.5 bg-black/25',
-                          isFollowingThisFriend
+                          isCoListening || isFollowing
                             ? 'border-sc-orange/60 shadow-[0_4px_16px_rgba(var(--sc-accent-rgb,255,102,0),0.15)] ring-1 ring-sc-orange/40'
                             : 'border-white/[0.06] hover:border-white/[0.12]'
                         )}
@@ -491,23 +565,32 @@ export function FriendsPopover({
 
                           {/* Quick Actions */}
                           <div className="flex items-center gap-1 shrink-0">
-                            {isFollowingThisFriend ? (
+                            {isCoListening || isFollowing ? (
                               <button
                                 onClick={onStopSync}
-                                className="px-2 py-1 rounded-lg bg-sc-orange text-sc-on-accent text-[10px] font-bold hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-1"
+                                className="px-2.5 py-1 rounded-lg bg-sc-orange text-sc-on-accent text-[10px] font-bold hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+                                title="Listening together active — click to disconnect"
                               >
-                                <Headphones className="w-3 h-3" />
-                                <span>Syncing</span>
+                                <Headphones className="w-3 h-3 animate-pulse" />
+                                <span>Disconnect</span>
+                              </button>
+                            ) : isPending ? (
+                              <button
+                                onClick={onCancelSessionRequest}
+                                className="px-2 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold hover:bg-amber-500/30 transition-all cursor-pointer flex items-center gap-1"
+                                title="Invitation sent — click to cancel"
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                                <span>Sent...</span>
                               </button>
                             ) : (
                               <button
-                                onClick={() => onFollowFriend(f.code)}
-                                disabled={!friendTrack}
-                                title={friendTrack ? `Listen along with ${f.name}` : 'Friend is not playing anything'}
-                                className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-sc-orange hover:text-sc-on-accent text-sc-muted text-[10px] font-bold transition-all disabled:opacity-30 cursor-pointer flex items-center gap-1"
+                                onClick={() => onRequestListenTogether ? onRequestListenTogether(f.code) : onFollowFriend(f.code)}
+                                className="px-2.5 py-1 rounded-lg bg-sc-orange/15 hover:bg-sc-orange text-sc-orange hover:text-sc-on-accent text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 border border-sc-orange/30 hover:border-transparent"
+                                title={`Request to listen together with ${f.name} (full dual-control)`}
                               >
-                                <Play className="w-3 h-3 fill-current" />
-                                <span>Listen</span>
+                                <Headphones className="w-3 h-3" />
+                                <span>Listen Together</span>
                               </button>
                             )}
 

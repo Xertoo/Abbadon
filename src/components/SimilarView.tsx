@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Play, Compass, Heart, Sparkles, ArrowRight, ChevronDown, ChevronUp, Flame, ListPlus, ListStart } from 'lucide-react';
+import { Play, Compass, Heart, Sparkles, ArrowRight, ChevronDown, ChevronUp, Flame, ListPlus, ListStart, Radio } from 'lucide-react';
 import clsx from 'clsx';
 import { Artwork } from './Artwork';
 import type { Track, User } from '../types';
@@ -206,13 +206,24 @@ export function SimilarView(p: Props) {
   return (
     <div className="p-6 sm:p-8 space-y-8 max-w-[1560px] mx-auto w-full">
       <header>
-        <h1 className="flex items-center gap-2.5 text-2xl font-extrabold tracking-tight">
-          <Compass className="w-6 h-6 text-sc-orange" />
-          Find similar
+        {p.seed ? (
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-cyan-400 mb-1">
+            <Radio className="w-4 h-4 text-cyan-400 animate-pulse" />
+            <span>Radio utworu</span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-sc-orange mb-1">
+            <Compass className="w-4 h-4 text-sc-orange" />
+            <span>Discover Similar</span>
+          </div>
+        )}
+        <h1 className="flex items-center gap-2.5 text-2xl sm:text-3xl font-extrabold tracking-tight truncate">
+          {p.seed ? `Radio: ${p.seed.title}` : 'Find similar'}
         </h1>
-        <p className="text-[13px] text-sc-muted mt-1.5 max-w-lg leading-relaxed">
-          SoundCloud&apos;s own related feed, seeded by anything you played recently. Pick one and
-          it finds more in the same vein, so you never have to loop a single playlist.
+        <p className="text-[13px] text-sc-muted mt-1.5 max-w-xl leading-relaxed">
+          {p.seed
+            ? `Radio station dynamically generated based on "${p.seed.title}" (${p.seed.artist}). Matching tracks have been added to your queue.`
+            : `SoundCloud recommendation engine matched to your taste. Choose any track below to start a radio station.`}
         </p>
       </header>
 

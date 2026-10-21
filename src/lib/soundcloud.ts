@@ -330,6 +330,17 @@ export class NotFoundError extends Error {
   }
 }
 
+/** SoundCloud returned 400 Bad Request (e.g. invalid track, schema or payload mismatch). */
+export class BadRequestError extends Error {
+  public readonly status = 400;
+  public readonly bodyText: string;
+  constructor(message: string, bodyText = '') {
+    super(message);
+    this.name = 'BadRequestError';
+    this.bodyText = bodyText;
+  }
+}
+
 /** The saved session is no longer accepted; the user must sign in again. */
 export class AuthExpiredError extends Error {
   constructor() {
@@ -449,7 +460,32 @@ async function request<T>(path: string, ttl: number, opts: RequestOpts = {}): Pr
       throw new NotFoundError(`SoundCloud has no such resource (404)`);
     }
 
-    if (!res.ok) throw new Error(`SoundCloud API ${res.status}`);
+    if (res.status === 400) {
+      let detail = '';
+      try {
+        const parsed = JSON.parse(res.text);
+        if (parsed?.error_message) detail = parsed.error_message;
+        else if (Array.isArray(parsed?.errors) && parsed.errors[0]?.error_message) {
+          detail = parsed.errors.map((e: { error_message?: string }) => e.error_message).filter(Boolean).join('; ');
+        } else if (parsed?.message) detail = parsed.message;
+        else if (parsed?.error) detail = typeof parsed.error === 'string' ? parsed.error : JSON.stringify(parsed.error);
+      } catch {
+        if (res.text && res.text.length < 200) detail = res.text;
+      }
+      throw new BadRequestError(`SoundCloud API 400${detail ? `: ${detail}` : ''}`, res.text);
+    }
+
+    if (!res.ok) {
+      let detail = '';
+      try {
+        const parsed = JSON.parse(res.text);
+        if (parsed?.error_message) detail = parsed.error_message;
+        else if (parsed?.message) detail = parsed.message;
+      } catch {
+        /* ignore */
+      }
+      throw new Error(`SoundCloud API ${res.status}${detail ? `: ${detail}` : ''}`);
+    }
 
     let data: T;
     try {
@@ -517,6 +553,7 @@ export interface ScTrack {
   policy?: StreamPolicy;
   user: ScUser;
   created_at?: string;
+  waveform_url?: string;
 }
 
 export interface ScPlaylist {
@@ -610,6 +647,7 @@ export function mapTrack(t: ScTrack): Track {
      */
     previewOnly: t.policy === 'SNIP',
     isLiked: false,
+    waveformUrl: t.waveform_url ?? undefined,
   };
 }
 
@@ -636,6 +674,74 @@ const SHORT = 5 * 60 * 1000;
 
 /** `/tracks?ids=` accepts at most 50 ids; 51+ answers 400. */
 const HYDRATE_BATCH = 50;
+
+export function clearPlaylistCache(playlistId: string | number) {
+  const cleanId = String(playlistId).replace(/^soundcloud:playlists:/, '').trim();
+  const keysToClear = [
+    `GET /playlists/${cleanId}`,
+    `GET /playlists/soundcloud:playlists:${cleanId}`,
+  ];
+  for (const k of keysToClear) {
+    memoryCache.delete(k);
+    try {
+      localStorage.removeItem(CACHE_PREFIX + k);
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+async function updatePlaylistTracks(
+  playlistId: string | number,
+  trackIds: number[]
+): Promise<ScPlaylist> {
+  const cleanId = String(playlistId).replace(/^soundcloud:playlists:/, '').trim();
+  const validIds = Array.from(new Set(trackIds.filter((id) => Number.isInteger(id) && id > 0)));
+
+  // Standard SoundCloud web API payload
+  const variations: Array<{ path: string; body: unknown; label: string }> = [
+    // 1. SoundCloud standard numeric array
+    {
+      path: `/playlists/${cleanId}`,
+      body: { playlist: { tracks: validIds } },
+      label: 'numeric-array',
+    },
+    // 2. Track URNs array (SoundCloud modern URN schema)
+    {
+      path: `/playlists/${cleanId}`,
+      body: { playlist: { tracks: validIds.map((id) => `soundcloud:tracks:${id}`) } },
+      label: 'urn-array',
+    },
+  ];
+
+  let lastError: unknown = null;
+  for (let i = 0; i < variations.length; i++) {
+    const variant = variations[i];
+    try {
+      if (i > 0) {
+        // Paced backoff so SoundCloud bot defense is not triggered by rapid retries
+        await new Promise((r) => setTimeout(r, 800));
+      }
+      const res = await request<ScPlaylist>(variant.path, 0, {
+        method: 'PUT',
+        auth: true,
+        body: variant.body,
+      });
+      return res;
+    } catch (err: unknown) {
+      lastError = err;
+      const isBadReq =
+        err instanceof BadRequestError ||
+        (err instanceof Error && (err.message.includes('400') || err.message.includes('422')));
+      if (!isBadReq) {
+        throw err;
+      }
+      console.warn(`[updatePlaylistTracks] Variant ${variant.label} failed with 400/422, trying next...`);
+    }
+  }
+
+  throw lastError;
+}
 
 export const sc = {
   search(
@@ -668,6 +774,31 @@ export const sc = {
       `/search/playlists?q=${encodeURIComponent(query)}&limit=${limit}`,
       MED
     );
+  },
+
+  searchQueries(query: string, limit = 6) {
+    return request<{ collection: { output?: string; query?: string }[] }>(
+      `/search/queries?q=${encodeURIComponent(query)}&limit=${limit}`,
+      SHORT
+    );
+  },
+
+  async getSearchSuggestions(query: string): Promise<{ queries: string[]; tracks: ReturnType<typeof mapTrack>[] }> {
+    const q = query.trim();
+    if (!q || q.length < 2) return { queries: [], tracks: [] };
+    try {
+      const [queriesRes, tracksRes] = await Promise.all([
+        this.searchQueries(q, 5).catch(() => ({ collection: [] })),
+        this.searchTracks(q, 4).catch(() => ({ collection: [] })),
+      ]);
+      const queries = (queriesRes.collection || [])
+        .map((item) => (item.output || item.query || '').trim())
+        .filter((s): s is string => Boolean(s) && s.toLowerCase() !== q.toLowerCase());
+      const tracks = (tracksRes.collection || []).map(mapTrack);
+      return { queries, tracks };
+    } catch {
+      return { queries: [], tracks: [] };
+    }
   },
 
   /**
@@ -1003,46 +1134,69 @@ export const sc = {
    * In SoundCloud API v2, modifying playlist tracks is done via `PUT /playlists/:id`
    * with the updated track list in `{ playlist: { tracks: [...] } }`.
    *
-   * Each entry has to be an object (`{ id }`), not a bare number. The API
-   * accepts the numeric form for some read paths but rejects it here with a
-   * 403, so the objects are built from the ids at the edge.
+   * Validates IDs, fetches existing tracks directly without heavy hydration,
+   * and tries schema variations (numeric array, URN array, object array) if SoundCloud answers 400/422.
    */
   async addTrackToPlaylist(
     playlistId: string | number,
     trackId: string | number,
     existingTrackIds?: Array<string | number>
   ) {
-    const cleanPlId = String(playlistId).replace(/^soundcloud:playlists:/, '');
-    let ids: number[] = [];
+    const cleanPlId = String(playlistId).replace(/^soundcloud:playlists:/, '').trim();
+    if (!cleanPlId || !/^\d+$/.test(cleanPlId)) {
+      throw new Error(`Invalid playlist ID: "${playlistId}"`);
+    }
+
+    const cleanTrackId = String(trackId).replace(/^soundcloud:tracks:/, '').trim();
+    const numTrackId = parseInt(cleanTrackId, 10);
+    if (!Number.isInteger(numTrackId) || numTrackId <= 0) {
+      throw new Error('Only SoundCloud tracks can be added to SoundCloud playlists');
+    }
+
+    let existingIds: number[] = [];
     if (existingTrackIds && existingTrackIds.length > 0) {
-      ids = existingTrackIds.map(Number).filter(Boolean);
+      existingIds = existingTrackIds
+        .map((id) => {
+          const n = parseInt(String(id).replace(/^soundcloud:tracks:/, '').trim(), 10);
+          return Number.isInteger(n) && n > 0 ? n : null;
+        })
+        .filter((id): id is number => id !== null);
     } else {
-      const p = await this.playlistTracks(cleanPlId);
-      ids = (p.collection || []).map((t) => Number(t.id)).filter(Boolean);
+      try {
+        const raw = await request<{
+          tracks?: Array<{ id?: number | string; urn?: string } | number | string>;
+        }>(`/playlists/${cleanPlId}`, 0, { auth: true });
+
+        if (Array.isArray(raw?.tracks)) {
+          existingIds = raw.tracks
+            .map((t) => {
+              if (typeof t === 'number' && Number.isInteger(t) && t > 0) return t;
+              if (typeof t === 'string') {
+                const n = parseInt(t.replace(/^soundcloud:tracks:/, '').trim(), 10);
+                return Number.isInteger(n) && n > 0 ? n : null;
+              }
+              if (t && typeof t === 'object' && 'id' in t) {
+                const n = parseInt(String(t.id).replace(/^soundcloud:tracks:/, '').trim(), 10);
+                return Number.isInteger(n) && n > 0 ? n : null;
+              }
+              return null;
+            })
+            .filter((id): id is number => id !== null);
+        }
+      } catch (err) {
+        console.warn('[addTrackToPlaylist] Could not fetch existing tracks from playlist:', err);
+      }
     }
-    const numId = Number(String(trackId).replace(/^soundcloud:tracks:/, ''));
-    if (!ids.includes(numId)) {
-      ids.push(numId);
+
+    if (!existingIds.includes(numTrackId)) {
+      existingIds.push(numTrackId);
     }
-    const result = await request<ScPlaylist>(`/playlists/${cleanPlId}`, 0, {
-      method: 'PUT',
-      auth: true,
-      body: {
-        playlist: {
-          tracks: ids.map((id) => ({ id })),
-        },
-      },
-    });
+
+    const result = await updatePlaylistTracks(cleanPlId, existingIds);
 
     // Invalidate playlist tracks cache
-    const cacheKey = `GET /playlists/${cleanPlId}`;
-    memoryCache.delete(cacheKey);
-    try {
-      localStorage.removeItem(CACHE_PREFIX + cacheKey);
-    } catch {
-      /* ignore */
-    }
-    
+    clearPlaylistCache(cleanPlId);
+
     return result;
   },
 
@@ -1052,34 +1206,56 @@ export const sc = {
     trackId: string | number,
     existingTrackIds?: Array<string | number>
   ) {
-    let ids: number[] = [];
-    if (existingTrackIds && existingTrackIds.length > 0) {
-      ids = existingTrackIds.map(Number).filter(Boolean);
-    } else {
-      const p = await this.playlistTracks(playlistId);
-      ids = (p.collection || []).map((t) => Number(t.id)).filter(Boolean);
+    const cleanPlId = String(playlistId).replace(/^soundcloud:playlists:/, '').trim();
+    if (!cleanPlId || !/^\d+$/.test(cleanPlId)) {
+      throw new Error(`Invalid playlist ID: "${playlistId}"`);
     }
-    const numId = Number(trackId);
-    ids = ids.filter((id) => id !== numId);
-    const result = await request<ScPlaylist>(`/playlists/${playlistId}`, 0, {
-      method: 'PUT',
-      auth: true,
-      body: {
-        playlist: {
-          // Objects, not numbers - see addTrackToPlaylist for why.
-          tracks: ids.map((id) => ({ id })),
-        },
-      },
-    });
 
-    // Invalidate playlist tracks cache
-    const cacheKey = `GET /playlists/${playlistId}`;
-    memoryCache.delete(cacheKey);
-    try {
-      localStorage.removeItem(CACHE_PREFIX + cacheKey);
-    } catch {
-      /* ignore */
+    const cleanTrackId = String(trackId).replace(/^soundcloud:tracks:/, '').trim();
+    const numTrackId = parseInt(cleanTrackId, 10);
+    if (!Number.isInteger(numTrackId) || numTrackId <= 0) {
+      throw new Error('Invalid track ID');
     }
+
+    let existingIds: number[] = [];
+    if (existingTrackIds && existingTrackIds.length > 0) {
+      existingIds = existingTrackIds
+        .map((id) => {
+          const n = parseInt(String(id).replace(/^soundcloud:tracks:/, '').trim(), 10);
+          return Number.isInteger(n) && n > 0 ? n : null;
+        })
+        .filter((id): id is number => id !== null);
+    } else {
+      try {
+        const raw = await request<{
+          tracks?: Array<{ id?: number | string; urn?: string } | number | string>;
+        }>(`/playlists/${cleanPlId}`, 0, { auth: true });
+
+        if (Array.isArray(raw?.tracks)) {
+          existingIds = raw.tracks
+            .map((t) => {
+              if (typeof t === 'number' && Number.isInteger(t) && t > 0) return t;
+              if (typeof t === 'string') {
+                const n = parseInt(t.replace(/^soundcloud:tracks:/, '').trim(), 10);
+                return Number.isInteger(n) && n > 0 ? n : null;
+              }
+              if (t && typeof t === 'object' && 'id' in t) {
+                const n = parseInt(String(t.id).replace(/^soundcloud:tracks:/, '').trim(), 10);
+                return Number.isInteger(n) && n > 0 ? n : null;
+              }
+              return null;
+            })
+            .filter((id): id is number => id !== null);
+        }
+      } catch (err) {
+        console.warn('[removeTrackFromPlaylist] Could not fetch existing tracks from playlist:', err);
+      }
+    }
+
+    const finalIds = existingIds.filter((id) => id !== numTrackId);
+    const result = await updatePlaylistTracks(cleanPlId, finalIds);
+
+    clearPlaylistCache(cleanPlId);
 
     return result;
   },
@@ -1233,6 +1409,8 @@ export interface ResolveResult {
   unblockedFull?: boolean;
   /** Actual full duration in seconds if unblocked */
   actualDuration?: number;
+  /** Precomputed waveform JSON URL */
+  waveformUrl?: string;
 }
 
 /**
@@ -1246,8 +1424,18 @@ export interface ResolveResult {
  */
 const DRM_PROTOCOLS = new Set(['cbc-encrypted-hls', 'ctr-encrypted-hls', 'ad-encrypted-hls']);
 
-export const isDrmFormat = (protocol: string | undefined) =>
-  DRM_PROTOCOLS.has(protocol ?? '');
+export const isDrmFormat = (protocol: string | undefined): boolean => {
+  if (!protocol) return false;
+  const p = protocol.toLowerCase();
+  return (
+    DRM_PROTOCOLS.has(p) ||
+    p.includes('encrypted') ||
+    p.includes('drm') ||
+    p.includes('fairplay') ||
+    p.includes('widevine') ||
+    p.includes('playready')
+  );
+};
 
 /**
  * The playable streams for a track, best first.
@@ -1268,6 +1456,10 @@ export const isDrmFormat = (protocol: string | undefined) =>
  * here can decrypt, so asking for them costs a request and buys a 403.
  */
 const streamResolveCache = new Map<string, { result: ResolveResult; expires: number }>();
+
+export function invalidateStreamResolveCache(trackId: string | number): void {
+  streamResolveCache.delete(String(trackId));
+}
 
 export async function resolveStreamUrls(trackId: string | number): Promise<ResolveResult> {
   const cacheKey = String(trackId);
@@ -1298,16 +1490,13 @@ export async function resolveStreamUrls(trackId: string | number): Promise<Resol
     const transcodings = meta.media?.transcodings ?? [];
     const policy = meta.policy ?? 'UNKNOWN';
     const previewOnly = policy === 'SNIP';
-    if (!transcodings.length) {
-      return { candidates: [], policy, hasMedia: false, previewOnly, drmOnly: false };
-    }
 
     // Rank the formats rather than picking one, so a failure can fall through
     // to the next rung instead of giving up on the track.
     type Transcoding = NonNullable<ScTrack['media']>['transcodings'][number];
 
     const playable = transcodings.filter((t) => !isDrmFormat(t.format?.protocol));
-    const drmOnly = playable.length === 0;
+    const drmOnly = transcodings.length > 0 && playable.length === 0;
 
     const rank = (t: Transcoding) =>
       t.format?.protocol === 'progressive' && t.format?.mime_type === 'audio/mpeg'
@@ -1329,8 +1518,16 @@ export async function resolveStreamUrls(trackId: string | number): Promise<Resol
 
     // Smart Full-Track Unblocker:
     // If the official track is snipped/preview-only (Go+ or territory-restricted),
+    // blocked by territory, has 0 playable transcodings, or is DRM-locked,
     // automatically retrieve the full, official studio release.
-    if ((previewOnly || transcodings.every((t) => t.snipped)) && meta.title) {
+    const needsUnblock =
+      (previewOnly ||
+        policy === 'BLOCK' ||
+        playable.length === 0 ||
+        transcodings.every((t) => t.snipped)) &&
+      Boolean(meta.title);
+
+    if (needsUnblock && meta.title) {
       const artist = meta.user?.username || '';
       const cleanTitle = meta.title.replace(/\s*[\(\[].*?[\)\]]/g, '').trim();
 
@@ -1455,7 +1652,30 @@ export async function resolveStreamUrls(trackId: string | number): Promise<Resol
       return null;
     };
 
-    const first = await next();
+    let first = await next();
+
+    if (!first && !unblockedFull && meta.title) {
+      const bridge = relay();
+      if (bridge?.resolveOfficialStream) {
+        try {
+          const artist = meta.user?.username || '';
+          const cleanTitle = meta.title.replace(/\s*[\(\[].*?[\)\]]/g, '').trim();
+          const res = await bridge.resolveOfficialStream({ artist, title: cleanTitle });
+          if (res.ok && res.url) {
+            first = { url: res.url, format: 'official stream' };
+            unblockedFull = true;
+            effectivePolicy = 'ALLOW';
+            effectivePreviewOnly = false;
+            if (res.duration || meta.full_duration) {
+              actualDuration = res.duration || (meta.full_duration ? Math.round(meta.full_duration / 1000) : undefined);
+            }
+          }
+        } catch {
+          /* fallback unblock failed */
+        }
+      }
+    }
+
     const resolved: ResolveResult = {
       candidates: first ? [first] : [],
       policy: effectivePolicy,
@@ -1464,6 +1684,7 @@ export async function resolveStreamUrls(trackId: string | number): Promise<Resol
       drmOnly,
       unblockedFull,
       actualDuration,
+      waveformUrl: meta.waveform_url ?? undefined,
       next: cursor < activeCandidates.length ? next : undefined,
     };
     if (resolved.candidates.length > 0) {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Peer, type DataConnection } from 'peerjs';
 import type { Track } from '../types';
 import {
@@ -10,6 +10,7 @@ import {
   type RoomChatMessage,
   type RoomReaction,
   type IncomingInvite,
+  type IncomingSessionRequest,
   type RoomParticipant,
   loadProfile,
   saveProfile,
@@ -19,7 +20,11 @@ import {
   codeFromPeerId,
   sanitizeCode,
   generateFriendCode,
+  type SharedPlaylist,
+  loadCollabPlaylists,
+  saveCollabPlaylists,
 } from '../lib/listenTogether';
+import { recordFriendTrack } from '../lib/stats';
 
 interface UseListenTogetherOptions {
   currentTrack: Track | null;
@@ -57,13 +62,21 @@ export function useListenTogether({
     'connecting' | 'connected' | 'disconnected' | 'error'
   >('connecting');
   const [syncSession, setSyncSession] = useState<SyncSession>({ mode: 'idle' });
+  const [incomingSessionRequests, setIncomingSessionRequests] = useState<IncomingSessionRequest[]>([]);
+  const [pendingOutgoingRequestTo, setPendingOutgoingRequestTo] = useState<string | null>(null);
   const [incomingInvites, setIncomingInvites] = useState<IncomingInvite[]>([]);
   const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
   const [reactions, setReactions] = useState<RoomReaction[]>([]);
+  const [collabPlaylists, setCollabPlaylists] = useState<SharedPlaylist[]>(() => loadCollabPlaylists());
+  const collabPlaylistsRef = useRef(collabPlaylists);
+  collabPlaylistsRef.current = collabPlaylists;
 
   const peerRef = useRef<Peer | null>(null);
   const connectionsRef = useRef<Map<string, DataConnection>>(new Map());
-  const isSyncApplyingRef = useRef(false);
+  const isRemoteApplyingRef = useRef(false);
+  const remoteExecutingTrackIdRef = useRef<string | null>(null);
+  const processedCommandIdsRef = useRef<Set<string>>(new Set());
+  const lastLocalActionTimeRef = useRef(0);
   const lastBroadcastRef = useRef<{ trackId?: string; isPlaying?: boolean; time?: number }>({});
   const syncSessionRef = useRef(syncSession);
   syncSessionRef.current = syncSession;
@@ -314,6 +327,10 @@ export function useListenTogether({
               },
             };
           });
+          if (syncSessionRef.current.mode === 'co-listening' && syncSessionRef.current.partnerCode === code) {
+            setSyncSession({ mode: 'idle' });
+            notify('Friend disconnected. Listening together ended.');
+          }
         });
 
         conn.on('error', () => {
@@ -329,6 +346,10 @@ export function useListenTogether({
               },
             };
           });
+          if (syncSessionRef.current.mode === 'co-listening' && syncSessionRef.current.partnerCode === code) {
+            setSyncSession({ mode: 'idle' });
+            notify('Utracono połączenie. Zakończono wspólne słuchanie.');
+          }
         });
       } catch {
         // ignore connection attempt failure
@@ -585,19 +606,93 @@ export function useListenTogether({
               currentTime: msg.currentTime,
               duration: msg.duration,
               timestamp: msg.timestamp,
+              sessionPartnerCode: msg.sessionPartnerCode,
               roomId: msg.roomId,
             },
           }));
+          if (msg.track && !msg.appearOffline) {
+            recordFriendTrack(senderCode, msg.track);
+          }
+          // Note: PRESENCE_UPDATE is strictly metadata for friends list.
+          // Audio playback and sync is driven solely by explicit SYNC_COMMAND actions
+          // to prevent seek feedback loops and infinite buffering.
+          break;
+        }
 
-          // If we are currently following this friend, synchronize with their presence
-          const session = syncSessionRef.current;
-          if (session.mode === 'following' && session.targetCode === senderCode) {
-            applyRemoteState({
-              track: msg.track,
-              isPlaying: msg.isPlaying,
-              currentTime: msg.currentTime,
-              timestamp: msg.timestamp,
+        case 'SESSION_REQUEST': {
+          const senderCode = sanitizeCode(msg.senderCode);
+          const req: IncomingSessionRequest = {
+            id: msg.requestId,
+            senderCode,
+            senderName: msg.senderName,
+            senderAvatar: msg.senderAvatar,
+            track: msg.track,
+            timestamp: msg.timestamp,
+          };
+          if (msg.track) {
+            recordFriendTrack(senderCode, msg.track);
+          }
+          setIncomingSessionRequests((prev) => [
+            req,
+            ...prev.filter((r) => r.senderCode !== senderCode),
+          ]);
+          notify(`🎧 ${msg.senderName} zaprasza Cię do wspólnego słuchania!`);
+          break;
+        }
+
+        case 'SESSION_ACCEPT': {
+          const partnerCode = sanitizeCode(msg.senderCode);
+          setPendingOutgoingRequestTo(null);
+          setSyncSession({
+            mode: 'co-listening',
+            partnerCode,
+            partnerName: msg.senderName,
+            partnerAvatar: msg.senderAvatar,
+            lastSyncTime: Date.now(),
+          });
+          notify(`🎧 ${msg.senderName} zaakceptował zaproszenie! Rozpoczęto wspólne słuchanie.`);
+
+          // If local player already has a track playing, send it to partner so they sync with us
+          if (currentTrackRef.current) {
+            const cmdId = `${profileRef.current.code}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+            sendToPeer(partnerCode, {
+              type: 'SYNC_COMMAND',
+              commandId: cmdId,
+              senderCode: profileRef.current.code,
+              action: 'PLAY_TRACK',
+              track: currentTrackRef.current,
+              currentTime: currentTimeRef.current,
+              timestamp: Date.now(),
             });
+          } else if (msg.track) {
+            // Otherwise if partner had a track, play partner's track
+            isRemoteApplyingRef.current = true;
+            remoteExecutingTrackIdRef.current = String(msg.track.id);
+            lastBroadcastRef.current.trackId = String(msg.track.id);
+            void Promise.resolve(onPlayTrack(msg.track)).finally(() => {
+              setTimeout(() => {
+                onPlay();
+                setTimeout(() => {
+                  isRemoteApplyingRef.current = false;
+                  remoteExecutingTrackIdRef.current = null;
+                }, 800);
+              }, 350);
+            });
+          }
+          break;
+        }
+
+        case 'SESSION_DECLINE': {
+          setPendingOutgoingRequestTo(null);
+          notify(`${msg.senderName} declined the invitation to listen together.`);
+          break;
+        }
+
+        case 'SESSION_END': {
+          const senderCode = sanitizeCode(msg.senderCode);
+          if (syncSessionRef.current.mode === 'co-listening' && syncSessionRef.current.partnerCode === senderCode) {
+            setSyncSession({ mode: 'idle' });
+            notify(`${msg.senderName} ended the listening session.`);
           }
           break;
         }
@@ -606,7 +701,18 @@ export function useListenTogether({
           const senderCode = sanitizeCode(msg.senderCode);
           const session = syncSessionRef.current;
 
+          // Deduplicate commands
+          if (msg.commandId) {
+            if (processedCommandIdsRef.current.has(msg.commandId)) break;
+            processedCommandIdsRef.current.add(msg.commandId);
+            if (processedCommandIdsRef.current.size > 200) {
+              const arr = Array.from(processedCommandIdsRef.current);
+              processedCommandIdsRef.current = new Set(arr.slice(-100));
+            }
+          }
+
           const isApplicable =
+            (session.mode === 'co-listening' && session.partnerCode === senderCode) ||
             (session.mode === 'following' && session.targetCode === senderCode) ||
             (session.mode === 'room' &&
               session.roomId === msg.roomId &&
@@ -630,6 +736,94 @@ export function useListenTogether({
           };
           setIncomingInvites((prev) => [invite, ...prev.slice(0, 4)]);
           notify(`Invite from ${msg.senderName}: Listen Together!`);
+          break;
+        }
+
+        case 'COLLAB_PLAYLIST_INVITE': {
+          const pl = msg.playlist;
+          setCollabPlaylists((prev) => {
+            const next = [pl, ...prev.filter((p) => p.id !== pl.id)];
+            saveCollabPlaylists(next);
+            return next;
+          });
+          notify(`${msg.senderName} zaprosił Cię do wspólnej playlisty "${pl.title}"!`);
+          break;
+        }
+
+        case 'COLLAB_PLAYLIST_UPDATE': {
+          const pl = msg.playlist;
+          setCollabPlaylists((prev) => {
+            const next = prev.map((p) => (p.id === pl.id ? pl : p));
+            if (!next.some((p) => p.id === pl.id)) next.push(pl);
+            saveCollabPlaylists(next);
+            return next;
+          });
+          break;
+        }
+
+        case 'COLLAB_PLAYLIST_ADD_TRACK': {
+          const currentList = collabPlaylistsRef.current;
+          const target = currentList.find((p) => p.id === msg.playlistId);
+          if (target && target.hostCode === profileRef.current.code) {
+            const newItem = {
+              track: msg.track,
+              addedBy: { code: sanitizeCode(msg.senderCode), name: msg.senderName },
+              addedAt: Date.now(),
+            };
+            const updated: SharedPlaylist = {
+              ...target,
+              items: [...target.items, newItem],
+            };
+            const next = currentList.map((p) => (p.id === target.id ? updated : p));
+            setCollabPlaylists(next);
+            saveCollabPlaylists(next);
+            notify(`${msg.senderName} dodał "${msg.track.title}" do playlisty "${target.title}"!`);
+
+            // Broadcast updated playlist to all collaborator connections
+            target.collaborators.forEach((c) => {
+              const conn = connectionsRef.current.get(c.code);
+              if (conn && conn.open) {
+                try {
+                  conn.send({
+                    type: 'COLLAB_PLAYLIST_UPDATE',
+                    playlist: updated,
+                    senderCode: profileRef.current.code,
+                    senderName: profileRef.current.name,
+                  });
+                } catch {}
+              }
+            });
+          }
+          break;
+        }
+
+        case 'COLLAB_PLAYLIST_REMOVE_TRACK': {
+          const currentList = collabPlaylistsRef.current;
+          const target = currentList.find((p) => p.id === msg.playlistId);
+          if (target && target.hostCode === profileRef.current.code) {
+            const updated: SharedPlaylist = {
+              ...target,
+              items: target.items.filter((item) => String(item.track.id) !== String(msg.trackId)),
+            };
+            const next = currentList.map((p) => (p.id === target.id ? updated : p));
+            setCollabPlaylists(next);
+            saveCollabPlaylists(next);
+
+            // Broadcast updated playlist
+            target.collaborators.forEach((c) => {
+              const conn = connectionsRef.current.get(c.code);
+              if (conn && conn.open) {
+                try {
+                  conn.send({
+                    type: 'COLLAB_PLAYLIST_UPDATE',
+                    playlist: updated,
+                    senderCode: profileRef.current.code,
+                    senderName: profileRef.current.name,
+                  });
+                } catch {}
+              }
+            });
+          }
           break;
         }
 
@@ -718,130 +912,91 @@ export function useListenTogether({
     [notify]
   );
 
-  // Apply state from followed peer (smart drift correction and auto-play)
-  const applyRemoteState = useCallback(
-    (remote: {
-      track: Track | null;
-      isPlaying: boolean;
-      currentTime: number;
-      timestamp: number;
-    }) => {
-      if (!remote.track) return;
 
-      const transit = Math.max(0, (Date.now() - remote.timestamp) / 1000);
-      const targetTime = Math.max(0, remote.currentTime + (remote.isPlaying ? transit : 0));
-
-      const localTrack = currentTrackRef.current;
-      const localPlaying = isPlayingRef.current;
-      const localTime = currentTimeRef.current;
-
-      const isNewTrack = !localTrack || String(localTrack.id) !== String(remote.track.id);
-
-      // Jitter guard for non-track updates
-      if (!isNewTrack && isSyncApplyingRef.current) return;
-
-      // Track change
-      if (isNewTrack) {
-        isSyncApplyingRef.current = true;
-        void Promise.resolve(onPlayTrack(remote.track)).finally(() => {
-          setTimeout(() => {
-            if (targetTime > 0) onSeek(targetTime);
-            if (!remote.isPlaying) onPause();
-            else onPlay();
-            setTimeout(() => {
-              isSyncApplyingRef.current = false;
-            }, 300);
-          }, 250);
-        });
-        return;
-      }
-
-      // Play/Pause sync
-      if (remote.isPlaying && !localPlaying) {
-        isSyncApplyingRef.current = true;
-        onPlay();
-        setTimeout(() => {
-          isSyncApplyingRef.current = false;
-        }, 200);
-      } else if (!remote.isPlaying && localPlaying) {
-        isSyncApplyingRef.current = true;
-        onPause();
-        setTimeout(() => {
-          isSyncApplyingRef.current = false;
-        }, 200);
-      }
-
-      // Drift correction: if more than 2 seconds apart, adjust
-      const drift = Math.abs(localTime - targetTime);
-      if (drift > 2.0) {
-        isSyncApplyingRef.current = true;
-        onSeek(targetTime);
-        setTimeout(() => {
-          isSyncApplyingRef.current = false;
-        }, 200);
-      }
-    },
-    [onPlayTrack, onPlay, onPause, onSeek]
-  );
-
-  // Apply explicit command from host/peer
+  // Apply explicit command from peer
   const applyRemoteCommand = useCallback(
-    (cmd: {
+    async (cmd: {
       action: 'PLAY_TRACK' | 'PLAY' | 'PAUSE' | 'SEEK';
       track?: Track;
       currentTime?: number;
       timestamp: number;
     }) => {
-      if (cmd.action !== 'PLAY_TRACK' && isSyncApplyingRef.current) return;
-
-      const transit = Math.max(0, (Date.now() - cmd.timestamp) / 1000);
-      const targetTime = Math.max(0, (cmd.currentTime || 0) + transit);
-
       switch (cmd.action) {
         case 'PLAY_TRACK': {
-          if (cmd.track) {
-            isSyncApplyingRef.current = true;
-            void Promise.resolve(onPlayTrack(cmd.track)).finally(() => {
+          if (!cmd.track) return;
+          const incomingTrackId = String(cmd.track.id);
+          const currentTrackId = currentTrackRef.current ? String(currentTrackRef.current.id) : null;
+
+          // If it's already the same track, avoid re-fetching/re-resolving
+          if (currentTrackId === incomingTrackId) {
+            if (!isPlayingRef.current) {
+              onPlay();
+            }
+            if (cmd.currentTime !== undefined && Math.abs(currentTimeRef.current - cmd.currentTime) > 3) {
+              onSeek(cmd.currentTime);
+            }
+            return;
+          }
+
+          // Lock outbound broadcasts while resolving & loading remote track
+          isRemoteApplyingRef.current = true;
+          remoteExecutingTrackIdRef.current = incomingTrackId;
+          lastBroadcastRef.current.trackId = incomingTrackId;
+
+          try {
+            await Promise.resolve(onPlayTrack(cmd.track));
+          } catch (err) {
+            console.error('[ListenTogether] Failed to play remote track:', err);
+          } finally {
+            setTimeout(() => {
+              const transit = Math.max(0, (Date.now() - cmd.timestamp) / 1000);
+              const targetTime = Math.max(0, (cmd.currentTime || 0) + transit);
+              if (targetTime > 0.5) {
+                onSeek(targetTime);
+              }
+              onPlay();
+              // Maintain lock across React render pass to prevent echo
               setTimeout(() => {
-                if (targetTime > 0) onSeek(targetTime);
-                onPlay();
-                setTimeout(() => {
-                  isSyncApplyingRef.current = false;
-                }, 300);
-              }, 250);
-            });
+                isRemoteApplyingRef.current = false;
+                remoteExecutingTrackIdRef.current = null;
+              }, 800);
+            }, 350);
           }
           break;
         }
 
         case 'PLAY': {
           if (!isPlayingRef.current) {
-            isSyncApplyingRef.current = true;
+            isRemoteApplyingRef.current = true;
             onPlay();
             setTimeout(() => {
-              isSyncApplyingRef.current = false;
-            }, 200);
+              isRemoteApplyingRef.current = false;
+            }, 300);
           }
           break;
         }
 
         case 'PAUSE': {
           if (isPlayingRef.current) {
-            isSyncApplyingRef.current = true;
+            isRemoteApplyingRef.current = true;
             onPause();
             setTimeout(() => {
-              isSyncApplyingRef.current = false;
-            }, 200);
+              isRemoteApplyingRef.current = false;
+            }, 300);
           }
           break;
         }
 
         case 'SEEK': {
-          isSyncApplyingRef.current = true;
-          onSeek(targetTime);
-          setTimeout(() => {
-            isSyncApplyingRef.current = false;
-          }, 200);
+          if (cmd.currentTime !== undefined) {
+            const transit = Math.max(0, (Date.now() - cmd.timestamp) / 1000);
+            const targetTime = Math.max(0, cmd.currentTime + transit);
+            isRemoteApplyingRef.current = true;
+            onSeek(targetTime);
+            setTimeout(() => {
+              isRemoteApplyingRef.current = false;
+            }, 350);
+          }
           break;
         }
       }
@@ -954,6 +1109,10 @@ export function useListenTogether({
               },
             };
           });
+          if (syncSessionRef.current.mode === 'co-listening' && syncSessionRef.current.partnerCode === remoteCode) {
+            setSyncSession({ mode: 'idle' });
+            notify('Friend disconnected. Listening together ended.');
+          }
         }
       });
     });
@@ -1035,7 +1194,10 @@ export function useListenTogether({
 
   // Broadcast when local track, playing state changes
   useEffect(() => {
-    if (isSyncApplyingRef.current) return;
+    if (isRemoteApplyingRef.current) return;
+    if (remoteExecutingTrackIdRef.current && currentTrack?.id === remoteExecutingTrackIdRef.current) {
+      return;
+    }
 
     const trackChanged = lastBroadcastRef.current.trackId !== currentTrack?.id;
     const playChanged = lastBroadcastRef.current.isPlaying !== isPlaying;
@@ -1047,7 +1209,7 @@ export function useListenTogether({
         time: currentTime,
       };
 
-      // 1. Presence update to everyone
+      // 1. Presence update to everyone (metadata only)
       broadcast({
         type: 'PRESENCE_UPDATE',
         senderCode: profile.code,
@@ -1065,42 +1227,66 @@ export function useListenTogether({
         currentTime,
         duration,
         timestamp: Date.now(),
+        sessionPartnerCode: syncSession.mode === 'co-listening' ? syncSession.partnerCode : null,
         roomId: syncSession.roomId || null,
       });
 
-      // 2. Broadcast sync command: if room host/controller, OR if playing as a normal user/friend (not following someone else)
+      // 2. Broadcast sync command: ONLY in active co-listening or room where user has control!
+      // NEVER in 'idle' mode.
       const session = syncSessionRef.current;
-      const canBroadcastSync =
-        (session.mode === 'room' && (session.isHost || session.allowGuestsControl)) ||
-        session.mode === 'idle';
-
-      if (canBroadcastSync) {
+      if (session.mode === 'co-listening' && session.partnerCode) {
+        lastLocalActionTimeRef.current = Date.now();
+        const cmdId = `${profile.code}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        if (trackChanged && currentTrack) {
+          sendToPeer(session.partnerCode, {
+            type: 'SYNC_COMMAND',
+            commandId: cmdId,
+            senderCode: profile.code,
+            action: 'PLAY_TRACK',
+            track: currentTrack,
+            currentTime: 0,
+            timestamp: Date.now(),
+          });
+        } else if (playChanged) {
+          sendToPeer(session.partnerCode, {
+            type: 'SYNC_COMMAND',
+            commandId: cmdId,
+            senderCode: profile.code,
+            action: isPlaying ? 'PLAY' : 'PAUSE',
+            currentTime,
+            timestamp: Date.now(),
+          });
+        }
+      } else if (session.mode === 'room' && (session.isHost || session.allowGuestsControl)) {
+        const cmdId = `${profile.code}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
         if (trackChanged && currentTrack) {
           broadcast({
             type: 'SYNC_COMMAND',
+            commandId: cmdId,
             senderCode: profile.code,
             action: 'PLAY_TRACK',
             track: currentTrack,
             currentTime,
             timestamp: Date.now(),
-            roomId: session.mode === 'room' ? session.roomId : undefined,
+            roomId: session.roomId,
           });
         } else if (playChanged) {
           broadcast({
             type: 'SYNC_COMMAND',
+            commandId: cmdId,
             senderCode: profile.code,
             action: isPlaying ? 'PLAY' : 'PAUSE',
             currentTime,
             timestamp: Date.now(),
-            roomId: session.mode === 'room' ? session.roomId : undefined,
+            roomId: session.roomId,
           });
         }
       }
     }
-  }, [currentTrack, isPlaying, currentTime, duration, profile, broadcast, syncSession]);
+  }, [currentTrack, isPlaying, currentTime, duration, profile, broadcast, sendToPeer, syncSession]);
 
-  // Action: Follow friend (Listen Together)
-  const followFriend = useCallback(
+  // Action: Request to Listen Together (Sends session invitation)
+  const requestListenTogether = useCallback(
     (friendCodeRaw: string) => {
       const friendCode = sanitizeCode(friendCodeRaw);
       const friend = friendsRef.current.find((f) => f.code === friendCode);
@@ -1110,35 +1296,155 @@ export function useListenTogether({
         notify('Friend is currently offline');
         return;
       }
-      if (!friendPresence.track) {
-        notify(`${friend?.name || friendCode} is not playing anything right now`);
-        return;
+
+      setPendingOutgoingRequestTo(friendCode);
+
+      const reqId = `req-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const sent = sendToPeer(friendCode, {
+        type: 'SESSION_REQUEST',
+        requestId: reqId,
+        senderCode: profileRef.current.code,
+        senderName: profileRef.current.name,
+        senderAvatar: profileRef.current.avatarUrl,
+        track: currentTrackRef.current,
+        timestamp: Date.now(),
+      });
+
+      if (sent) {
+        notify(`Sent invitation to listen together to ${friend?.name || friendCode}!`);
+      } else {
+        setPendingOutgoingRequestTo(null);
+        notify(`Could not connect to ${friend?.name || friendCode} (network error)`);
       }
+    },
+    [presences, sendToPeer, notify]
+  );
+
+  // Action: Accept session request
+  const acceptSessionRequest = useCallback(
+    (requestId: string) => {
+      const req = incomingSessionRequests.find((r) => r.id === requestId);
+      if (!req) return;
+
+      setIncomingSessionRequests((prev) => prev.filter((r) => r.id !== requestId));
+      connectToFriend(req.senderCode);
 
       setSyncSession({
-        mode: 'following',
-        targetCode: friendCode,
-        targetName: friend?.name || friendPresence.name || friendCode,
+        mode: 'co-listening',
+        partnerCode: req.senderCode,
+        partnerName: req.senderName,
+        partnerAvatar: req.senderAvatar,
         lastSyncTime: Date.now(),
       });
 
-      // Synchronize immediately
-      applyRemoteState({
-        track: friendPresence.track,
-        isPlaying: friendPresence.isPlaying,
-        currentTime: friendPresence.currentTime,
-        timestamp: friendPresence.timestamp,
+      sendToPeer(req.senderCode, {
+        type: 'SESSION_ACCEPT',
+        requestId: req.id,
+        senderCode: profileRef.current.code,
+        senderName: profileRef.current.name,
+        senderAvatar: profileRef.current.avatarUrl,
+        track: currentTrackRef.current,
+        timestamp: Date.now(),
       });
 
-      notify(`Now listening together with ${friend?.name || friendCode}!`);
+      notify(`🎧 Listening together with ${req.senderName}! Dual control active.`);
+
+      if (req.track) {
+        isRemoteApplyingRef.current = true;
+        remoteExecutingTrackIdRef.current = String(req.track.id);
+        lastBroadcastRef.current.trackId = String(req.track.id);
+        void Promise.resolve(onPlayTrack(req.track)).finally(() => {
+          setTimeout(() => {
+            onPlay();
+            setTimeout(() => {
+              isRemoteApplyingRef.current = false;
+              remoteExecutingTrackIdRef.current = null;
+            }, 800);
+          }, 350);
+        });
+      }
     },
-    [presences, applyRemoteState, notify]
+    [incomingSessionRequests, connectToFriend, sendToPeer, notify, onPlayTrack, onPlay]
+  );
+
+  // Action: Decline session request
+  const declineSessionRequest = useCallback(
+    (requestId: string) => {
+      const req = incomingSessionRequests.find((r) => r.id === requestId);
+      if (!req) return;
+
+      setIncomingSessionRequests((prev) => prev.filter((r) => r.id !== requestId));
+      sendToPeer(req.senderCode, {
+        type: 'SESSION_DECLINE',
+        requestId: req.id,
+        senderCode: profileRef.current.code,
+        senderName: profileRef.current.name,
+      });
+      notify('Odrzucono zaproszenie.');
+    },
+    [incomingSessionRequests, sendToPeer, notify]
+  );
+
+  // Action: Cancel outgoing request
+  const cancelSessionRequest = useCallback(() => {
+    setPendingOutgoingRequestTo(null);
+    notify('Anulowano zaproszenie');
+  }, [notify]);
+
+  // Action: Broadcast seek explicitly to partner
+  const broadcastSeek = useCallback(
+    (sec: number) => {
+      if (isRemoteApplyingRef.current) return;
+      const session = syncSessionRef.current;
+      if (session.mode === 'co-listening' && session.partnerCode) {
+        lastLocalActionTimeRef.current = Date.now();
+        sendToPeer(session.partnerCode, {
+          type: 'SYNC_COMMAND',
+          commandId: `${profileRef.current.code}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          senderCode: profileRef.current.code,
+          action: 'SEEK',
+          currentTime: sec,
+          timestamp: Date.now(),
+        });
+      } else if (session.mode === 'room' && (session.isHost || session.allowGuestsControl)) {
+        broadcast({
+          type: 'SYNC_COMMAND',
+          commandId: `${profileRef.current.code}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          senderCode: profileRef.current.code,
+          action: 'SEEK',
+          currentTime: sec,
+          timestamp: Date.now(),
+          roomId: session.roomId,
+        });
+      }
+    },
+    [sendToPeer, broadcast]
+  );
+
+  // Deterministic leader for natural track-end advance in co-listening
+  const isAdvanceLeader = useMemo(() => {
+    if (syncSession.mode !== 'co-listening' || !syncSession.partnerCode) return true;
+    return profile.code.localeCompare(syncSession.partnerCode) <= 0;
+  }, [syncSession.mode, syncSession.partnerCode, profile.code]);
+
+  // Action: Follow friend (legacy fallback, redirected to request)
+  const followFriend = useCallback(
+    (friendCodeRaw: string) => {
+      requestListenTogether(friendCodeRaw);
+    },
+    [requestListenTogether]
   );
 
   // Action: Stop sync / Leave session
   const stopSync = useCallback(() => {
     const session = syncSessionRef.current;
-    if (session.mode === 'room' && session.roomId) {
+    if (session.mode === 'co-listening' && session.partnerCode) {
+      sendToPeer(session.partnerCode, {
+        type: 'SESSION_END',
+        senderCode: profileRef.current.code,
+        senderName: profileRef.current.name,
+      });
+    } else if (session.mode === 'room' && session.roomId) {
       broadcast({
         type: 'ROOM_LEAVE',
         senderCode: profileRef.current.code,
@@ -1147,8 +1453,8 @@ export function useListenTogether({
     }
 
     setSyncSession({ mode: 'idle' });
-    notify('Stopped listening together');
-  }, [broadcast, notify]);
+    notify('Zakończono wspólne słuchanie');
+  }, [sendToPeer, broadcast, notify]);
 
   // Action: Invite friend to listen together
   const inviteFriend = useCallback(
@@ -1331,6 +1637,201 @@ export function useListenTogether({
     [profile, syncSession, broadcast]
   );
 
+  const createCollabPlaylist = useCallback(
+    (title: string) => {
+      const pl: SharedPlaylist = {
+        id: `collab-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        title: title.trim() || 'Wspólna Playlista',
+        hostCode: profile.code,
+        hostName: profile.name,
+        items: [],
+        createdAt: Date.now(),
+        collaborators: [],
+      };
+      setCollabPlaylists((prev) => {
+        const next = [pl, ...prev];
+        saveCollabPlaylists(next);
+        return next;
+      });
+      notify(`Utworzono wspólną playlistę: "${pl.title}"`);
+      return pl;
+    },
+    [profile, notify]
+  );
+
+  const inviteFriendToCollab = useCallback(
+    (playlistId: string, friendCode: string) => {
+      const cleanCode = sanitizeCode(friendCode);
+      const pl = collabPlaylistsRef.current.find((p) => p.id === playlistId);
+      if (!pl) return;
+
+      const friend = friendsRef.current.find((f) => f.code === cleanCode);
+      const collaboratorEntry = { code: cleanCode, name: friend?.name || cleanCode };
+
+      // Add to collaborators if not already present
+      let updatedPl = pl;
+      if (!pl.collaborators.some((c) => c.code === cleanCode)) {
+        updatedPl = {
+          ...pl,
+          collaborators: [...pl.collaborators, collaboratorEntry],
+        };
+        setCollabPlaylists((prev) => {
+          const next = prev.map((p) => (p.id === pl.id ? updatedPl : p));
+          saveCollabPlaylists(next);
+          return next;
+        });
+      }
+
+      // Connect and send invite
+      connectToFriend(cleanCode);
+      const conn = connectionsRef.current.get(cleanCode);
+      if (conn && conn.open) {
+        conn.send({
+          type: 'COLLAB_PLAYLIST_INVITE',
+          playlist: updatedPl,
+          senderCode: profile.code,
+          senderName: profile.name,
+        });
+        notify(`Sent invitation to ${friend?.name || cleanCode}!`);
+      } else {
+        setTimeout(() => {
+          const c = connectionsRef.current.get(cleanCode);
+          if (c && c.open) {
+            c.send({
+              type: 'COLLAB_PLAYLIST_INVITE',
+              playlist: updatedPl,
+              senderCode: profile.code,
+              senderName: profile.name,
+            });
+            notify(`Sent invitation to ${friend?.name || cleanCode}!`);
+          }
+        }, 1200);
+      }
+    },
+    [connectToFriend, profile, notify]
+  );
+
+  const addTrackToCollab = useCallback(
+    (playlistId: string, track: Track) => {
+      const pl = collabPlaylistsRef.current.find((p) => p.id === playlistId);
+      if (!pl) return;
+
+      if (pl.hostCode === profile.code) {
+        // Host directly adds track
+        const newItem = {
+          track,
+          addedBy: { code: profile.code, name: profile.name },
+          addedAt: Date.now(),
+        };
+        const updated: SharedPlaylist = {
+          ...pl,
+          items: [...pl.items, newItem],
+        };
+        setCollabPlaylists((prev) => {
+          const next = prev.map((p) => (p.id === pl.id ? updated : p));
+          saveCollabPlaylists(next);
+          return next;
+        });
+        notify(`Added "${track.title}" to "${pl.title}"`);
+
+        // Broadcast to collaborators
+        pl.collaborators.forEach((c) => {
+          const conn = connectionsRef.current.get(c.code);
+          if (conn && conn.open) {
+            try {
+              conn.send({
+                type: 'COLLAB_PLAYLIST_UPDATE',
+                playlist: updated,
+                senderCode: profile.code,
+                senderName: profile.name,
+              });
+            } catch {}
+          }
+        });
+      } else {
+        // Collaborator sends request to host
+        connectToFriend(pl.hostCode);
+        const conn = connectionsRef.current.get(pl.hostCode);
+        const sendMsg = () => {
+          const c = connectionsRef.current.get(pl.hostCode);
+          if (c && c.open) {
+            c.send({
+              type: 'COLLAB_PLAYLIST_ADD_TRACK',
+              playlistId,
+              track,
+              senderCode: profile.code,
+              senderName: profile.name,
+            });
+            notify(`Sent request to add "${track.title}" to host (${pl.hostName})`);
+          } else {
+            notify(`Host (${pl.hostName}) is offline - track will sync upon connecting`);
+          }
+        };
+
+        if (conn && conn.open) {
+          sendMsg();
+        } else {
+          setTimeout(sendMsg, 1200);
+        }
+      }
+    },
+    [profile, notify, connectToFriend]
+  );
+
+  const removeTrackFromCollab = useCallback(
+    (playlistId: string, trackId: string | number) => {
+      const pl = collabPlaylistsRef.current.find((p) => p.id === playlistId);
+      if (!pl) return;
+
+      if (pl.hostCode === profile.code) {
+        const updated: SharedPlaylist = {
+          ...pl,
+          items: pl.items.filter((item) => String(item.track.id) !== String(trackId)),
+        };
+        setCollabPlaylists((prev) => {
+          const next = prev.map((p) => (p.id === pl.id ? updated : p));
+          saveCollabPlaylists(next);
+          return next;
+        });
+        // Broadcast
+        pl.collaborators.forEach((c) => {
+          const conn = connectionsRef.current.get(c.code);
+          if (conn && conn.open) {
+            try {
+              conn.send({
+                type: 'COLLAB_PLAYLIST_UPDATE',
+                playlist: updated,
+                senderCode: profile.code,
+                senderName: profile.name,
+              });
+            } catch {}
+          }
+        });
+      } else {
+        // Send removal request to host
+        const conn = connectionsRef.current.get(pl.hostCode);
+        if (conn && conn.open) {
+          conn.send({
+            type: 'COLLAB_PLAYLIST_REMOVE_TRACK',
+            playlistId,
+            trackId,
+            senderCode: profile.code,
+            senderName: profile.name,
+          });
+        }
+      }
+    },
+    [profile]
+  );
+
+  const deleteCollabPlaylist = useCallback((playlistId: string) => {
+    setCollabPlaylists((prev) => {
+      const next = prev.filter((p) => p.id !== playlistId);
+      saveCollabPlaylists(next);
+      return next;
+    });
+  }, []);
+
   return {
     profile,
     updateProfile,
@@ -1338,14 +1839,28 @@ export function useListenTogether({
     presences,
     connectionStatus,
     syncSession,
+    incomingSessionRequests,
+    pendingOutgoingRequestTo,
     incomingInvites,
     chatMessages,
     reactions,
+    collabPlaylists,
+    createCollabPlaylist,
+    inviteFriendToCollab,
+    addTrackToCollab,
+    removeTrackFromCollab,
+    deleteCollabPlaylist,
     addFriend,
     removeFriend,
     renameFriend,
     connectToFriend,
     followFriend,
+    requestListenTogether,
+    acceptSessionRequest,
+    declineSessionRequest,
+    cancelSessionRequest,
+    broadcastSeek,
+    isAdvanceLeader,
     stopSync,
     inviteFriend,
     acceptInvite,

@@ -114,6 +114,29 @@ export interface Prefs {
   proxyCustomPass: string;
   /** Custom full proxy URL string. */
   proxyCustomUrl: string;
+  /** Auto loudness normalization / dynamics limiter. */
+  loudnessEqualizer: boolean;
+  /** 3D Spatial Audio & soundstage enhancer. */
+  spatialAudio: boolean;
+  /** Adaptive theme accents dynamically extracted from current track artwork. */
+  dynamicArtworkTheme: boolean;
+  /** Last.fm scrobbler integration. */
+  lastFmEnabled: boolean;
+  lastFmUsername: string;
+  lastFmApiKey: string;
+  lastFmSessionKey: string;
+  /** Typing sound effects when music is paused. */
+  typingSoundEnabled: boolean;
+  /** Typing sound volume multiplier (0..1). */
+  typingSoundVolume: number;
+  /** Mechanical switch profile sound. */
+  typingSoundSwitch: 'tactile' | 'clicky' | 'thock' | 'typewriter';
+  /** Track change desktop notifications. */
+  notificationsEnabled: boolean;
+  /** High quality audio streaming preference. */
+  highQualityAudio: boolean;
+  /** Automatically skip 30s leading/trailing copyright silences in tracks. */
+  autoTrimSilence: boolean;
 }
 
 const KEY = 'sc9000:prefs';
@@ -162,6 +185,19 @@ export function defaultPrefs(): Prefs {
     proxyCustomUser: '',
     proxyCustomPass: '',
     proxyCustomUrl: '',
+    loudnessEqualizer: false,
+    spatialAudio: false,
+    dynamicArtworkTheme: true,
+    lastFmEnabled: false,
+    lastFmUsername: '',
+    lastFmApiKey: '',
+    lastFmSessionKey: '',
+    typingSoundEnabled: true,
+    typingSoundVolume: 0.6,
+    typingSoundSwitch: 'tactile',
+    notificationsEnabled: true,
+    highQualityAudio: true,
+    autoTrimSilence: true,
   };
 }
 
@@ -240,6 +276,25 @@ export function loadPrefs(): Prefs {
       proxyCustomUser: typeof saved.proxyCustomUser === 'string' ? saved.proxyCustomUser : base.proxyCustomUser,
       proxyCustomPass: typeof saved.proxyCustomPass === 'string' ? saved.proxyCustomPass : base.proxyCustomPass,
       proxyCustomUrl: typeof saved.proxyCustomUrl === 'string' ? saved.proxyCustomUrl : base.proxyCustomUrl,
+      loudnessEqualizer: typeof saved.loudnessEqualizer === 'boolean' ? saved.loudnessEqualizer : base.loudnessEqualizer,
+      spatialAudio: typeof saved.spatialAudio === 'boolean' ? saved.spatialAudio : base.spatialAudio,
+      dynamicArtworkTheme: typeof saved.dynamicArtworkTheme === 'boolean' ? saved.dynamicArtworkTheme : base.dynamicArtworkTheme,
+      lastFmEnabled: typeof saved.lastFmEnabled === 'boolean' ? saved.lastFmEnabled : base.lastFmEnabled,
+      lastFmUsername: typeof saved.lastFmUsername === 'string' ? saved.lastFmUsername : base.lastFmUsername,
+      lastFmApiKey: typeof saved.lastFmApiKey === 'string' ? saved.lastFmApiKey : base.lastFmApiKey,
+      lastFmSessionKey: typeof saved.lastFmSessionKey === 'string' ? saved.lastFmSessionKey : base.lastFmSessionKey,
+      typingSoundEnabled:
+        typeof saved.typingSoundEnabled === 'boolean' ? saved.typingSoundEnabled : base.typingSoundEnabled,
+      typingSoundVolume: clamp01(saved.typingSoundVolume, base.typingSoundVolume),
+      typingSoundSwitch: ['tactile', 'clicky', 'thock', 'typewriter'].includes(saved.typingSoundSwitch as any)
+        ? (saved.typingSoundSwitch as any)
+        : base.typingSoundSwitch,
+      notificationsEnabled:
+        typeof saved.notificationsEnabled === 'boolean' ? saved.notificationsEnabled : base.notificationsEnabled,
+      highQualityAudio:
+        typeof saved.highQualityAudio === 'boolean' ? saved.highQualityAudio : base.highQualityAudio,
+      autoTrimSilence:
+        typeof saved.autoTrimSilence === 'boolean' ? saved.autoTrimSilence : base.autoTrimSilence,
     };
   } catch {
     return base;

@@ -27,6 +27,7 @@ import {
   Music4,
   Headphones,
   Users,
+  Radio,
 } from 'lucide-react';
 import clsx from 'clsx';
 import type { Track, User } from '../types';
@@ -126,8 +127,11 @@ interface Props {
   friends?: Friend[];
   presences?: Record<string, FriendPresence>;
   onFollowFriend?: (code: string) => void;
+  onRequestListenTogether?: (code: string) => void;
+  pendingOutgoingRequestTo?: string | null;
   syncSession?: SyncSession;
   onStopSync?: () => void;
+  onStartRadio?: (track: Track) => void;
 }
 
 function fmt(s: number): string {
@@ -346,6 +350,8 @@ function FriendsListeningNow({
   presences,
   currentTrackId,
   onFollowFriend,
+  onRequestListenTogether,
+  pendingOutgoingRequestTo,
   syncSession,
   onStopSync,
 }: {
@@ -353,6 +359,8 @@ function FriendsListeningNow({
   presences?: Record<string, FriendPresence>;
   currentTrackId?: string;
   onFollowFriend?: (code: string) => void;
+  onRequestListenTogether?: (code: string) => void;
+  pendingOutgoingRequestTo?: string | null;
   syncSession?: SyncSession;
   onStopSync?: () => void;
 }) {
@@ -391,7 +399,7 @@ function FriendsListeningNow({
       <div className="flex items-center justify-between">
         <span className="text-[11px] font-bold uppercase tracking-wider text-sc-muted flex items-center gap-2">
           <Users className="w-3.5 h-3.5 text-sc-orange" />
-          Znajomi słuchający muzyki ({activeFriends.length})
+          Friends listening to music ({activeFriends.length})
         </span>
       </div>
 
@@ -400,7 +408,9 @@ function FriendsListeningNow({
           if (!presence || !presence.track) return null;
           const isSameTrack = currentTrackId && presence.track.id === currentTrackId;
           const isPlaying = Boolean(presence.isPlaying && presence.online);
+          const isCoListening = syncSession?.mode === 'co-listening' && syncSession?.partnerCode === friend.code;
           const isFollowing = syncSession?.mode === 'following' && syncSession?.targetCode === friend.code;
+          const isPending = pendingOutgoingRequestTo === friend.code;
 
           return (
             <div
@@ -438,7 +448,7 @@ function FriendsListeningNow({
                     <span className="text-xs font-bold text-sc-fg truncate">{presence.name || friend.name}</span>
                     {isSameTrack && (
                       <span className="px-1.5 py-0.2 rounded-full bg-sc-orange/20 text-sc-orange text-[9px] font-bold">
-                        Ten sam utwór
+                        Same track
                       </span>
                     )}
                   </div>
@@ -457,33 +467,42 @@ function FriendsListeningNow({
                   {isPlaying ? (
                     <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                      Teraz
+                      Now
                     </span>
                   ) : (
                     formatTimeAgo(presence.timestamp || presence.lastSeen)
                   )}
                 </span>
 
-                {onFollowFriend && presence.online && (
-                  isFollowing ? (
+                {presence.online && (
+                  isCoListening || isFollowing ? (
                     <button
                       type="button"
                       onClick={onStopSync}
                       className="px-2 py-1 rounded-lg bg-sc-orange text-sc-on-accent text-[10px] font-bold hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center gap-1 shadow-xs"
-                      title="Syncing with friend - click to stop"
+                      title="Listening together active — click to disconnect"
                     >
-                      <Headphones className="w-3 h-3" />
-                      <span>Sync</span>
+                      <Headphones className="w-3 h-3 animate-pulse" />
+                      <span>Disconnect</span>
+                    </button>
+                  ) : isPending ? (
+                    <button
+                      type="button"
+                      className="px-2 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold flex items-center gap-1"
+                      title="Invitation sent"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                      <span>Sent...</span>
                     </button>
                   ) : (
                     <button
                       type="button"
-                      onClick={() => onFollowFriend(friend.code)}
-                      className="px-2 py-1 rounded-lg bg-white/5 hover:bg-sc-orange hover:text-sc-on-accent text-sc-muted text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1"
-                      title={`Listen with ${friend.name}`}
+                      onClick={() => onRequestListenTogether ? onRequestListenTogether(friend.code) : onFollowFriend?.(friend.code)}
+                      className="px-2 py-1 rounded-lg bg-sc-orange/15 hover:bg-sc-orange text-sc-orange hover:text-sc-on-accent text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 border border-sc-orange/30 hover:border-transparent"
+                      title={`Request to listen together with ${friend.name}`}
                     >
-                      <Play className="w-3 h-3 fill-current" />
-                      <span>Listen</span>
+                      <Headphones className="w-3 h-3" />
+                      <span>Together</span>
                     </button>
                   )
                 )}
@@ -506,6 +525,8 @@ function NowPlaying({
   friends,
   presences,
   onFollowFriend,
+  onRequestListenTogether,
+  pendingOutgoingRequestTo,
   syncSession,
   onStopSync,
 }: {
@@ -517,6 +538,8 @@ function NowPlaying({
   friends?: Friend[];
   presences?: Record<string, FriendPresence>;
   onFollowFriend?: (code: string) => void;
+  onRequestListenTogether?: (code: string) => void;
+  pendingOutgoingRequestTo?: string | null;
   syncSession?: SyncSession;
   onStopSync?: () => void;
 }) {
@@ -1055,6 +1078,8 @@ function NowPlaying({
             presences={presences}
             currentTrackId={p.track?.id}
             onFollowFriend={onFollowFriend}
+            onRequestListenTogether={onRequestListenTogether}
+            pendingOutgoingRequestTo={pendingOutgoingRequestTo}
             syncSession={syncSession}
             onStopSync={onStopSync}
           />
@@ -1538,6 +1563,8 @@ export function PlayerBar(p: Props) {
           friends={p.friends}
           presences={p.presences}
           onFollowFriend={p.onFollowFriend}
+          onRequestListenTogether={p.onRequestListenTogether}
+          pendingOutgoingRequestTo={p.pendingOutgoingRequestTo}
           syncSession={p.syncSession}
           onStopSync={p.onStopSync}
         />
@@ -1883,6 +1910,18 @@ export function PlayerBar(p: Props) {
                 aria-label="Tekst utworu"
               >
                 <Mic2 className="w-[17px] h-[17px]" />
+              </button>
+            )}
+
+            {/* Track Radio button */}
+            {p.onStartRadio && p.track && (
+              <button
+                onClick={() => p.onStartRadio?.(p.track!)}
+                className="w-8 h-8 rounded-full flex items-center justify-center text-sc-muted hover:text-cyan-400 transition-all duration-150 hover:scale-115 active:scale-90 cursor-pointer"
+                title="Radio utworu (Track Radio)"
+                aria-label="Radio utworu"
+              >
+                <Radio className="w-[17px] h-[17px]" />
               </button>
             )}
 

@@ -38,6 +38,10 @@ export interface Track {
    * presenting this track should say so rather than act as if it ended early.
    */
   previewOnly?: boolean;
+  /**
+   * Precomputed waveform JSON URL from SoundCloud (used for instant silence trimming).
+   */
+  waveformUrl?: string;
 }
 
 export interface WebProfile {

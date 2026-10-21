@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { rgbToHsl, hslToHex } from './artworkColor';
 
 export type ThemeMode = 'dark' | 'light';
 
@@ -226,6 +227,94 @@ export const BUILT_IN_THEMES: ThemeDef[] = [
     accent: '#ec4899',
     accent2: '#a78bfa',
   },
+  {
+    id: 'cyberpunk',
+    label: 'Cyberpunk',
+    hint: 'Neon pink & electric cyan on deep void',
+    mode: 'dark',
+    bg: '#050508',
+    panel: '#0c0c14',
+    panel2: '#151422',
+    line: '#26223d',
+    fg: '#fbfaff',
+    muted: '#c2bde2',
+    dim: '#8d85b5',
+    faint: '#665f8a',
+    fill: '255 255 255',
+    onAccent: '#000000',
+    scrollbar: '#373059',
+    scrollbarHi: '#55498a',
+    skeletonA: '#100e1c',
+    skeletonB: '#1a172e',
+    accent: '#ff007f',
+    accent2: '#00f0ff',
+  },
+  {
+    id: 'oled',
+    label: 'OLED Black',
+    hint: 'Pure true black with violet glow',
+    mode: 'dark',
+    bg: '#000000',
+    panel: '#09090b',
+    panel2: '#121217',
+    line: '#1c1c24',
+    fg: '#ffffff',
+    muted: '#b2b2c4',
+    dim: '#7c7c8e',
+    faint: '#545464',
+    fill: '255 255 255',
+    onAccent: '#ffffff',
+    scrollbar: '#262632',
+    scrollbarHi: '#3c3c4e',
+    skeletonA: '#0d0d12',
+    skeletonB: '#16161f',
+    accent: '#a855f7',
+    accent2: '#38bdf8',
+  },
+  {
+    id: 'nord',
+    label: 'Nord Arctic',
+    hint: 'Arctic slate & glacier blue',
+    mode: 'dark',
+    bg: '#0e121a',
+    panel: '#151b26',
+    panel2: '#1d2533',
+    line: '#2b364a',
+    fg: '#e5e9f0',
+    muted: '#c4cddb',
+    dim: '#8895ad',
+    faint: '#626f87',
+    fill: '255 255 255',
+    onAccent: '#0e121a',
+    scrollbar: '#34425a',
+    scrollbarHi: '#4a5d7e',
+    skeletonA: '#17202d',
+    skeletonB: '#222d3f',
+    accent: '#88c0d0',
+    accent2: '#81a1c1',
+  },
+  {
+    id: 'sunset',
+    label: 'Sunset Gold',
+    hint: 'Amber glow and warm dusk coral',
+    mode: 'dark',
+    bg: '#110c09',
+    panel: '#19120e',
+    panel2: '#241a14',
+    line: '#38281e',
+    fg: '#fef5ee',
+    muted: '#dfc2b1',
+    dim: '#af8e7b',
+    faint: '#886b59',
+    fill: '255 255 255',
+    onAccent: '#110c09',
+    scrollbar: '#443226',
+    scrollbarHi: '#604737',
+    skeletonA: '#1d1510',
+    skeletonB: '#291e17',
+    accent: '#f59e0b',
+    accent2: '#f43f5e',
+  },
 ];
 
 /* ------------------------------------------------------------------ *
@@ -391,8 +480,41 @@ export function applyTheme(theme: ThemeDef): void {
   }
   root.style.setProperty('--sc-accent', theme.accent);
   root.style.setProperty('--sc-accent-2', theme.accent2);
+  root.style.setProperty('--sc-orange', theme.accent);
   root.style.setProperty('color-scheme', theme.mode);
   root.dataset.theme = theme.id;
+  emit();
+}
+
+/**
+ * Dynamically updates primary and secondary accents to match current song artwork.
+ */
+export function applyDynamicArtworkAccent(artworkHex: string | null): void {
+  if (!artworkHex) return;
+  const root = document.documentElement;
+  const [r, g, b] = hexToRgb(artworkHex);
+  const [h, s, l] = rgbToHsl(r, g, b);
+  // Ensure readable vibrance and luminosity for UI elements
+  const activeS = Math.max(s, 70);
+  const activeL = Math.min(Math.max(l, 48), 64);
+  const accent1 = hslToHex(h, activeS, activeL);
+  const accent2 = hslToHex((h + 38) % 360, Math.max(s, 75), Math.min(Math.max(l, 42), 62));
+
+  root.style.setProperty('--sc-accent', accent1);
+  root.style.setProperty('--sc-accent-2', accent2);
+  root.style.setProperty('--sc-orange', accent1);
+  emit();
+}
+
+export function resetDynamicArtworkAccent(theme?: ThemeDef): void {
+  const root = document.documentElement;
+  if (theme) {
+    applyTheme(theme);
+    return;
+  }
+  root.style.removeProperty('--sc-accent');
+  root.style.removeProperty('--sc-accent-2');
+  root.style.removeProperty('--sc-orange');
   emit();
 }
 

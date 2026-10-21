@@ -48,6 +48,12 @@ import {
 import type { Playlist, Track, User } from './types';
 import { desktopLogin, desktopLogout, setAuthToken, clearAuthToken, type StreamCandidate, type StreamPolicy, fmtTime } from './lib/soundcloud';
 import { spotifyRedirectUri } from './lib/spotify';
+import { StatsView } from './components/StatsView';
+import { recordCompletedPlay } from './lib/stats';
+import { sendLastFmNowPlaying, scrobbleLastFmTrack } from './lib/lastfm';
+import { useArtworkColor } from './lib/artworkColor';
+import { applyDynamicArtworkAccent, resetDynamicArtworkAccent } from './lib/themes';
+import { detectSilenceFromWaveform } from './lib/waveformSilence';
 
 /** Active EQ band count. Stored apart from the curve so the two stay in sync. */
 const EQ_BAND_COUNT_KEY = 'sc9000:eqBands';
@@ -67,7 +73,7 @@ function readStoredBandCount(): BandCount {
  * interchangeable - returning to where you already are is not a new step.
  */
 type NavEntry =
-  | { view: 'discover' | 'library' | 'friends' | 'settings'; key: string }
+  | { view: 'discover' | 'library' | 'friends' | 'settings' | 'stats'; key: string }
   | { view: 'search'; query: string; key: string }
   | { view: 'playlist'; playlist: Playlist; key: string }
   | { view: 'artist'; user: User; key: string }
@@ -692,6 +698,10 @@ if (typeof d.theme === 'string') {
   /** Track id that fired nearEnd to prevent duplicate nearEnd triggers. */
   const nearFiredTrackIdRef = useRef<string | null>(null);
 
+  /** Tracking for 95% listen completion (stats, history, last.fm) */
+  const trackStartTimeRef = useRef<number>(Math.floor(Date.now() / 1000));
+  const hasCompletedPlayRef = useRef<boolean>(false);
+
   const playTrack = useCallback(
     async (t: Track, q: Track[] = [], forcePlay = false) => {
       // If the user manually picks a track while following a friend, exit following mode
@@ -727,28 +737,34 @@ if (typeof d.theme === 'string') {
         const uris = (q.length ? q : [t])
           .filter((x) => x.source === 'spotify' && x.uri)
           .map((x) => x.uri as string);
+        hasCompletedPlayRef.current = false;
+        trackStartTimeRef.current = Math.floor(Date.now() / 1000);
+        if (prefs.lastFmEnabled) {
+          void sendLastFmNowPlaying(t, prefs);
+        }
         void spotifyRef.current.playTrack(t, uris).catch((err) => {
           setPlaying(false);
           notify(err instanceof Error ? err.message : 'Spotify playback failed');
         });
-        api.pushHistory(t);
         return;
       }
 
       if (trackRef.current?.id === t.id) {
-        if (forcePlay) {
-          if (!playingRef.current) {
-            void engine.play();
-            setPlaying(true);
-          }
+        const active = engine.getActive();
+        const hasValidAudio =
+          active &&
+          Boolean(active.src || active.currentSrc) &&
+          !active.error &&
+          streamsRef.current.length > 0;
+
+        if (hasValidAudio && !forcePlay) {
+          setPlaying((p) => {
+            if (p) engine.pause();
+            else void engine.play();
+            return !p;
+          });
           return;
         }
-        setPlaying((p) => {
-          if (p) engine.pause();
-          else void engine.play();
-          return !p;
-        });
-        return;
       }
 
       // Switching away from a Spotify track onto an element-engine track: stop
@@ -779,62 +795,97 @@ if (typeof d.theme === 'string') {
         setBuffering(true);
       }, 250);
 
-      const { candidates, policy, previewOnly, drmOnly, next, unblockedFull, actualDuration } = await api.resolveStreams(t);
-      if (buffTimer) {
-        window.clearTimeout(buffTimer);
-        buffTimer = null;
-      }
-      if (token !== loadTokenRef.current) return;
-
-      streamsRef.current = candidates;
-      streamPolicyRef.current = policy;
-      streamNextRef.current = next ?? null;
-      previewRef.current = previewOnly;
-      switchingRef.current = false;
-
-      if (actualDuration && actualDuration > 0) {
-        setDur(actualDuration);
-        setTrack((prev) =>
-          prev ? { ...prev, duration: actualDuration, durationFormatted: fmtTime(actualDuration) } : prev
-        );
+      if (prefs.autoTrimSilence && t.waveformUrl && t.duration > 5) {
+        void detectSilenceFromWaveform(t.waveformUrl, t.duration).then((bounds) => {
+          if (bounds && (bounds.startSilenceSec > 0 || bounds.endSilenceSec < t.duration)) {
+            engine.setSilenceBounds(bounds.startSilenceSec, bounds.endSilenceSec);
+          }
+        });
       }
 
-      if (candidates.length === 0) {
-        // No usable link. "Only encrypted formats" is a different situation
-        // from "gone": the track is right there, it just cannot be decoded here.
-        consecutiveFailuresRef.current += 1;
+      try {
+        const { candidates, policy, previewOnly, drmOnly, next, unblockedFull, actualDuration, waveformUrl } =
+          await api.resolveStreams(t);
+        if (token !== loadTokenRef.current) return;
+
+        streamsRef.current = candidates;
+        streamPolicyRef.current = policy;
+        streamNextRef.current = next ?? null;
+        previewRef.current = previewOnly;
+        switchingRef.current = false;
+
+        if (actualDuration && actualDuration > 0) {
+          setDur(actualDuration);
+          setTrack((prev) =>
+            prev ? { ...prev, duration: actualDuration, durationFormatted: fmtTime(actualDuration) } : prev
+          );
+        }
+
+        if (prefs.autoTrimSilence) {
+          const wUrl = waveformUrl || t.waveformUrl;
+          const durSec = actualDuration || t.duration;
+          if (wUrl && durSec > 5) {
+            void detectSilenceFromWaveform(wUrl, durSec).then((bounds) => {
+              if (bounds && (bounds.startSilenceSec > 0 || bounds.endSilenceSec < durSec)) {
+                engine.setSilenceBounds(bounds.startSilenceSec, bounds.endSilenceSec);
+              }
+            });
+          }
+        }
+
+        if (candidates.length === 0) {
+          consecutiveFailuresRef.current += 1;
+          engine.load(null);
+          setBuffering(false);
+          setPlaying(false);
+          if (consecutiveFailuresRef.current >= 3) {
+            notify(
+              'Playback stopped: multiple tracks in a row failed to load (possible SoundCloud rate limit or network issue)'
+            );
+            return;
+          }
+          notify(
+            policy === 'BLOCK'
+              ? `"${t.title}" is not available in this region`
+              : drmOnly
+                ? `"${t.title}" is DRM protected and cannot be played here`
+                : `"${t.title}" is no longer available on SoundCloud`
+          );
+          return;
+        }
+
+        consecutiveFailuresRef.current = 0;
+
+        if (unblockedFull) {
+          notify(`"${t.title}" — Full track unblocked`);
+        } else if (previewOnly) {
+          notify(`"${t.title}" (SoundCloud Go+) — 30s preview`);
+        }
+
+        engine.load(candidates[0].url);
+        await engine.play();
+        hasCompletedPlayRef.current = false;
+        trackStartTimeRef.current = Math.floor(Date.now() / 1000);
+        if (prefs.lastFmEnabled) {
+          void sendLastFmNowPlaying(t, prefs);
+        }
+      } catch (err) {
+        if (token !== loadTokenRef.current) return;
         engine.load(null);
         setBuffering(false);
         setPlaying(false);
-        if (consecutiveFailuresRef.current >= 3) {
-          notify('Playback stopped: multiple tracks in a row failed to load (possible SoundCloud rate limit or network issue)');
-          return;
-        }
         notify(
-          policy === 'BLOCK'
-            ? `"${t.title}" is not available in this region`
-            : drmOnly
-              ? `"${t.title}" is DRM protected and cannot be played here`
-              : `"${t.title}" is no longer available on SoundCloud`
+          `Could not play "${t.title}": ${err instanceof Error ? err.message : 'failed to resolve stream'}`
         );
-        return;
+      } finally {
+        if (buffTimer) {
+          window.clearTimeout(buffTimer);
+          buffTimer = null;
+        }
+        if (token === loadTokenRef.current) {
+          switchingRef.current = false;
+        }
       }
-
-      consecutiveFailuresRef.current = 0;
-
-      if (unblockedFull) {
-        notify(`"${t.title}" — Full track unblocked`);
-      } else if (previewOnly) {
-        notify(`"${t.title}" (SoundCloud Go+) — 30s preview`);
-      }
-
-      engine.load(candidates[0].url);
-      await engine.play();
-      switchingRef.current = false;
-
-      // Recorded once the audio is actually on its way, so the history never
-      // lists a track that failed to resolve or was skipped past.
-      api.pushHistory(t);
     },
     [api, engine, notify]
   );
@@ -1080,6 +1131,7 @@ if (typeof d.theme === 'string') {
     (sec: number) => {
       if (trackRef.current?.source === 'spotify') void spotifyRef.current.seek(sec * 1000);
       else engine.seek(sec);
+      listenTogetherRef.current?.broadcastSeek(sec);
     },
     [engine]
   );
@@ -1110,7 +1162,8 @@ if (typeof d.theme === 'string') {
       }
     },
     onSeek: (seconds) => {
-      seekTo(seconds);
+      if (trackRef.current?.source === 'spotify') void spotifyRef.current.seek(seconds * 1000);
+      else engine.seek(seconds);
     },
     notify,
   });
@@ -1129,9 +1182,32 @@ if (typeof d.theme === 'string') {
     // buffering, would read as the user pausing the track they asked for.
     const els = engine.audioElements();
     if (!els.length) return;
+
+    let stallTimer: number | null = null;
+    const clearStallTimer = () => {
+      if (stallTimer) {
+        window.clearTimeout(stallTimer);
+        stallTimer = null;
+      }
+    };
+
     const onTime = (a: HTMLAudioElement) => () => {
       if (a !== engine.getActive()) return;
+      clearStallTimer();
       setTime(a.currentTime);
+
+      // Accurate 95% listen completion tracking
+      if (!hasCompletedPlayRef.current && a.duration > 8 && a.currentTime >= a.duration * 0.95) {
+        hasCompletedPlayRef.current = true;
+        const cur = trackRef.current;
+        if (cur && !previewRef.current) {
+          recordCompletedPlay(cur);
+          api.pushHistory(cur);
+          if (prefs.lastFmEnabled) {
+            void scrobbleLastFmTrack(cur, trackStartTimeRef.current, prefs);
+          }
+        }
+      }
     };
     const onMeta = (a: HTMLAudioElement) => () => {
       if (a !== engine.getActive()) return;
@@ -1140,9 +1216,17 @@ if (typeof d.theme === 'string') {
     const onWaiting = (a: HTMLAudioElement) => () => {
       if (a !== engine.getActive()) return;
       setBuffering(true);
+      clearStallTimer();
+      stallTimer = window.setTimeout(() => {
+        if (a === engine.getActive() && playingRef.current && a.readyState < 3) {
+          console.warn('[AudioEngine] Playback stalled in waiting state for 12s, triggering format retry');
+          void onError(a)();
+        }
+      }, 12000);
     };
     const onPlaying = (a: HTMLAudioElement) => () => {
       if (a !== engine.getActive()) return;
+      clearStallTimer();
       setBuffering(false);
       setPlaying(true);
     };
@@ -1166,11 +1250,11 @@ if (typeof d.theme === 'string') {
      * to accept it too: its refusal to load is still the cue to retry.
      */
     const onError = (a: HTMLAudioElement) => async () => {
+      clearStallTimer();
       if (a !== engine.getActive() && !engine.isMediaTarget(a)) return;
-      // Changing src aborts whatever was loading, and Chromium reports that as
-      // an error on the element. Acting on it here would restart the ladder
-      // for a track that is still being resolved.
-      if (switchingRef.current || advancingRef.current) return;
+      // Changing src aborts whatever was loading, which Chromium reports as error code 1 (MEDIA_ERR_ABORTED).
+      if (a.error && a.error.code === 1) return;
+      if (advancingRef.current) return;
 
       advancingRef.current = true;
       const token = loadTokenRef.current;
@@ -1192,6 +1276,11 @@ if (typeof d.theme === 'string') {
           void engine.play();
           return;
         }
+
+        engine.load(null);
+        if (trackRef.current) {
+          api.invalidateStreamCache(trackRef.current.id);
+        }
         setBuffering(false);
         setPlaying(false);
         notify(
@@ -1199,6 +1288,10 @@ if (typeof d.theme === 'string') {
             ? `"${trackRef.current?.title ?? 'That track'}" is not available in this region`
             : 'Could not play that stream - every available format was refused'
         );
+      } catch {
+        engine.load(null);
+        setBuffering(false);
+        setPlaying(false);
       } finally {
         advancingRef.current = false;
       }
@@ -1212,6 +1305,7 @@ if (typeof d.theme === 'string') {
       a.addEventListener('error', onError(a));
     }
     return () => {
+      clearStallTimer();
       for (const a of els) {
         a.removeEventListener('timeupdate', onTime(a));
         a.removeEventListener('loadedmetadata', onMeta(a));
@@ -1239,9 +1333,21 @@ if (typeof d.theme === 'string') {
       // never asked to leave.
       if (switchingRef.current) return;
 
+      // In co-listening mode, only the advance leader triggers natural track-end advance.
+      // This completely avoids race condition where both clients fetch different related tracks.
+      const session = listenTogetherRef.current?.syncSession;
+      if (session?.mode === 'co-listening') {
+        const isLeader = listenTogetherRef.current?.isAdvanceLeader ?? true;
+        if (!isLeader) {
+          // Follower on natural track end waits for leader's PLAY_TRACK command
+          if (near) return;
+          setPlaying(false);
+          return;
+        }
+      }
+
       // When following a friend or in a room without control, the follower must NEVER
       // advance local queue or run autodiscovery. The leader controls what plays next.
-      const session = listenTogetherRef.current?.syncSession;
       const isRemoteControlled =
         session &&
         (session.mode === 'following' ||
@@ -1259,6 +1365,14 @@ if (typeof d.theme === 'string') {
         if (cur) nearFiredTrackIdRef.current = cur.id;
       } else {
         nearFiredTrackIdRef.current = null;
+        if (cur && !previewRef.current && !hasCompletedPlayRef.current) {
+          hasCompletedPlayRef.current = true;
+          recordCompletedPlay(cur);
+          api.pushHistory(cur);
+          if (prefs.lastFmEnabled) {
+            void scrobbleLastFmTrack(cur, trackStartTimeRef.current, prefs);
+          }
+        }
       }
 
       if (repeat === 'one') {
@@ -1324,6 +1438,29 @@ if (typeof d.theme === 'string') {
     engine.setVolume(v);
     void spotifyRef.current.setVolume(v);
   }, [engine, volume, muted]);
+
+  // Audio enhancements: Loudness Equalizer, Spatial 3D Audio, and Auto-Silence Trimmer
+  useEffect(() => {
+    engine.setLoudnessEqualizer(Boolean(prefs.loudnessEqualizer));
+  }, [engine, prefs.loudnessEqualizer]);
+
+  useEffect(() => {
+    engine.setSpatialAudio(Boolean(prefs.spatialAudio));
+  }, [engine, prefs.spatialAudio]);
+
+  useEffect(() => {
+    engine.setAutoTrimSilence(Boolean(prefs.autoTrimSilence));
+  }, [engine, prefs.autoTrimSilence]);
+
+  // Dynamic Artwork Accent
+  const artworkColor = useArtworkColor(track?.artwork || null);
+  useEffect(() => {
+    if (prefs.dynamicArtworkTheme && artworkColor.hex) {
+      applyDynamicArtworkAccent(artworkColor.hex);
+    } else {
+      resetDynamicArtworkAccent();
+    }
+  }, [prefs.dynamicArtworkTheme, artworkColor.hex]);
 
   /**
    * Speed and pitch are pushed into the element from state, not the other way
@@ -1446,11 +1583,62 @@ if (typeof d.theme === 'string') {
       isPlaying: playing,
       currentTime: time,
       duration: dur,
+      volume: muted ? 0 : volume,
       friendCode: listenTogether.profile.code,
       shareDiscordFriendCode: Boolean(listenTogether.profile.shareWithDiscord),
       showDiscordButtons: listenTogether.profile.showDiscordButtons !== false,
     });
-  }, [track, playing, Math.floor(time / 5), dur, listenTogether.profile.code, listenTogether.profile.shareWithDiscord, listenTogether.profile.showDiscordButtons]);
+  }, [track, playing, Math.floor(time / 5), dur, volume, muted, listenTogether.profile.code, listenTogether.profile.shareWithDiscord, listenTogether.profile.showDiscordButtons]);
+
+  // Tray Mini-player seek & volume IPC listeners
+  useEffect(() => {
+    const unsubSeek = window.desktop?.onSeekCommand?.((t) => {
+      engine.seek(t);
+      setTime(t);
+    });
+    const unsubVol = window.desktop?.onVolumeCommand?.((v) => {
+      setVolume(v);
+      setMuted(v === 0);
+      engine.setVolume(v);
+    });
+    return () => {
+      unsubSeek?.();
+      unsubVol?.();
+    };
+  }, [engine]);
+
+  // Track Radio generator
+  const startTrackRadio = useCallback(
+    async (seedTrack: Track) => {
+      // 1. Instantly navigate to the Similar / Radio view so the interface updates immediately
+      setView('similar');
+      pushNav({ view: 'similar', seed: seedTrack, key: `similar:${seedTrack.id}` });
+      notify(`Starting radio for "${seedTrack.title}"...`);
+
+      try {
+        const related = await api.loadRelated(seedTrack);
+        const radioTracks = related.length > 0 ? related : [];
+
+        // 2. DO NOT change or restart the currently playing track!
+        if (track && playing) {
+          // Keep current track playing uninterrupted!
+          // Put the radio tracks in the queue following the current track
+          const otherRadioTracks = radioTracks.filter((t) => t.id !== track.id);
+          setQueue([track, ...otherRadioTracks]);
+          notify(`Radio started: "${seedTrack.title}" (${radioTracks.length} tracks queued)`);
+        } else {
+          // If nothing is playing, queue seed + radio and start playback
+          const radioQueue = [seedTrack, ...radioTracks.filter((t) => t.id !== seedTrack.id)];
+          setQueue(radioQueue);
+          await playTrack(seedTrack, radioQueue, true);
+          notify(`Radio started: "${seedTrack.title}" (${radioQueue.length} tracks queued)`);
+        }
+      } catch (err) {
+        notify(`Failed to start radio: ${err instanceof Error ? err.message : 'network error'}`);
+      }
+    },
+    [api, notify, playTrack, pushNav, track, playing]
+  );
 
   // Discord Rich Presence & Deep-link friend auto-add listener
   useEffect(() => {
@@ -1665,11 +1853,9 @@ if (typeof d.theme === 'string') {
 
   const openSimilar = useCallback(
     (seed: Track) => {
-      setView('similar');
-      pushNav({ view: 'similar', seed, key: `similar:${seed.id}` });
-      void api.loadRelated(seed);
+      void startTrackRadio(seed);
     },
-    [api, pushNav]
+    [startTrackRadio]
   );
 
   /**
@@ -1953,7 +2139,7 @@ if (typeof d.theme === 'string') {
           window. Equal `flex-1` columns also mean the field is squeezed only
           after both sides have given ground equally.
         */}
-        <header className="relative h-16 shrink-0 flex items-center justify-between px-4 sm:px-6 border-b border-white/[0.06] backdrop-blur-xl bg-sc-panel/20">
+        <header className="relative z-50 h-16 shrink-0 flex items-center justify-between px-4 sm:px-6 border-b border-white/[0.06] backdrop-blur-xl bg-sc-panel/20">
           {/* Left: Navigation history */}
           <div className="flex items-center gap-1 z-10 shrink-0">
             <button
@@ -1976,13 +2162,17 @@ if (typeof d.theme === 'string') {
             </button>
           </div>
 
-          {/* Center: SearchBar (precisely centered in window) */}
-          <div className="absolute left-1/2 -translate-x-1/2 w-full max-w-[540px] px-4 pointer-events-none">
+          {/* Center: SearchBar (precisely centered in window with top-layer z-index) */}
+          <div className="absolute left-1/2 -translate-x-1/2 w-full max-w-[540px] px-4 pointer-events-none z-50">
             <div className="pointer-events-auto w-full">
               <SearchBar
                 query={query}
                 onQueryChange={setQuery}
                 onSubmit={doSearch}
+                isMusicPlaying={playing}
+                typingSoundEnabled={prefs.typingSoundEnabled}
+                typingSoundVolume={prefs.typingSoundVolume}
+                typingSoundSwitch={prefs.typingSoundSwitch}
                 loading={
                   prefs.source === 'audius'
                     ? audiusSearching
@@ -2010,7 +2200,7 @@ if (typeof d.theme === 'string') {
 
           {/* Right: Friends button & own profile */}
           <div className="flex items-center gap-2.5 z-10 shrink-0">
-            {/* Friends popover trigger button */}
+            {/* Friends popover trigger button with radiant bloom online friends badge */}
             <button
               onClick={() => setFriendsDrawerOpen((prev) => !prev)}
               title={
@@ -2022,7 +2212,7 @@ if (typeof d.theme === 'string') {
               }
               aria-label="Friends and Activity"
               className={clsx(
-                'relative w-9 h-9 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer',
+                'relative h-9 px-2.5 rounded-full flex items-center justify-center gap-1.5 transition-all duration-200 cursor-pointer',
                 friendsDrawerOpen
                   ? 'bg-sc-orange text-sc-on-accent shadow-md scale-105'
                   : 'bg-white/5 hover:bg-white/10 text-sc-muted hover:text-sc-fg hover:scale-105 active:scale-95 border border-white/5'
@@ -2030,12 +2220,13 @@ if (typeof d.theme === 'string') {
             >
               <Users className="w-4 h-4" />
               {onlineFriendsCount > 0 && (
-                <span className="absolute -top-0.5 -right-0.5 min-w-[15px] h-[15px] px-1 rounded-full bg-emerald-500 text-[9px] font-extrabold text-white flex items-center justify-center shadow-xs">
+                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/80 shadow-[0_0_14px_rgba(16,185,129,0.75),0_0_28px_rgba(16,185,129,0.4)] text-emerald-300 font-extrabold text-[11px] tabular-nums tracking-wide animate-pulse">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,1)]" />
                   {onlineFriendsCount}
                 </span>
               )}
               {listenTogether.syncSession.mode !== 'idle' && (
-                <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-sc-orange animate-ping" />
+                <span className="w-2 h-2 rounded-full bg-sc-orange animate-ping" />
               )}
             </button>
 
@@ -2339,6 +2530,12 @@ if (typeof d.theme === 'string') {
               onRenameFriend={listenTogether.renameFriend}
               onFollowFriend={listenTogether.followFriend}
               onStopSync={listenTogether.stopSync}
+              incomingSessionRequests={listenTogether.incomingSessionRequests}
+              pendingOutgoingRequestTo={listenTogether.pendingOutgoingRequestTo}
+              onRequestListenTogether={listenTogether.requestListenTogether}
+              onAcceptSessionRequest={listenTogether.acceptSessionRequest}
+              onDeclineSessionRequest={listenTogether.declineSessionRequest}
+              onCancelSessionRequest={listenTogether.cancelSessionRequest}
               onInviteFriend={listenTogether.inviteFriend}
               onAcceptInvite={listenTogether.acceptInvite}
               onDismissInvite={listenTogether.dismissInvite}
@@ -2347,6 +2544,27 @@ if (typeof d.theme === 'string') {
               onSendChatMessage={listenTogether.sendChatMessage}
               onSendReaction={listenTogether.sendReaction}
               onConnectToFriend={listenTogether.connectToFriend}
+              collabPlaylists={listenTogether.collabPlaylists}
+              onCreateCollabPlaylist={listenTogether.createCollabPlaylist}
+              onInviteFriendToCollab={listenTogether.inviteFriendToCollab}
+              onAddTrackToCollab={listenTogether.addTrackToCollab}
+              onRemoveTrackFromCollab={listenTogether.removeTrackFromCollab}
+              onDeleteCollabPlaylist={listenTogether.deleteCollabPlaylist}
+              onPlayCollabPlaylist={(tracks) => {
+                if (tracks.length > 0) {
+                  setQueue(tracks);
+                  void playTrack(tracks[0], tracks, true);
+                }
+              }}
+            />
+          )}
+
+          {view === 'stats' && (
+            <StatsView
+              friends={listenTogether.friends}
+              presences={listenTogether.presences}
+              onPlayTrack={(t) => void playTrack(t, [t], true)}
+              onOpenArtist={(artist) => void openArtist(artist)}
             />
           )}
           </div>
@@ -2355,6 +2573,7 @@ if (typeof d.theme === 'string') {
         <PlayerBar
           track={track}
           isPlaying={playing}
+          onStartRadio={startTrackRadio}
           isBuffering={buffering}
           currentTime={time}
           duration={dur}
@@ -2382,10 +2601,12 @@ if (typeof d.theme === 'string') {
           queueOpen={queueOpen}
           onOpenFriends={() => setFriendsDrawerOpen((o) => !o)}
           isSyncActive={listenTogether.syncSession.mode !== 'idle'}
-          syncTargetName={listenTogether.syncSession.targetName || listenTogether.syncSession.roomName}
+          syncTargetName={listenTogether.syncSession.targetName || listenTogether.syncSession.partnerName || listenTogether.syncSession.roomName}
           friends={listenTogether.friends}
           presences={listenTogether.presences}
           onFollowFriend={listenTogether.followFriend}
+          onRequestListenTogether={listenTogether.requestListenTogether}
+          pendingOutgoingRequestTo={listenTogether.pendingOutgoingRequestTo}
           syncSession={listenTogether.syncSession}
           onStopSync={listenTogether.stopSync}
           eq={eq}
@@ -2410,6 +2631,54 @@ if (typeof d.theme === 'string') {
           loadingSimilarQueue={loadingSimilarQueue}
         />
       </div>
+
+      {/* Floating Incoming Co-Listening Request Notification */}
+      {listenTogether.incomingSessionRequests.length > 0 && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] max-w-md w-[calc(100vw-32px)] flex flex-col gap-2 pointer-events-auto animate-in slide-in-from-top-4 duration-200">
+          {listenTogether.incomingSessionRequests.map((req) => (
+            <div
+              key={req.senderCode}
+              className="p-4 rounded-2xl bg-sc-panel/95 backdrop-blur-xl border border-sc-orange/40 shadow-2xl flex items-center gap-3.5"
+            >
+              <img
+                src={req.senderAvatar || `https://api.dicebear.com/7.x/identicon/svg?seed=${req.senderCode}`}
+                alt=""
+                className="w-11 h-11 rounded-full border border-sc-line flex-shrink-0 object-cover"
+              />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-sc-orange animate-pulse" />
+                  <p className="text-[11px] font-bold uppercase tracking-wider text-sc-orange">
+                    Listening Together Invitation
+                  </p>
+                </div>
+                <p className="text-[13px] font-semibold text-sc-fg truncate mt-0.5">
+                  <span className="text-sc-orange">{req.senderName}</span> invited you to listen together
+                </p>
+                <p className="text-[11px] text-sc-muted">
+                  Both of you will control playback in real-time sync
+                </p>
+              </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => listenTogether.acceptSessionRequest(req.senderCode)}
+                  className="px-3 py-1.5 rounded-lg bg-sc-orange hover:bg-sc-orange-soft text-black text-[12px] font-bold shadow-md hover:scale-105 active:scale-95 transition-all"
+                >
+                  Accept
+                </button>
+                <button
+                  type="button"
+                  onClick={() => listenTogether.declineSessionRequest(req.senderCode)}
+                  className="px-2.5 py-1.5 rounded-lg bg-sc-surface hover:bg-sc-line text-sc-muted hover:text-sc-fg text-[12px] font-medium transition-all"
+                >
+                  Decline
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {!clientIdReady && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-sc-bg/85 backdrop-blur-md animate-fade-in pointer-events-none">
@@ -2453,6 +2722,12 @@ if (typeof d.theme === 'string') {
         onRenameFriend={listenTogether.renameFriend}
         onFollowFriend={listenTogether.followFriend}
         onStopSync={listenTogether.stopSync}
+        incomingSessionRequests={listenTogether.incomingSessionRequests}
+        pendingOutgoingRequestTo={listenTogether.pendingOutgoingRequestTo}
+        onRequestListenTogether={listenTogether.requestListenTogether}
+        onAcceptSessionRequest={listenTogether.acceptSessionRequest}
+        onDeclineSessionRequest={listenTogether.declineSessionRequest}
+        onCancelSessionRequest={listenTogether.cancelSessionRequest}
         onInviteFriend={listenTogether.inviteFriend}
         onAcceptInvite={listenTogether.acceptInvite}
         onDismissInvite={listenTogether.dismissInvite}

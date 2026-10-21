@@ -13,6 +13,7 @@ import {
   Globe,
   Headphones,
   Users,
+  BarChart3,
 } from 'lucide-react';
 import { Artwork } from './Artwork';
 import clsx from 'clsx';
@@ -28,7 +29,8 @@ export type View =
   | 'search'
   | 'playlist'
   | 'artist'
-  | 'settings';
+  | 'settings'
+  | 'stats';
 
 interface Props {
   view: View;
@@ -62,6 +64,7 @@ const NAV: Array<{ id: View; label: string; icon: typeof Heart }> = [
   { id: 'discover', label: 'Discover', icon: Compass },
   { id: 'library', label: 'Liked Tracks', icon: Heart },
   { id: 'search', label: 'Search', icon: Search },
+  { id: 'stats', label: 'Statistics', icon: BarChart3 },
 ];
 
 export function Sidebar({

@@ -32,7 +32,7 @@ export function getFallbackColor(seed?: string | number): ArtworkColor {
 
 const colorCache = new Map<string, ArtworkColor>();
 
-function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
+export function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   r /= 255;
   g /= 255;
   b /= 255;
@@ -62,7 +62,7 @@ function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   return [Math.round(h), Math.round(s * 100), Math.round(l * 100)];
 }
 
-function hslToHex(h: number, s: number, l: number): string {
+export function hslToHex(h: number, s: number, l: number): string {
   s /= 100;
   l /= 100;
   const a = s * Math.min(l, 1 - l);

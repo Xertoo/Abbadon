@@ -79,7 +79,12 @@ interface DesktopBridge {
     friendCode?: string;
     shareDiscordFriendCode?: boolean;
     showDiscordButtons?: boolean;
+    volume?: number;
   }) => void;
+  onTrayStateSync?: (cb: (_e: unknown, state: any) => void) => () => void;
+  sendMiniCommand?: (action: string, value?: unknown) => void;
+  onSeekCommand?: (cb: (time: number) => void) => () => void;
+  onVolumeCommand?: (cb: (vol: number) => void) => () => void;
   onDiscordJoinFriend?: (cb: (code: string) => void) => () => void;
   setDiscordClientId?: (clientId: string) => Promise<{ ok: boolean; clientId?: string; error?: string }>;
   /** Proxy Server & Regional Geo-Bypass */

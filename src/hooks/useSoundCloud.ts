@@ -6,6 +6,7 @@ import {
   mapPlaylistMeta,
   resolveStreamUrls,
   resolveStreamUrl,
+  invalidateStreamResolveCache,
   setAuthToken,
   clearAuthToken,
   restoreAuthToken,
@@ -15,11 +16,21 @@ import {
   AuthExpiredError,
   NotFoundError,
   NotSignedInError,
+  BadRequestError,
   cacheStats,
   purgeCache,
   type StreamCandidate,
   type StreamPolicy,
 } from '../lib/soundcloud';
+import { isSoundCloudTrack } from '../lib/audius';
+import {
+  addTrackLocally,
+  removeTrackLocally,
+  mergeLocalPlaylistTracks,
+  getLocalPlaylistAdded,
+  getLocalPlaylistRemoved,
+  queuePlaylistSync,
+} from '../lib/playlistSync';
 import type { Track, Playlist, User, DiscoverSection } from '../types';
 
 export type Status = 'idle' | 'loading' | 'ok' | 'error' | 'ratelimited';
@@ -38,6 +49,7 @@ function describeFailure(err: unknown, fallback: string): string {
   if (err instanceof RateLimitError)
     return `SoundCloud is rate limiting - try again in ~${Math.max(1, Math.round(err.retryAfter / 1000))}s`;
   if (err instanceof NotFoundError) return 'SoundCloud has no such playlist or track (404)';
+  if (err instanceof BadRequestError) return err.message;
   if (err instanceof Error && err.message) return err.message;
   return fallback;
 }
@@ -60,6 +72,7 @@ export interface StreamInfo {
   next?: () => Promise<StreamCandidate | null>;
   unblockedFull?: boolean;
   actualDuration?: number;
+  waveformUrl?: string;
 }
 
 const HISTORY_KEY = 'sc9000:history';
@@ -204,6 +217,7 @@ export interface AppState {
    */
   resolveStreams: (track: Track) => Promise<StreamInfo>;
   resolvePlayable: (track: Track) => Promise<string | null>;
+  invalidateStreamCache: (trackId: string | number) => void;
   stats: () => ReturnType<typeof cacheStats>;
 }
 
@@ -492,13 +506,15 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
 
   const loadPlaylist = useCallback(
     async (p: Playlist) => {
-      setCurrentPlaylist({ ...p, tracks: [] });
+      const initialTracks = mergeLocalPlaylistTracks(p.id, p.tracks || []);
+      setCurrentPlaylist({ ...p, tracks: initialTracks });
       const tracks = await guard(
         async () => (await sc.playlistTracks(p.id)).collection.map(mapTrack),
         [] as Track[]
       );
-      setCurrentPlaylist({ ...p, tracks });
-      if (tracks.length === 0 && p.owner) {
+      const mergedTracks = mergeLocalPlaylistTracks(p.id, tracks);
+      setCurrentPlaylist({ ...p, tracks: mergedTracks });
+      if (mergedTracks.length === 0 && p.owner) {
         notify(`${p.title} has no playable tracks on SoundCloud`);
       }
     },
@@ -647,29 +663,45 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
         notify('Connect SoundCloud to edit your playlists');
         return false;
       }
-      setPlaylistBusy(`${playlist.id}:${track.id}`);
-      try {
-        const currentTracks =
-          currentPlaylist?.id === playlist.id && currentPlaylist.tracks.length > 0
-            ? currentPlaylist.tracks.map((t) => t.id)
-            : playlist.tracks?.length
-            ? playlist.tracks.map((t) => t.id)
-            : undefined;
-        await sc.addTrackToPlaylist(playlist.id, track.id, currentTracks);
-        await loadPlaylist(playlist);
-        notify(`Added "${track.title}" to ${playlist.title}`);
-        
-        setAccountPlaylists((prev) =>
-          prev.map((p) => (p.id === playlist.id ? { ...p, trackCount: p.trackCount + 1 } : p))
-        );
-        return true;
-      } catch (err) {
-        if (err instanceof AuthExpiredError || err instanceof NotSignedInError) setMe(null);
-        notify(describeFailure(err, `Could not add to ${playlist.title}`));
+      if (!isSoundCloudTrack(track)) {
+        notify('Only SoundCloud tracks can be added to SoundCloud playlists');
         return false;
-      } finally {
-        setPlaylistBusy(null);
       }
+
+      // 1. Persist locally first for instant, guaranteed responsiveness
+      addTrackLocally(playlist.id, track);
+
+      // 2. Update local state smoothly without destroying active view or wiping stubs
+      if (currentPlaylist?.id === playlist.id) {
+        setCurrentPlaylist((prev) =>
+          prev && prev.id === playlist.id
+            ? {
+                ...prev,
+                trackCount: prev.trackCount + 1,
+                tracks: prev.tracks.some((t) => String(t.id) === String(track.id))
+                  ? prev.tracks
+                  : [...prev.tracks, track],
+              }
+            : prev
+        );
+      }
+
+      setAccountPlaylists((prev) =>
+        prev.map((p) => (p.id === playlist.id ? { ...p, trackCount: p.trackCount + 1 } : p))
+      );
+
+      notify(`Added "${track.title}" to ${playlist.title}`);
+
+      // 3. Queue gentle server sync in the background with human-paced delay & bot-trigger avoidance
+      const currentTracks =
+        currentPlaylist?.id === playlist.id && currentPlaylist.tracks.length > 0
+          ? currentPlaylist.tracks.map((t) => t.id)
+          : playlist.tracks?.length
+          ? playlist.tracks.map((t) => t.id)
+          : undefined;
+
+      queuePlaylistSync(playlist.id, track.id, 'add', currentTracks);
+      return true;
     },
     [currentPlaylist, notify]
   );
@@ -680,29 +712,38 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
         notify('Connect SoundCloud to edit your playlists');
         return false;
       }
-      setPlaylistBusy(`${playlist.id}:${track.id}`);
-      try {
-        const currentTracks =
-          currentPlaylist?.id === playlist.id && currentPlaylist.tracks.length > 0
-            ? currentPlaylist.tracks.map((t) => t.id)
-            : playlist.tracks?.length
-            ? playlist.tracks.map((t) => t.id)
-            : undefined;
-        await sc.removeTrackFromPlaylist(playlist.id, track.id, currentTracks);
-        await loadPlaylist(playlist);
-        notify(`Removed "${track.title}" from ${playlist.title}`);
-        
-        setAccountPlaylists((prev) =>
-          prev.map((p) => (p.id === playlist.id ? { ...p, trackCount: Math.max(0, p.trackCount - 1) } : p))
+
+      // 1. Remove locally first
+      removeTrackLocally(playlist.id, track.id);
+
+      // 2. Update local state smoothly without destroying active view
+      if (currentPlaylist?.id === playlist.id) {
+        setCurrentPlaylist((prev) =>
+          prev && prev.id === playlist.id
+            ? {
+                ...prev,
+                trackCount: Math.max(0, prev.trackCount - 1),
+                tracks: prev.tracks.filter((t) => String(t.id) !== String(track.id)),
+              }
+            : prev
         );
-        return true;
-      } catch (err) {
-        if (err instanceof AuthExpiredError || err instanceof NotSignedInError) setMe(null);
-        notify(describeFailure(err, `Could not remove from ${playlist.title}`));
-        return false;
-      } finally {
-        setPlaylistBusy(null);
       }
+
+      setAccountPlaylists((prev) =>
+        prev.map((p) => (p.id === playlist.id ? { ...p, trackCount: Math.max(0, p.trackCount - 1) } : p))
+      );
+      notify(`Removed "${track.title}" from ${playlist.title}`);
+
+      // 3. Queue gentle server sync in background
+      const currentTracks =
+        currentPlaylist?.id === playlist.id && currentPlaylist.tracks.length > 0
+          ? currentPlaylist.tracks.map((t) => t.id)
+          : playlist.tracks?.length
+          ? playlist.tracks.map((t) => t.id)
+          : undefined;
+
+      queuePlaylistSync(playlist.id, track.id, 'remove', currentTracks);
+      return true;
     },
     [currentPlaylist, notify]
   );
@@ -869,7 +910,15 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
     }
 
     try {
-      const lists = (await sc.userPlaylists(user.id, 50)).collection.map(mapPlaylistMeta);
+      const lists = (await sc.userPlaylists(user.id, 50)).collection.map((p) => {
+        const meta = mapPlaylistMeta(p);
+        const added = getLocalPlaylistAdded(meta.id).length;
+        const removed = getLocalPlaylistRemoved(meta.id).length;
+        return {
+          ...meta,
+          trackCount: Math.max(0, meta.trackCount + added - removed),
+        };
+      });
       setAccountPlaylists(lists);
     } catch {
       /* playlist sync is best-effort; the sidebar just stays empty */
@@ -958,10 +1007,17 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
     }
     const hit = streamCache.get(track.id);
     if (hit && Date.now() - hit.at < STREAM_CACHE_TTL) return hit.info;
-    const { candidates, policy, previewOnly, drmOnly, next, unblockedFull, actualDuration } = await resolveStreamUrls(track.id);
-    const info = { candidates, policy, previewOnly, drmOnly, next, unblockedFull, actualDuration };
-    streamCache.set(track.id, { at: Date.now(), info });
+    const { candidates, policy, previewOnly, drmOnly, next, unblockedFull, actualDuration, waveformUrl } = await resolveStreamUrls(track.id);
+    const info = { candidates, policy, previewOnly, drmOnly, next, unblockedFull, actualDuration, waveformUrl: waveformUrl || track.waveformUrl };
+    if (candidates.length > 0) {
+      streamCache.set(track.id, { at: Date.now(), info });
+    }
     return info;
+  }, []);
+
+  const invalidateStreamCache = useCallback((trackId: string | number) => {
+    streamCache.delete(String(trackId));
+    invalidateStreamResolveCache(trackId);
   }, []);
 
   const resolvePlayable = useCallback(
@@ -1012,6 +1068,7 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
     setMe,
     resolveStreams,
     resolvePlayable,
+    invalidateStreamCache,
     stats: cacheStats,
   };
 }

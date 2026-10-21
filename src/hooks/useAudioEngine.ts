@@ -240,6 +240,10 @@ export interface PlayerApi {
    *  curve so the caller can mirror it into state. */
   setBandCount: (count: BandCount) => number[];
   bandCount: () => BandCount;
+  setLoudnessEqualizer: (on: boolean) => void;
+  setSpatialAudio: (on: boolean) => void;
+  setAutoTrimSilence: (on: boolean) => void;
+  setSilenceBounds: (startSec: number, endSec: number) => void;
 }
 
 /**
@@ -342,10 +346,25 @@ interface Slot {
   fade: GainNode | null;
   hls?: Hls | null;
   nearFired?: boolean;
+  startSilenceSec?: number;
+  endSilenceSec?: number;
+  introDone?: boolean;
 }
 
 function isHlsUrl(src: string): boolean {
-  return /\.m3u8($|\?)/i.test(src) || src.includes('/hls') || src.includes('audio/mpegurl');
+  try {
+    const parsed = new URL(src);
+    return (
+      parsed.pathname.endsWith('.m3u8') ||
+      parsed.pathname.includes('/hls') ||
+      parsed.searchParams.has('hls') ||
+      /\.m3u8($|\?)/i.test(src) ||
+      src.includes('/hls') ||
+      src.includes('audio/mpegurl')
+    );
+  } catch {
+    return /\.m3u8($|\?)/i.test(src) || src.includes('/hls') || src.includes('audio/mpegurl');
+  }
 }
 
 function setSlotSource(
@@ -364,6 +383,9 @@ function setSlotSource(
 
   slot.src = src;
   slot.nearFired = false;
+  slot.startSilenceSec = 0;
+  slot.endSilenceSec = 0;
+  slot.introDone = false;
 
   if (!src) {
     slot.el.removeAttribute('src');
@@ -384,25 +406,70 @@ function setSlotSource(
       progressive: true,
       fragLoadingMaxRetry: 2,
     });
+    let networkRetries = 0;
+    let mediaRetries = 0;
     hls.on(Hls.Events.ERROR, (_event, data) => {
       if (data.fatal) {
         console.warn('[AudioEngine/Hls] Fatal error:', data.type, data.details);
         switch (data.type) {
-          case Hls.ErrorTypes.NETWORK_ERROR:
-            try {
-              hls.startLoad();
-            } catch {
+          case Hls.ErrorTypes.NETWORK_ERROR: {
+            const status = data.response?.code;
+            if (status === 401 || status === 403 || status === 404 || networkRetries >= 2) {
+              try {
+                hls.destroy();
+              } catch {
+                /* ignore */
+              }
+              slot.hls = null;
               slot.el.dispatchEvent(new Event('error'));
+            } else {
+              networkRetries++;
+              try {
+                hls.startLoad();
+              } catch {
+                try {
+                  hls.destroy();
+                } catch {
+                  /* ignore */
+                }
+                slot.hls = null;
+                slot.el.dispatchEvent(new Event('error'));
+              }
             }
             break;
-          case Hls.ErrorTypes.MEDIA_ERROR:
-            try {
-              hls.recoverMediaError();
-            } catch {
+          }
+          case Hls.ErrorTypes.MEDIA_ERROR: {
+            if (mediaRetries >= 2) {
+              try {
+                hls.destroy();
+              } catch {
+                /* ignore */
+              }
+              slot.hls = null;
               slot.el.dispatchEvent(new Event('error'));
+            } else {
+              mediaRetries++;
+              try {
+                hls.recoverMediaError();
+              } catch {
+                try {
+                  hls.destroy();
+                } catch {
+                  /* ignore */
+                }
+                slot.hls = null;
+                slot.el.dispatchEvent(new Event('error'));
+              }
             }
             break;
+          }
           default:
+            try {
+              hls.destroy();
+            } catch {
+              /* ignore */
+            }
+            slot.hls = null;
             slot.el.dispatchEvent(new Event('error'));
             break;
         }
@@ -490,6 +557,17 @@ export function useAudioEngine(): PlayerApi {
     return node;
   }, []);
 
+  const loudnessRef = useRef(false);
+  const spatialRef = useRef(false);
+  const spatialInputRef = useRef<GainNode | null>(null);
+  const spatialDryGainRef = useRef<GainNode | null>(null);
+  const spatialWetGainRef = useRef<GainNode | null>(null);
+  const directGainRef = useRef<GainNode | null>(null);
+  const compGainRef = useRef<GainNode | null>(null);
+  const autoTrimSilenceRef = useRef(true);
+  const silenceStreakRef = useRef(0);
+  const introCheckCountRef = useRef(0);
+
   const ensureGraph = useCallback(() => {
     const slots = slotsRef.current;
     if (!slots.length || ctxRef.current) return;
@@ -516,10 +594,88 @@ export function useAudioEngine(): PlayerApi {
     // cannot push the output into clipping on its own.
     const tail = buildEqChain(ctx, bus);
 
+    // --- Spatial 3D Audio Network ---
+    const spatialInput = ctx.createGain();
+    spatialInputRef.current = spatialInput;
+
+    const spatialDry = ctx.createGain();
+    spatialDry.gain.value = spatialRef.current ? 0 : 1;
+    spatialDryGainRef.current = spatialDry;
+
+    const spatialWet = ctx.createGain();
+    spatialWet.gain.value = spatialRef.current ? 1 : 0;
+    spatialWetGainRef.current = spatialWet;
+
+    const presence = ctx.createBiquadFilter();
+    presence.type = 'highshelf';
+    presence.frequency.value = 9000;
+    presence.gain.value = 2.5;
+
+    const depth = ctx.createBiquadFilter();
+    depth.type = 'lowshelf';
+    depth.frequency.value = 85;
+    depth.gain.value = 2.0;
+
+    const splitter = ctx.createChannelSplitter(2);
+    const merger = ctx.createChannelMerger(2);
+    const delayL = ctx.createDelay(0.05);
+    delayL.delayTime.value = 0.013;
+    const delayR = ctx.createDelay(0.05);
+    delayR.delayTime.value = 0.013;
+    const crossGainL = ctx.createGain();
+    crossGainL.gain.value = -0.32;
+    const crossGainR = ctx.createGain();
+    crossGainR.gain.value = -0.32;
+
+    tail.connect(spatialInput);
+    spatialInput.connect(spatialDry);
+    spatialInput.connect(presence);
+    presence.connect(depth);
+    depth.connect(splitter);
+
+    // Direct L -> L, Direct R -> R
+    splitter.connect(merger, 0, 0);
+    splitter.connect(merger, 1, 1);
+    // Cross delay L -> R, R -> L
+    splitter.connect(delayL, 0);
+    delayL.connect(crossGainL);
+    crossGainL.connect(merger, 0, 1);
+    splitter.connect(delayR, 1);
+    delayR.connect(crossGainR);
+    crossGainR.connect(merger, 0, 0);
+
+    merger.connect(spatialWet);
+
+    const preComp = ctx.createGain();
+    spatialDry.connect(preComp);
+    spatialWet.connect(preComp);
+
+    // --- Loudness Equalizer (Dynamics Compressor) Network ---
+    const directComp = ctx.createGain();
+    directComp.gain.value = loudnessRef.current ? 0 : 1;
+    directGainRef.current = directComp;
+
+    const wetComp = ctx.createGain();
+    wetComp.gain.value = loudnessRef.current ? 1.25 : 0;
+    compGainRef.current = wetComp;
+
+    const compressor = ctx.createDynamicsCompressor();
+    compressor.threshold.value = -20;
+    compressor.knee.value = 24;
+    compressor.ratio.value = 8;
+    compressor.attack.value = 0.005;
+    compressor.release.value = 0.15;
+
+    preComp.connect(directComp);
+    preComp.connect(compressor);
+    compressor.connect(wetComp);
+
     const master = ctx.createGain();
     master.gain.value = masterGainFor(volumeRef.current);
 
-    tail.connect(master);
+    directComp.connect(master);
+    wetComp.connect(master);
+
     master.connect(analyser);
     analyser.connect(ctx.destination);
 
@@ -567,7 +723,96 @@ export function useAudioEngine(): PlayerApi {
       el.addEventListener('timeupdate', near);
       handlers.push({ el, fn, near });
     }
+
+    const silenceInterval = setInterval(() => {
+      if (!autoTrimSilenceRef.current) return;
+      const ai = activeRef.current;
+      const curSlot = slotsRef.current[ai];
+      const el = curSlot?.el;
+      if (!el || el.paused || el.ended || !isFinite(el.duration) || el.duration <= 10) return;
+
+      // 1. Bound-based start silence check (e.g. from waveform)
+      if (curSlot.startSilenceSec && curSlot.startSilenceSec >= 1.5 && el.currentTime < curSlot.startSilenceSec) {
+        curSlot.introDone = true;
+        try {
+          el.currentTime = curSlot.startSilenceSec;
+        } catch {
+          /* ignore */
+        }
+        return;
+      }
+
+      // 2. Bound-based outro silence check (e.g. from waveform)
+      if (curSlot.endSilenceSec && curSlot.endSilenceSec > 0 && el.currentTime >= curSlot.endSilenceSec) {
+        if (!curSlot.nearFired) {
+          curSlot.nearFired = true;
+          nearEndRef.current.forEach((f) => f());
+        }
+        el.currentTime = Math.max(el.currentTime, el.duration - 0.25);
+        return;
+      }
+
+      const analyser = analyserRef.current;
+      if (!analyser) return;
+
+      const bins = analyser.frequencyBinCount;
+      let buf = freqBufferRef.current;
+      if (!buf || buf.length !== bins) {
+        buf = new Uint8Array(bins);
+        freqBufferRef.current = buf;
+      }
+      analyser.getByteFrequencyData(buf);
+
+      let maxAmp = 0;
+      let sumAmp = 0;
+      for (let i = 0; i < bins; i++) {
+        if (buf[i] > maxAmp) maxAmp = buf[i];
+        sumAmp += buf[i];
+      }
+      const avgAmp = sumAmp / bins;
+      // Realistic silence: maxAmp <= 8 and avgAmp <= 3 (handles MP3 encoding dither/noise floor)
+      const isSilent = maxAmp <= 8 && avgAmp <= 3;
+
+      // 3. Dynamic intro silence: check up to 180s or 50% of track duration (no 35s hardcap!)
+      const maxIntroCheckTime = Math.min(180, el.duration * 0.5);
+      if (el.currentTime < maxIntroCheckTime && !curSlot.introDone) {
+        if (isSilent) {
+          introCheckCountRef.current += 1;
+          // After 2 checks (~500ms of dead silence), fast-forward by 10s to find the audio
+          if (introCheckCountRef.current >= 2) {
+            introCheckCountRef.current = 0;
+            const nextTime = Math.min(maxIntroCheckTime, el.currentTime + 10);
+            el.currentTime = nextTime;
+          }
+        } else {
+          introCheckCountRef.current = 0;
+          curSlot.introDone = true;
+        }
+      }
+
+      // 4. Dynamic outro silence (within last 60s of track)
+      if (el.duration > 30 && el.duration - el.currentTime <= 60 && el.currentTime > 20) {
+        if (isSilent) {
+          silenceStreakRef.current += 1;
+          // After 5 checks (~1.25s of pure silence), advance to natural end / crossfade
+          if (silenceStreakRef.current >= 5) {
+            silenceStreakRef.current = 0;
+            if (!curSlot.nearFired) {
+              curSlot.nearFired = true;
+              nearEndRef.current.forEach((f) => f());
+            }
+            el.currentTime = Math.max(el.currentTime, el.duration - 0.25);
+          }
+        } else {
+          silenceStreakRef.current = 0;
+        }
+      } else {
+        silenceStreakRef.current = 0;
+      }
+    }, 250);
+
     return () => {
+      clearInterval(silenceInterval);
       handlers.forEach(({ el, fn, near }) => {
         el.removeEventListener('ended', fn);
         el.removeEventListener('timeupdate', near);
@@ -747,6 +992,9 @@ export function useAudioEngine(): PlayerApi {
     const curSlot = slotsRef.current[ai];
     const el = activeEl();
     if (!el) return;
+    if (curSlot) {
+      curSlot.introDone = true;
+    }
     try {
       el.currentTime = t;
       const cf = crossfadeState.seconds;
@@ -757,6 +1005,25 @@ export function useAudioEngine(): PlayerApi {
       /* not seekable yet */
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const setSilenceBounds = useCallback((startSec: number, endSec: number) => {
+    const ai = activeRef.current;
+    const curSlot = slotsRef.current[ai];
+    if (!curSlot) return;
+    curSlot.startSilenceSec = Math.max(0, startSec);
+    curSlot.endSilenceSec = endSec > 0 ? endSec : 0;
+
+    if (autoTrimSilenceRef.current && startSec >= 1.5) {
+      curSlot.introDone = true;
+      try {
+        if (curSlot.el.currentTime < startSec) {
+          curSlot.el.currentTime = startSec;
+        }
+      } catch {
+        /* wait for metadata */
+      }
+    }
   }, []);
 
   const setVolume = useCallback((v: number) => {
@@ -820,12 +1087,42 @@ export function useAudioEngine(): PlayerApi {
         /* not connected yet */
       }
       const tail = buildEqChain(ctx, bus);
-      tail.connect(master);
+      if (spatialInputRef.current) {
+        tail.connect(spatialInputRef.current);
+      } else {
+        tail.connect(master);
+      }
     }
 
     if (masterRef.current) masterRef.current.gain.value = masterGainFor(volumeRef.current);
     return gains;
   }, [buildEqChain]);
+
+  const setLoudnessEqualizer = useCallback((on: boolean) => {
+    loudnessRef.current = on;
+    const ctx = ctxRef.current;
+    if (!ctx || !directGainRef.current || !compGainRef.current) return;
+    const now = ctx.currentTime;
+    directGainRef.current.gain.cancelScheduledValues(now);
+    compGainRef.current.gain.cancelScheduledValues(now);
+    directGainRef.current.gain.setValueAtTime(directGainRef.current.gain.value, now);
+    compGainRef.current.gain.setValueAtTime(compGainRef.current.gain.value, now);
+    directGainRef.current.gain.linearRampToValueAtTime(on ? 0 : 1, now + 0.05);
+    compGainRef.current.gain.linearRampToValueAtTime(on ? 1.25 : 0, now + 0.05);
+  }, []);
+
+  const setSpatialAudio = useCallback((on: boolean) => {
+    spatialRef.current = on;
+    const ctx = ctxRef.current;
+    if (!ctx || !spatialDryGainRef.current || !spatialWetGainRef.current) return;
+    const now = ctx.currentTime;
+    spatialDryGainRef.current.gain.cancelScheduledValues(now);
+    spatialWetGainRef.current.gain.cancelScheduledValues(now);
+    spatialDryGainRef.current.gain.setValueAtTime(spatialDryGainRef.current.gain.value, now);
+    spatialWetGainRef.current.gain.setValueAtTime(spatialWetGainRef.current.gain.value, now);
+    spatialDryGainRef.current.gain.linearRampToValueAtTime(on ? 0 : 1, now + 0.05);
+    spatialWetGainRef.current.gain.linearRampToValueAtTime(on ? 1 : 0, now + 0.05);
+  }, []);
 
   const freqBufferRef = useRef<Uint8Array<ArrayBuffer> | null>(null);
 
@@ -884,5 +1181,11 @@ export function useAudioEngine(): PlayerApi {
     setEq,
     setBandCount,
     bandCount: () => countRef.current,
+    setLoudnessEqualizer,
+    setSpatialAudio,
+    setAutoTrimSilence: (on: boolean) => {
+      autoTrimSilenceRef.current = on;
+    },
+    setSilenceBounds,
   };
 }

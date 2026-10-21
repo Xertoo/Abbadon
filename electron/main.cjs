@@ -17,6 +17,9 @@ const crypto = require('node:crypto');
 const { proxyManager, PRESETS } = require('./proxyManager.cjs');
 const { initAutoUpdater } = require('./autoUpdater.cjs');
 
+// Silence internal Chromium/WebRTC stderr spam (e.g. STUN binding timeouts on inactive interfaces)
+app.commandLine.appendSwitch('log-level', '3');
+
 /* ------------------------------------------------------------------ *
  * Widevine (best effort)
  *
@@ -58,11 +61,22 @@ const UA =
 let win = null;
 let authWin = null;
 let tray = null;
+let trayWin = null;
 let updateTrayFn = null;
 let isQuitting = false;
 let rpcClient = null;
 let rpcConnected = false;
 let lastNotifiedTrackId = null;
+let lastPlaybackState = {
+  track: null,
+  isPlaying: false,
+  currentTime: 0,
+  duration: 0,
+  friendCode: null,
+  shareDiscordFriendCode: false,
+  showDiscordButtons: true,
+  volume: 1,
+};
 
 /**
  * Main-process request with no CORS enforcement and real cookie support.
@@ -1164,7 +1178,7 @@ function resolveOfficialStream({ artist, title }) {
       '--no-warnings',
       '--no-playlist',
       '--no-check-certificates',
-      '--socket-timeout', '6',
+      '--socket-timeout', '5',
       '--extractor-retries', '1',
       '-f', 'ba/b',
       '-g',
@@ -1173,7 +1187,7 @@ function resolveOfficialStream({ artist, title }) {
       searchTerm,
     ];
 
-    execFile(binPath, args, { timeout: 12000 }, (err, stdout) => {
+    execFile(binPath, args, { timeout: 7000 }, (err, stdout) => {
       const parsed = stdout ? parseYtDlpOutput(stdout, cleanTitle) : { ok: false, error: 'No output' };
       if (!err && parsed.ok && parsed.url) {
         officialStreamCache.set(cacheKey, {
@@ -1192,7 +1206,7 @@ function resolveOfficialStream({ artist, title }) {
         '--no-warnings',
         '--no-playlist',
         '--no-check-certificates',
-        '--socket-timeout', '6',
+        '--socket-timeout', '5',
         '--extractor-retries', '1',
         '-f', 'ba/b',
         '-g',
@@ -1200,7 +1214,7 @@ function resolveOfficialStream({ artist, title }) {
         '--print', '%(duration)s',
         altSearch,
       ];
-      execFile(binPath, altArgs, { timeout: 12000 }, (err2, stdout2) => {
+      execFile(binPath, altArgs, { timeout: 7000 }, (err2, stdout2) => {
         const parsed2 = stdout2 ? parseYtDlpOutput(stdout2, cleanTitle) : { ok: false, error: 'Alternate query failed' };
         if (!err2 && parsed2.ok && parsed2.url) {
           officialStreamCache.set(cacheKey, {
@@ -1232,14 +1246,6 @@ ipcMain.handle('sc:resolve-official-stream', async (_e, params) => {
  * ------------------------------------------------------------------ */
 
 const DEFAULT_DISCORD_CLIENT_ID = '1556387651999899668';
-let lastPlaybackState = {
-  track: null,
-  isPlaying: false,
-  currentTime: 0,
-  duration: 0,
-  friendCode: null,
-  shareDiscordFriendCode: false,
-};
 let rpcReconnectTimer = null;
 
 function getDiscordClientId() {
@@ -1376,10 +1382,20 @@ function updateDiscordRPC(track, isPlaying, currentTime = 0, duration = 0, frien
 
     // Configurable Discord Presence Profile Buttons (Visible to others viewing profile)
     if (showDiscordButtons !== false) {
-      rawActivity.buttons = [
-        { label: 'Listen Together', url: 'https://github.com/Xertoo/abbadon' },
-        { label: 'Add Friend on Abbadon', url: 'https://github.com/Xertoo/abbadon' },
-      ];
+      const buttons = [];
+      const permalink = track.permalinkUrl || (track.permalink ? `https://soundcloud.com/${track.permalink}` : null);
+      if (permalink && typeof permalink === 'string' && permalink.startsWith('http')) {
+        buttons.push({ label: 'Otworz utwor', url: permalink.slice(0, 512) });
+      } else {
+        buttons.push({ label: 'Abbadon Player', url: 'https://github.com/Xertoo/abbadon' });
+      }
+
+      if (friendCode && shareDiscordFriendCode) {
+        buttons.push({ label: 'Dolacz do sesji', url: 'https://github.com/Xertoo/abbadon' });
+      } else {
+        buttons.push({ label: 'Pobierz Abbadon', url: 'https://github.com/Xertoo/abbadon' });
+      }
+      rawActivity.buttons = buttons;
     }
 
     const send = (act) => rpcClient.request('SET_ACTIVITY', { pid: process.pid, activity: act });
@@ -1414,6 +1430,76 @@ ipcMain.handle('sc:set-discord-client-id', (_e, newId) => {
     return { ok: false, error: err.message };
   }
 });
+
+function createTrayWindow() {
+  if (trayWin && !trayWin.isDestroyed()) return trayWin;
+  trayWin = new BrowserWindow({
+    width: 360,
+    height: 195,
+    show: false,
+    frame: false,
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    transparent: true,
+    backgroundColor: '#00000000',
+    hasShadow: false,
+    title: 'Abbadon Mini',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+
+  trayWin.setMenu(null);
+  killMenu(trayWin);
+
+  const url = isDev && DEV_URL ? `${DEV_URL}?mode=tray` : `file://${path.join(__dirname, '..', 'dist', 'index.html')}?mode=tray`;
+  trayWin.loadURL(url);
+
+  trayWin.on('blur', () => {
+    if (trayWin && !trayWin.isDestroyed() && trayWin.isVisible()) {
+      trayWin.hide();
+    }
+  });
+
+  return trayWin;
+}
+
+function toggleTrayWindow() {
+  if (!trayWin || trayWin.isDestroyed()) {
+    createTrayWindow();
+  }
+  if (trayWin.isVisible()) {
+    trayWin.hide();
+    return;
+  }
+  if (tray) {
+    const { screen } = require('electron');
+    const trayBounds = tray.getBounds();
+    const winBounds = trayWin.getBounds();
+    const display = screen.getDisplayNearestPoint({ x: trayBounds.x, y: trayBounds.y });
+
+    let x = Math.round(trayBounds.x + trayBounds.width / 2 - winBounds.width / 2);
+    let y = Math.round(trayBounds.y - winBounds.height - 12);
+    if (trayBounds.y < display.bounds.y + 200) {
+      y = Math.round(trayBounds.y + trayBounds.height + 12);
+    }
+
+    if (x + winBounds.width > display.bounds.x + display.bounds.width) {
+      x = display.bounds.x + display.bounds.width - winBounds.width - 12;
+    }
+    if (x < display.bounds.x) {
+      x = display.bounds.x + 12;
+    }
+    trayWin.setPosition(x, y, false);
+  }
+  trayWin.show();
+  trayWin.focus();
+  trayWin.webContents.send('sc:sync-tray-player', lastPlaybackState);
+}
 
 function initTray() {
   if (tray) return updateTrayMenu;
@@ -1453,6 +1539,10 @@ function initTray() {
       },
       { type: 'separator' },
       {
+        label: 'Mini Player',
+        click: () => toggleTrayWindow(),
+      },
+      {
         label: win && win.isVisible() ? 'Hide to Tray' : 'Show Abbadon',
         click: () => {
           if (!win) return;
@@ -1475,18 +1565,17 @@ function initTray() {
     tray.setContextMenu(Menu.buildFromTemplate(template));
   }
 
+  // Left click opens mini-player flyout
   tray.on('click', () => {
+    toggleTrayWindow();
+  });
+
+  // Double click restores the main window
+  tray.on('double-click', () => {
     if (!win) return;
-    if (win.isVisible()) {
-      if (win.isFocused()) {
-        win.hide();
-      } else {
-        win.focus();
-      }
-    } else {
-      win.show();
-      win.focus();
-    }
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
   });
 
   updateTrayMenu(null, false);
@@ -1521,15 +1610,47 @@ function notifyTrack(track) {
   }
 }
 
-ipcMain.on('sc:player-state', (_e, { track, isPlaying, currentTime = 0, duration = 0, friendCode, shareDiscordFriendCode, showDiscordButtons }) => {
+ipcMain.on('sc:player-state', (_e, payload) => {
+  const { track, isPlaying, currentTime = 0, duration = 0, friendCode, shareDiscordFriendCode, showDiscordButtons, volume } = payload;
+  lastPlaybackState = { track, isPlaying, currentTime, duration, friendCode, shareDiscordFriendCode, showDiscordButtons, volume };
+
   if (updateTrayFn) {
     updateTrayFn(track, isPlaying);
   }
   updateDiscordRPC(track, isPlaying, currentTime, duration, friendCode, shareDiscordFriendCode, showDiscordButtons);
 
+  if (trayWin && !trayWin.isDestroyed()) {
+    trayWin.webContents.send('sc:sync-tray-player', lastPlaybackState);
+  }
+
   if (track && track.id !== lastNotifiedTrackId && isPlaying) {
     lastNotifiedTrackId = track.id;
     notifyTrack(track);
+  }
+});
+
+ipcMain.on('mini:command', (_e, { action, value }) => {
+  if (action === 'restore') {
+    if (trayWin && !trayWin.isDestroyed()) trayWin.hide();
+    if (win && !win.isDestroyed()) {
+      if (win.isMinimized()) win.restore();
+      win.show();
+      win.focus();
+    }
+  } else if (action === 'hide') {
+    if (trayWin && !trayWin.isDestroyed()) trayWin.hide();
+  } else if (action === 'seek') {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('seek-command', value);
+    }
+  } else if (action === 'volume') {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('volume-command', value);
+    }
+  } else {
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('media-command', action);
+    }
   }
 });
 

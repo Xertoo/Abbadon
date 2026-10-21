@@ -83,6 +83,14 @@
       color 220ms ease;
   }
 
+  html.tray-mode,
+  body.tray-mode,
+  body.tray-mode #root {
+    background: transparent !important;
+    background-color: transparent !important;
+    overflow: hidden !important;
+  }
+
   ::selection {
     background: color-mix(in oklab, var(--color-sc-orange) 40%, transparent);
   }

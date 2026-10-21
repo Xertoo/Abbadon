@@ -76,6 +76,16 @@ export interface FriendPresence {
   roomId?: string | null;
   totalListenedSeconds?: number;
   tracksListenedCount?: number;
+  sessionPartnerCode?: string | null;
+}
+
+export interface IncomingSessionRequest {
+  id: string;
+  senderCode: string;
+  senderName: string;
+  senderAvatar?: string;
+  track: Track | null;
+  timestamp: number;
 }
 
 export type ListenTogetherMessage =
@@ -109,7 +119,37 @@ export type ListenTogetherMessage =
       currentTime: number;
       duration: number;
       timestamp: number;
+      sessionPartnerCode?: string | null;
       roomId?: string | null;
+    }
+  | {
+      type: 'SESSION_REQUEST';
+      requestId: string;
+      senderCode: string;
+      senderName: string;
+      senderAvatar?: string;
+      track: Track | null;
+      timestamp: number;
+    }
+  | {
+      type: 'SESSION_ACCEPT';
+      requestId: string;
+      senderCode: string;
+      senderName: string;
+      senderAvatar?: string;
+      track: Track | null;
+      timestamp: number;
+    }
+  | {
+      type: 'SESSION_DECLINE';
+      requestId: string;
+      senderCode: string;
+      senderName: string;
+    }
+  | {
+      type: 'SESSION_END';
+      senderCode: string;
+      senderName: string;
     }
   | {
       type: 'INVITE';
@@ -122,6 +162,7 @@ export type ListenTogetherMessage =
     }
   | {
       type: 'SYNC_COMMAND';
+      commandId?: string;
       senderCode: string;
       action: 'PLAY_TRACK' | 'PLAY' | 'PAUSE' | 'SEEK';
       track?: Track;
@@ -156,7 +197,49 @@ export type ListenTogetherMessage =
       emoji: string;
       timestamp: number;
       roomId?: string;
+    }
+  | {
+      type: 'COLLAB_PLAYLIST_INVITE';
+      playlist: SharedPlaylist;
+      senderCode: string;
+      senderName: string;
+    }
+  | {
+      type: 'COLLAB_PLAYLIST_UPDATE';
+      playlist: SharedPlaylist;
+      senderCode: string;
+      senderName: string;
+    }
+  | {
+      type: 'COLLAB_PLAYLIST_ADD_TRACK';
+      playlistId: string;
+      track: Track;
+      senderCode: string;
+      senderName: string;
+    }
+  | {
+      type: 'COLLAB_PLAYLIST_REMOVE_TRACK';
+      playlistId: string;
+      trackId: string | number;
+      senderCode: string;
+      senderName: string;
     };
+
+export interface SharedPlaylistItem {
+  track: Track;
+  addedBy: { code: string; name: string };
+  addedAt: number;
+}
+
+export interface SharedPlaylist {
+  id: string;
+  title: string;
+  hostCode: string;
+  hostName: string;
+  items: SharedPlaylistItem[];
+  createdAt: number;
+  collaborators: { code: string; name: string }[];
+}
 
 export interface RoomParticipant {
   code: string;
@@ -169,7 +252,10 @@ export interface RoomParticipant {
 }
 
 export interface SyncSession {
-  mode: 'idle' | 'following' | 'room';
+  mode: 'idle' | 'co-listening' | 'following' | 'room';
+  partnerCode?: string;
+  partnerName?: string;
+  partnerAvatar?: string;
   targetCode?: string;
   targetName?: string;
   roomId?: string;
@@ -317,4 +403,25 @@ export function codeFromPeerId(peerId: string): string | null {
     return peerId.slice('abbadon-listen-'.length);
   }
   return null;
+}
+
+const COLLAB_PLAYLISTS_KEY = 'abbadon:collab_playlists';
+
+export function loadCollabPlaylists(): SharedPlaylist[] {
+  try {
+    const raw = localStorage.getItem(COLLAB_PLAYLISTS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveCollabPlaylists(playlists: SharedPlaylist[]): void {
+  try {
+    localStorage.setItem(COLLAB_PLAYLISTS_KEY, JSON.stringify(playlists));
+  } catch {
+    // quota
+  }
 }

@@ -1,4 +1,4 @@
-import { Play, Heart, MoreHorizontal, Plus, Compass, Eye, Sparkles, ListPlus, ListStart } from 'lucide-react';
+import { Play, Heart, MoreHorizontal, Plus, Compass, Eye, Sparkles, ListPlus, ListStart, Radio } from 'lucide-react';
 import clsx from 'clsx';
 import { Artwork } from './Artwork';
 import type { Track } from '../types';
@@ -17,6 +17,8 @@ interface Props {
   onOpenArtist?: (artist: { id: string; username: string; permalinkUrl?: string }) => void;
   /** Shows a compass button that seeds the "Find similar" view. */
   onFindSimilar?: (track: Track) => void;
+  /** Starts an infinite track radio based on this track. */
+  onStartRadio?: (track: Track) => void;
   /** Inserts this track right after the current playing track in the queue. */
   onPlayNext?: (track: Track) => void;
   /** Adds this track to the playback queue. */
@@ -54,6 +56,7 @@ export function TrackRow({
   onToggleLike,
   onOpenArtist,
   onFindSimilar,
+  onStartRadio,
   onPlayNext,
   onAddToQueue,
   showArtwork = true,
@@ -69,6 +72,7 @@ export function TrackRow({
   onToggleLike: (track: Track) => void;
   onOpenArtist?: (artist: { id: string; username: string; permalinkUrl?: string }) => void;
   onFindSimilar?: (track: Track) => void;
+  onStartRadio?: (track: Track) => void;
   onPlayNext?: (track: Track) => void;
   onAddToQueue?: (track: Track) => void;
   showArtwork?: boolean;
@@ -234,6 +238,19 @@ export function TrackRow({
             <Compass className="w-[15px] h-[15px]" />
           </button>
         )}
+        {onStartRadio && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onStartRadio(track);
+            }}
+            title="Radio utworu (Track Radio)"
+            aria-label="Radio utworu"
+            className="w-8 h-8 rounded-full flex items-center justify-center text-sc-dim opacity-0 group-hover:opacity-100 hover:text-cyan-400 hover:scale-125 active:scale-75 transition-all duration-200 cursor-pointer"
+          >
+            <Radio className="w-[15px] h-[15px]" />
+          </button>
+        )}
         {onPlayNext && (
           <button
             onClick={(e) => {
@@ -273,8 +290,8 @@ export function TrackRow({
         {/* SoundCloud Go+ track unblocked via yt-dlp official studio audio pipeline */}
         {track.previewOnly && (
           <span
-            title="SoundCloud Go+ · Odblokowano oficjalny utwór HQ Studio (yt-dlp)"
-            aria-label="Odblokowany utwór Go+ HQ"
+            title="SoundCloud Go+ · Unblocked official HQ Studio track (yt-dlp)"
+            aria-label="Unblocked Go+ HQ track"
             className="inline-flex items-center gap-1 rounded-full bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-purple-500/20 border border-amber-500/40 text-amber-300 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider shadow-xs shrink-0 select-none cursor-help"
           >
             <Sparkles className="w-2.5 h-2.5 text-amber-300 animate-pulse" />
@@ -320,6 +337,7 @@ export function TrackList(props: Props) {
           onToggleLike={props.onToggleLike}
           onOpenArtist={props.onOpenArtist}
           onFindSimilar={props.onFindSimilar}
+          onStartRadio={props.onStartRadio}
           onPlayNext={props.onPlayNext}
           onAddToQueue={props.onAddToQueue}
           showArtwork={props.showArtwork}

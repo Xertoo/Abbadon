@@ -1,18 +1,18 @@
 /**
- * Automatic lyric lookup.
- *
- * SoundCloud has no lyrics on its API, so this goes to lrclib - a free,
- * key-less, CORS-enabled lyrics database that serves both plain text and
- * time-stamped LRC. `fetch` is used directly rather than the Electron relay
- * because that relay exists only to carry SoundCloud cookies past the file://
- * origin, and lrclib needs neither cookies nor a client_id.
+ * High-accuracy automatic lyric lookup with multi-tier query normalization,
+ * fallback search, and secondary provider support (LRCLIB + lyrics.ovh).
  */
 
 import type { Track } from '../types';
 
-const LRCLIB = 'https://lrclib.net/api/get';
-/** A match this bad is noise, not a result. */
-const ARTIST_SIMILARITY = 0.6;
+const LRCLIB_GET = 'https://lrclib.net/api/get';
+const LRCLIB_SEARCH = 'https://lrclib.net/api/search';
+const LYRICS_OVH = 'https://api.lyrics.ovh/v1';
+
+const APP_USER_AGENT = 'AbbadonSoundCloudClient/1.0.5 (https://github.com)';
+
+/** Similarity threshold for search ranking */
+const ARTIST_SIMILARITY = 0.45;
 
 export interface LyricLine {
   /** Seconds from the start of the track. */
@@ -27,6 +27,7 @@ export interface Lyrics {
   instrumental: boolean;
   /** True when `lines` can drive a scrolling view. */
   synced: boolean;
+  source?: 'lrclib' | 'lyrics.ovh' | 'cache';
 }
 
 interface LrcLibResponse {
@@ -35,38 +36,140 @@ interface LrcLibResponse {
   instrumental?: boolean;
 }
 
-const strip = (s: string) =>
-  s
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase();
-
-/** "Artist - Title" / "Artist: Title" / "Artist – Title" into its two halves. */
-function splitTitle(raw: string): { artist: string; title: string } {
-  const m = raw.match(/^(.+?)\s*[-–—]\s*(.+)$/);
-  if (m) return { artist: m[1].trim(), title: m[2].trim() };
-  return { artist: '', title: raw.replace(/\s*\((official video|lyrics?|audio|hd|hq)\)\s*$/i, '').trim() };
+interface LrcLibSearchItem {
+  trackName: string;
+  artistName: string;
+  albumName?: string;
+  instrumental?: boolean;
+  duration?: number;
+  syncedLyrics?: string;
+  plainLyrics?: string;
 }
 
 /**
- * Removes the decorations that make titles differ between sites without
- * changing the song: bracketed qualifiers, trailing features, punctuation.
+ * Removes SoundCloud and YouTube upload decorations, video tags, audio tags,
+ * producer tags, and extra bracketed notes from a title or artist segment.
+ */
+export function cleanDecorations(s: string): string {
+  if (!s) return '';
+  return s
+    // Remove bracketed feature tags: [feat. X], (ft. X), (with X)
+    .replace(/[\(\[\{](?:feat\.?|ft\.?|featuring|with)\s+[^)\x5D\}]+[\)\]\}]/gi, ' ')
+    // Remove upload fluff in brackets/parentheses
+    .replace(
+      /[\(\[\{][^)\x5D\}]*(?:official|video|music\s*video|audio|lyrics?|visualizer|hd|hq|4k|prod\b|slowed|reverb|sped\s*up|speed\s*up|bass\s*boosted|remix|edit|version|clip)[^)\x5D\}]*[\)\]\}]/gi,
+      ' '
+    )
+    // Remove leftover empty brackets
+    .replace(/[\(\[\{]\s*[\)\]\}]/g, ' ')
+    // Remove trailing ft./feat./prod. tags
+    .replace(/\s+(?:feat\.?|ft\.?|featuring|prod\.?|produced\s+by)\s+.*$/i, ' ')
+    // Remove unwanted surrounding quotes
+    .replace(/^["'„”«»]+|["'„”«»]+$/g, '')
+    // Normalize spaces
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Extract primary artist in case of collaborations (e.g. "Skrillex & Fred again.. feat. Flowdan" -> "Skrillex")
+ */
+export function extractPrimaryArtist(artist: string): string {
+  if (!artist) return '';
+  const first = artist.split(/\s*(?:,|&|\bx\b|\bvs\.?\b|\bft\.?\b|\bfeat\.?\b)\s*/i)[0];
+  return cleanDecorations(first);
+}
+
+export interface CandidateQuery {
+  artist: string;
+  title: string;
+  duration?: number;
+}
+
+/**
+ * Generates prioritized candidate queries from SoundCloud track information.
+ * Handles cases where the title contains "Artist - Title", or where artist
+ * uploaded "Title (feat. X)" or vice-versa.
+ */
+export function generateCandidateQueries(track: Track): CandidateQuery[] {
+  const rawTitle = track.title || '';
+  const rawArtist = track.artist || '';
+  const duration = track.duration && track.duration > 0 ? track.duration : undefined;
+
+  const candidates: CandidateQuery[] = [];
+  const seen = new Set<string>();
+
+  const add = (artist: string, title: string) => {
+    const a = cleanDecorations(artist);
+    const t = cleanDecorations(title);
+    if (!t) return;
+    const key = `${a.toLowerCase()}::${t.toLowerCase()}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      candidates.push({ artist: a, title: t, duration });
+    }
+  };
+
+  // 1. Delimiter in title ("Artist - Title" or "Artist : Title" or "Artist – Title")
+  const delimMatch = rawTitle.match(/^(.+?)\s*[-–—:]\s*(.+)$/);
+  if (delimMatch) {
+    const part1 = delimMatch[1].trim();
+    const part2 = delimMatch[2].trim();
+
+    // Standard "Artist - Title"
+    add(part1, part2);
+
+    // Primary artist of part1
+    const primPart1 = extractPrimaryArtist(part1);
+    if (primPart1 && primPart1.toLowerCase() !== part1.toLowerCase()) {
+      add(primPart1, part2);
+    }
+
+    // Inverted "Title - Artist"
+    add(part2, part1);
+
+    // If SC artist differs from part1, also try SC artist + part2
+    if (rawArtist && rawArtist.toLowerCase() !== part1.toLowerCase()) {
+      add(rawArtist, part2);
+      const primRaw = extractPrimaryArtist(rawArtist);
+      if (primRaw) add(primRaw, part2);
+    }
+  }
+
+  // 2. SC Artist + cleaned title
+  add(rawArtist, rawTitle);
+  const primRawArtist = extractPrimaryArtist(rawArtist);
+  if (primRawArtist && primRawArtist.toLowerCase() !== rawArtist.toLowerCase()) {
+    add(primRawArtist, rawTitle);
+  }
+
+  // 3. Fallback: Search with just the cleaned title if artist might be random uploader
+  if (delimMatch) {
+    add('', delimMatch[2]);
+  } else {
+    add('', rawTitle);
+  }
+
+  return candidates;
+}
+
+/**
+ * Removes punctuation, diacritics, and normalizes strings for robust token comparison.
  */
 const tidy = (s: string) =>
   s
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
     .replace(/\((?:feat|ft|with)\.?[^)]*\)/gi, '')
     .replace(/\[[^\]]*\]/g, '')
-    .replace(/[-–—]/g, ' ')
+    .replace(/[-–—:]/g, ' ')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
 /**
- * Token overlap between two titles.
- *
- * Jaccard rather than a substring test: "Run" is a substring of "Runner", which
- * made a wrong match look right. Both sides are tidied first so "(Remix)" and
- * punctuation cannot decide the result on their own.
+ * Token overlap (Jaccard similarity).
  */
 function similarity(a: string, b: string): number {
   const ta = new Set(tidy(a).split(' ').filter(Boolean));
@@ -78,55 +181,34 @@ function similarity(a: string, b: string): number {
 }
 
 /**
- * Picks the best candidate, by index.
- *
- * Title has to match; the artist only breaks ties, because a lot of uploads are
- * credited to nobody and would otherwise fail on an artist comparison alone.
- *
- * Length is what decides the rest. This database holds a live take, a remix and a
- * radio edit under the same title, each with its own perfectly valid LRC, and
- * picking the wrong one is exactly what makes lyrics look "out of sync" against
- * audio that was never going to match it. So a candidate whose length disagrees
- * with the track is thrown out rather than ranked down, and among the survivors
- * the closest length wins, preferring one that has timestamps at all.
- *
- * The index is returned rather than the object because duplicates exist here, and
- * finding the row again by title+artist afterwards picks the first of them, not
- * the one that was scored.
+ * Ranks candidates from lrclib search results.
  */
-function rankCandidates<T extends {
-  title: string;
-  artist: string;
-  duration?: number;
-  hasSynced?: boolean;
-}>(
+function rankCandidates(
   wanted: { title: string; artist: string; duration?: number },
-  candidates: T[]
+  candidates: LrcLibSearchItem[]
 ): number[] {
   const trackDuration = wanted.duration ?? 0;
-  // Beyond this the two files are not the same recording, so no amount of title
-  // agreement makes their timestamps comparable. A slow tempo or a fade-out can
-  // account for a few percent on a legitimate match.
-  const hardLimit = Math.max(20, trackDuration * 0.15);
+  // A reasonable threshold (up to 25s or 18% difference)
+  const hardLimit = trackDuration > 0 ? Math.max(25, trackDuration * 0.18) : 0;
   const scored: Array<{ index: number; score: number }> = [];
 
   for (let i = 0; i < candidates.length; i++) {
     const c = candidates[i];
-    const title = similarity(wanted.title, c.title);
-    if (title < ARTIST_SIMILARITY) continue;
-    const artist = wanted.artist && c.artist ? similarity(wanted.artist, c.artist) : 0;
-    let score = title * 0.5 + artist * 0.15;
+    const titleSim = similarity(wanted.title, c.trackName);
+    if (titleSim < ARTIST_SIMILARITY) continue;
+
+    const artistSim = wanted.artist && c.artistName ? similarity(wanted.artist, c.artistName) : 0;
+    let score = titleSim * 0.55 + artistSim * 0.25;
 
     if (trackDuration && c.duration) {
       const diff = Math.abs(c.duration - trackDuration);
-      if (diff > hardLimit) continue;
-      // Within 4s is two players reporting the same file; beyond that the score
-      // falls away fast so a close title cannot outvote a close length.
-      score *= diff <= 4 ? 1 : Math.max(0.05, 1 / (1 + (diff - 4) / 6));
+      if (hardLimit > 0 && diff > hardLimit) continue;
+      // Close duration gets full score; decaying score beyond 5 seconds
+      score *= diff <= 5 ? 1 : Math.max(0.1, 1 / (1 + (diff - 5) / 8));
     }
 
-    // A synced copy beats a bare transcript at equal title, artist and length.
-    if (c.hasSynced) score += 0.12;
+    // Prefer synced lyrics over plain
+    if (c.syncedLyrics) score += 0.2;
 
     if (score > 0) scored.push({ index: i, score });
   }
@@ -135,34 +217,20 @@ function rankCandidates<T extends {
 }
 
 /**
- * Rejects an LRC that cannot belong to this audio.
- *
- * Two things give it away. Timestamps that run past the end of the track mean
- * the file was typed against a longer recording, so every line is shifted by
- * however much longer that was. Timestamps that all sit in the first few seconds
- * mean the parse found a fragment rather than a song.
+ * Validates that timestamps in synced lyrics fit the track duration.
  */
 function fitsTrack(lyrics: Lyrics | null, trackDuration: number): boolean {
   if (!lyrics || !trackDuration || !lyrics.synced || !lyrics.lines.length) return true;
   const last = lyrics.lines[lyrics.lines.length - 1].time;
-  return last <= trackDuration + 15;
+  return last <= trackDuration + 20;
 }
 
 /**
- * Parses LRC into sorted, de-duplicated lines.
- *
- * `[mm:ss.xx]` and the extended `[mm:ss.xxx]` both appear in the wild, and some
- * files put several tags on one line, so both forms are read. Lines that share a
- * timestamp are merged rather than kept, because the database emits an empty
- * line and the first word of the chorus at the same time and the view would
- * flicker between them.
+ * Parses LRC formatted string into sorted timestamped lines.
  */
 export function parseLrc(raw: string): LyricLine[] {
   const out: LyricLine[] = [];
   const TAG = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g;
-  // Global shift carried by the file itself. lrclib mostly omits it, but when it
-  // is present the whole file is wrong by that much and ignoring it looks like
-  // random drift rather than a constant error.
   const OFFSET = /\[offset:\s*([+-]?\d+)\s*\]/i;
   const offsetMs = Number(raw.match(OFFSET)?.[1] ?? 0);
   const shift = offsetMs / 1000;
@@ -174,7 +242,6 @@ export function parseLrc(raw: string): LyricLine[] {
     while ((m = TAG.exec(rawLine))) {
       const min = Number(m[1]);
       const sec = Number(m[2]);
-      // Two digits are hundredths, three are milliseconds.
       const frac = m[3] ? Number(m[3]) / 10 ** m[3].length : 0;
       times.push(min * 60 + sec + frac + shift);
     }
@@ -186,7 +253,7 @@ export function parseLrc(raw: string): LyricLine[] {
 
   out.sort((a, b) => a.time - b.time);
 
-  // Collapse a repeated timestamp, keeping whichever line actually has words.
+  // Collapse duplicate timestamps
   const merged: LyricLine[] = [];
   for (const line of out) {
     const last = merged[merged.length - 1];
@@ -200,10 +267,11 @@ export function parseLrc(raw: string): LyricLine[] {
   return merged;
 }
 
-/** Index of the line that should be highlighted at `time`, or -1 before the first. */
+/**
+ * Binary search to find current active line index for playback position.
+ */
 export function activeLineIndex(lines: LyricLine[], time: number): number {
   if (!lines.length) return -1;
-  // Binary search: the view re-runs this on every timeupdate tick.
   let lo = 0;
   let hi = lines.length - 1;
   let found = -1;
@@ -219,94 +287,82 @@ export function activeLineIndex(lines: LyricLine[], time: number): number {
   return found;
 }
 
-interface TrackQuery {
-  artist_name?: string;
-  track_name: string;
-  album_name?: string;
-  duration?: number;
+function shapeLrcLib(raw: LrcLibResponse): Lyrics | null {
+  const lines = raw.syncedLyrics ? parseLrc(raw.syncedLyrics) : [];
+  const plain = (raw.plainLyrics ?? '').trim();
+  if (!lines.length && !plain && !raw.instrumental) return null;
+  return {
+    lines,
+    plain,
+    instrumental: Boolean(raw.instrumental) && !lines.length,
+    synced: lines.length > 0,
+    source: 'lrclib',
+  };
 }
 
 /**
- * Looks the lyrics up, trying progressively looser queries.
- *
- * lrclib answers 404 on any field it cannot match, so the search endpoint is used
- * first and the exact `get` endpoint only as a fallback for a full album + exact
- * duration match. Failing that, the plain track title on its own - which finds
- * the instrumental/typo uploads far more often than not.
+ * Attempt exact match against LRCLIB /api/get
  */
-export async function fetchLyrics(track: Track): Promise<Lyrics | null> {
-  const fromTitle = splitTitle(track.title);
-  const wanted = {
-    title: fromTitle.title || track.title,
-    artist: fromTitle.artist || track.artist,
-  };
+async function tryLrcLibGet(artist: string, track: string, duration?: number): Promise<Lyrics | null> {
+  const params = new URLSearchParams();
+  if (artist) params.set('artist_name', artist);
+  params.set('track_name', track);
+  if (duration && duration > 0) params.set('duration', String(Math.round(duration)));
 
-  const queries: TrackQuery[] = [
-    {
-      artist_name: wanted.artist,
-      track_name: wanted.title,
-      album_name: track.genre && track.genre !== 'SoundCloud' ? track.genre : undefined,
-      duration: track.duration || undefined,
-    },
-    { artist_name: wanted.artist, track_name: wanted.title },
-    { track_name: wanted.title },
-  ];
+  try {
+    const res = await fetch(`${LRCLIB_GET}?${params.toString()}`, {
+      headers: {
+        'User-Agent': APP_USER_AGENT,
+        'Lrclib-Client': APP_USER_AGENT,
+      },
+    });
+    if (!res.ok) return null;
+    return shapeLrcLib((await res.json()) as LrcLibResponse);
+  } catch {
+    return null;
+  }
+}
 
-  for (const q of queries) {
-    const found = await tryGet(q);
-    // A hit that runs past the end of the track is a longer recording under the
-    // same name. Skipping it here rather than accepting it is what stops the
-    // highlight from drifting further and further behind as the song plays.
-    if (found && fitsTrack(found, track.duration || 0)) return found;
+/**
+ * Search LRCLIB using specific query parameters (track_name and artist_name)
+ */
+async function tryLrcLibSearch(wanted: { title: string; artist: string; duration?: number }): Promise<Lyrics | null> {
+  const params = new URLSearchParams();
+  if (wanted.title) params.set('track_name', wanted.title);
+  if (wanted.artist) params.set('artist_name', wanted.artist);
+
+  // If both empty, fallback to general q
+  if (!wanted.title) {
+    params.set('q', `${wanted.artist} ${wanted.title}`.trim());
   }
 
-  // Nothing exact: fall back to a search and let pickBest judge the results.
-  const params = new URLSearchParams({ q: `${wanted.artist} ${wanted.title}`.trim() });
   try {
-    const res = await fetch(`https://lrclib.net/api/search?${params.toString()}`);
-    if (!res.ok) return null;
-    const list = (await res.json()) as Array<{
-      trackName: string;
-      artistName: string;
-      albumName?: string;
-      instrumental?: boolean;
-      duration?: number;
-      syncedLyrics?: string;
-      plainLyrics?: string;
-    }>;
-    const ranked = rankCandidates(
-      {
-        title: wanted.title,
-        artist: wanted.artist,
-        duration: track.duration || undefined,
+    const res = await fetch(`${LRCLIB_SEARCH}?${params.toString()}`, {
+      headers: {
+        'User-Agent': APP_USER_AGENT,
+        'Lrclib-Client': APP_USER_AGENT,
       },
-      list.map((c) => ({
-        title: c.trackName,
-        artist: c.artistName,
-        duration: c.duration,
-        hasSynced: Boolean(c.syncedLyrics),
-      }))
-    );
+    });
+    if (!res.ok) return null;
+    const list = (await res.json()) as LrcLibSearchItem[];
+    if (!Array.isArray(list) || !list.length) return null;
+
+    const ranked = rankCandidates(wanted, list);
     if (!ranked.length) return null;
 
-    // Best fit first, but a candidate whose timestamps run past the end of the
-    // audio is skipped in favour of the next one - the ranking judges names and
-    // lengths, and only the timestamps themselves prove a mismatch.
     let transcript: Lyrics | null = null;
     for (const index of ranked) {
       const hit = list[index];
-      const shaped = shape({
+      const shaped = shapeLrcLib({
         syncedLyrics: hit.syncedLyrics ?? null,
         plainLyrics: hit.plainLyrics ?? null,
         instrumental: hit.instrumental,
       });
       if (!shaped) continue;
       if (shaped.synced) {
-        if (fitsTrack(shaped, track.duration || 0)) return shaped;
+        if (fitsTrack(shaped, wanted.duration || 0)) return shaped;
         continue;
       }
-      // Keep the first untimed copy as a last resort: a transcript is better
-      // than nothing, and it cannot be out of sync because it has no times.
       transcript ??= shaped;
     }
     return transcript;
@@ -315,34 +371,28 @@ export async function fetchLyrics(track: Track): Promise<Lyrics | null> {
   }
 }
 
-/** One exact-match attempt. 404 is an expected answer, not a failure. */
-async function tryGet(q: TrackQuery): Promise<Lyrics | null> {
-  const params = new URLSearchParams();
-  if (q.artist_name) params.set('artist_name', q.artist_name);
-  params.set('track_name', q.track_name);
-  if (q.album_name) params.set('album_name', q.album_name);
-  if (q.duration) params.set('duration', String(Math.round(q.duration)));
-
+/**
+ * Secondary provider: lyrics.ovh as plain text fallback
+ */
+async function tryLyricsOvh(artist: string, title: string): Promise<Lyrics | null> {
+  if (!artist || !title) return null;
   try {
-    const res = await fetch(`${LRCLIB}?${params.toString()}`);
+    const url = `${LYRICS_OVH}/${encodeURIComponent(artist)}/${encodeURIComponent(title)}`;
+    const res = await fetch(url);
     if (!res.ok) return null;
-    return shape((await res.json()) as LrcLibResponse);
+    const data = (await res.json()) as { lyrics?: string };
+    const plain = (data.lyrics || '').trim();
+    if (!plain) return null;
+    return {
+      lines: [],
+      plain,
+      instrumental: false,
+      synced: false,
+      source: 'lyrics.ovh',
+    };
   } catch {
     return null;
   }
-}
-
-function shape(raw: LrcLibResponse): Lyrics | null {
-  const lines = raw.syncedLyrics ? parseLrc(raw.syncedLyrics) : [];
-  const plain = (raw.plainLyrics ?? '').trim();
-  // An instrumental is a real answer, but an empty record is not.
-  if (!lines.length && !plain && !raw.instrumental) return null;
-  return {
-    lines,
-    plain,
-    instrumental: Boolean(raw.instrumental) && !lines.length,
-    synced: lines.length > 0,
-  };
 }
 
 /** Cache so re-opening a view does not re-hit the network for the same track. */
@@ -354,6 +404,47 @@ export function cachedLyrics(track: Track): Lyrics | null | undefined {
 
 export function rememberLyrics(trackId: string, value: Lyrics | null): void {
   cache.set(trackId, value);
-  // The panel is opened on artist pages too, so the map has to stay bounded.
-  if (cache.size > 60) cache.delete(cache.keys().next().value as string);
+  if (cache.size > 80) cache.delete(cache.keys().next().value as string);
+}
+
+/**
+ * Main lookup function: tries multiple candidate queries against LRCLIB exact get,
+ * LRCLIB parameter search, and lyrics.ovh fallback.
+ */
+export async function fetchLyrics(track: Track): Promise<Lyrics | null> {
+  const candidates = generateCandidateQueries(track);
+
+  // Phase 1: Try exact match on LRCLIB with candidate queries
+  for (const c of candidates) {
+    if (!c.artist) continue; // /api/get requires both track_name and artist_name
+    const found = await tryLrcLibGet(c.artist, c.title, c.duration);
+    if (found && fitsTrack(found, track.duration || 0)) {
+      return found;
+    }
+    // Also try without duration constraint in case upload length has slight intro/outro padding
+    if (c.duration) {
+      const foundNoDur = await tryLrcLibGet(c.artist, c.title);
+      if (foundNoDur && fitsTrack(foundNoDur, track.duration || 0)) {
+        return foundNoDur;
+      }
+    }
+  }
+
+  // Phase 2: Try LRCLIB search endpoint with top candidates
+  for (const c of candidates.slice(0, 3)) {
+    const found = await tryLrcLibSearch(c);
+    if (found && fitsTrack(found, track.duration || 0)) {
+      return found;
+    }
+  }
+
+  // Phase 3: Secondary provider fallback (lyrics.ovh) for plain text lyrics
+  for (const c of candidates) {
+    if (c.artist && c.title) {
+      const fallback = await tryLyricsOvh(c.artist, c.title);
+      if (fallback) return fallback;
+    }
+  }
+
+  return null;
 }

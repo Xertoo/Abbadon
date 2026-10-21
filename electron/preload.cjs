@@ -70,6 +70,26 @@ contextBridge.exposeInMainWorld('desktop', {
     ipcRenderer.send('sc:player-state', state);
   },
 
+  /** Tray flyout mini-player communication */
+  onTrayStateSync: (cb) => {
+    const handler = (_e, state) => cb(_e, state);
+    ipcRenderer.on('sc:sync-tray-player', handler);
+    return () => ipcRenderer.removeListener('sc:sync-tray-player', handler);
+  },
+  sendMiniCommand: (action, value) => {
+    ipcRenderer.send('mini:command', { action, value });
+  },
+  onSeekCommand: (cb) => {
+    const handler = (_e, time) => cb(time);
+    ipcRenderer.on('seek-command', handler);
+    return () => ipcRenderer.removeListener('seek-command', handler);
+  },
+  onVolumeCommand: (cb) => {
+    const handler = (_e, vol) => cb(vol);
+    ipcRenderer.on('volume-command', handler);
+    return () => ipcRenderer.removeListener('volume-command', handler);
+  },
+
   onDiscordJoinFriend: (cb) => {
     const handler = (_e, code) => cb(code);
     ipcRenderer.on('sc:discord-join-friend', handler);

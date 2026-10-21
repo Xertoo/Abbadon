@@ -26,6 +26,8 @@ import {
   Sliders,
   Shield,
   Smile,
+  ListMusic,
+  Plus,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { Artwork } from './Artwork';
@@ -39,6 +41,8 @@ import type {
   RoomChatMessage,
   RoomReaction,
   IncomingInvite,
+  IncomingSessionRequest,
+  SharedPlaylist,
 } from '../lib/listenTogether';
 
 interface Props {
@@ -48,6 +52,8 @@ interface Props {
   presences: Record<string, FriendPresence>;
   connectionStatus: 'connecting' | 'connected' | 'disconnected' | 'error';
   syncSession: SyncSession;
+  incomingSessionRequests?: IncomingSessionRequest[];
+  pendingOutgoingRequestTo?: string | null;
   incomingInvites: IncomingInvite[];
   chatMessages: RoomChatMessage[];
   reactions: RoomReaction[];
@@ -57,6 +63,10 @@ interface Props {
   onRemoveFriend: (code: string) => void;
   onRenameFriend: (code: string, newName: string) => void;
   onFollowFriend: (code: string) => void;
+  onRequestListenTogether?: (code: string) => void;
+  onAcceptSessionRequest?: (id: string) => void;
+  onDeclineSessionRequest?: (id: string) => void;
+  onCancelSessionRequest?: () => void;
   onStopSync: () => void;
   onInviteFriend: (code: string) => void;
   onAcceptInvite: (invite: IncomingInvite) => void;
@@ -66,6 +76,13 @@ interface Props {
   onSendChatMessage: (text: string) => void;
   onSendReaction: (emoji: string) => void;
   onConnectToFriend: (code: string) => void;
+  collabPlaylists?: SharedPlaylist[];
+  onCreateCollabPlaylist?: (title: string) => void;
+  onInviteFriendToCollab?: (playlistId: string, friendCode: string) => void;
+  onAddTrackToCollab?: (playlistId: string, track: Track) => void;
+  onRemoveTrackFromCollab?: (playlistId: string, trackId: string | number) => void;
+  onDeleteCollabPlaylist?: (playlistId: string) => void;
+  onPlayCollabPlaylist?: (tracks: Track[]) => void;
 }
 
 export function ListenTogetherView({
@@ -75,6 +92,8 @@ export function ListenTogetherView({
   presences,
   connectionStatus,
   syncSession,
+  incomingSessionRequests = [],
+  pendingOutgoingRequestTo,
   incomingInvites,
   chatMessages,
   reactions,
@@ -84,6 +103,10 @@ export function ListenTogetherView({
   onRemoveFriend,
   onRenameFriend,
   onFollowFriend,
+  onRequestListenTogether,
+  onAcceptSessionRequest,
+  onDeclineSessionRequest,
+  onCancelSessionRequest,
   onStopSync,
   onInviteFriend,
   onAcceptInvite,
@@ -93,6 +116,13 @@ export function ListenTogetherView({
   onSendChatMessage,
   onSendReaction,
   onConnectToFriend,
+  collabPlaylists = [],
+  onCreateCollabPlaylist,
+  onInviteFriendToCollab,
+  onAddTrackToCollab,
+  onRemoveTrackFromCollab,
+  onDeleteCollabPlaylist,
+  onPlayCollabPlaylist,
 }: Props) {
   const [copiedCode, setCopiedCode] = useState(false);
   const [friendCodeInput, setFriendCodeInput] = useState('');
@@ -101,7 +131,8 @@ export function ListenTogetherView({
   const [chatInput, setChatInput] = useState('');
   const [isEditingName, setIsEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(profile.name);
-  const [activeTab, setActiveTab] = useState<'friends' | 'room'>('friends');
+  const [activeTab, setActiveTab] = useState<'friends' | 'room' | 'collab'>('friends');
+  const [newPlaylistTitle, setNewPlaylistTitle] = useState('');
   const [editingFriendCode, setEditingFriendCode] = useState<string | null>(null);
   const [editedFriendName, setEditedFriendName] = useState('');
 
@@ -174,23 +205,73 @@ export function ListenTogetherView({
         </div>
       )}
 
-      {/* Incoming Invitations Banner */}
+      {/* Incoming Session Requests Banner */}
+      {incomingSessionRequests.length > 0 && (
+        <div className="space-y-2">
+          {incomingSessionRequests.map((req) => (
+            <div
+              key={req.id}
+              className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-gradient-to-r from-sc-orange/25 via-neutral-900/90 to-neutral-900/90 border border-sc-orange/50 backdrop-blur-xl shadow-lg shadow-sc-orange/15 animate-pulse"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-sc-orange text-sc-on-accent flex items-center justify-center shrink-0 shadow-md">
+                  <Headphones className="w-5 h-5 animate-bounce" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-bold text-sc-fg">{req.senderName}</span>
+                    <span className="text-xs text-sc-orange font-semibold">
+                      invited you to listen together!
+                    </span>
+                  </div>
+                  {req.track && (
+                    <p className="text-xs text-sc-muted truncate">
+                      Track: {req.track.title} • {req.track.artist}
+                    </p>
+                  )}
+                  <p className="text-[11px] text-sc-dim">
+                    Both of you will have equal control over playback
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => onAcceptSessionRequest?.(req.id)}
+                  className="px-4 py-2 rounded-xl bg-sc-orange hover:bg-sc-orange/90 text-white font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 shadow-md shadow-sc-orange/25 cursor-pointer"
+                >
+                  <Headphones className="w-3.5 h-3.5" />
+                  Akceptuj
+                </button>
+                <button
+                  onClick={() => onDeclineSessionRequest?.(req.id)}
+                  className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-sc-muted hover:text-sc-fg font-semibold text-xs transition-colors cursor-pointer"
+                >
+                  Odrzuć
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Incoming Jam Invitations Banner */}
       {incomingInvites.length > 0 && (
         <div className="space-y-2">
           {incomingInvites.map((inv) => (
             <div
               key={inv.id}
-              className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-gradient-to-r from-sc-orange/20 via-neutral-900/80 to-neutral-900/80 border border-sc-orange/40 backdrop-blur-xl shadow-lg shadow-sc-orange/10 animate-pulse"
+              className="flex items-center justify-between gap-4 p-4 rounded-2xl bg-gradient-to-r from-cyan-500/20 via-neutral-900/80 to-neutral-900/80 border border-cyan-500/40 backdrop-blur-xl shadow-lg shadow-cyan-500/10"
             >
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-xl bg-sc-orange/20 border border-sc-orange/40 flex items-center justify-center shrink-0">
-                  <Headphones className="w-5 h-5 text-sc-orange animate-bounce" />
+                <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center shrink-0">
+                  <Radio className="w-5 h-5 text-cyan-400 animate-pulse" />
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-bold text-sc-fg">{inv.senderName}</span>
-                    <span className="text-xs text-sc-orange font-semibold">
-                      invited you to listen together!
+                    <span className="text-xs text-cyan-400 font-semibold">
+                      zaprasza do pokoju Jam!
                     </span>
                   </div>
                   {inv.track && (
@@ -199,7 +280,7 @@ export function ListenTogetherView({
                     </p>
                   )}
                   {inv.roomName && (
-                    <p className="text-xs text-sc-dim">Room: {inv.roomName}</p>
+                    <p className="text-xs text-sc-dim">Pokój: {inv.roomName}</p>
                   )}
                 </div>
               </div>
@@ -207,16 +288,15 @@ export function ListenTogetherView({
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => onAcceptInvite(inv)}
-                  className="px-4 py-2 rounded-xl bg-sc-orange hover:bg-sc-orange/90 text-white font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 shadow-md shadow-sc-orange/25 cursor-pointer"
+                  className="px-4 py-2 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-white font-bold text-xs flex items-center gap-1.5 transition-all active:scale-95 shadow-md shadow-cyan-500/25 cursor-pointer"
                 >
-                  <Headphones className="w-3.5 h-3.5" />
-                  Join Now
+                  Dołącz
                 </button>
                 <button
                   onClick={() => onDismissInvite(inv.id)}
                   className="px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-sc-muted hover:text-sc-fg font-semibold text-xs transition-colors cursor-pointer"
                 >
-                  Decline
+                  Odrzuć
                 </button>
               </div>
             </div>
@@ -235,14 +315,18 @@ export function ListenTogetherView({
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold uppercase tracking-wider text-sc-orange">
-                  {syncSession.mode === 'following'
+                  {syncSession.mode === 'co-listening'
+                    ? 'Wspólne Słuchanie'
+                    : syncSession.mode === 'following'
                     ? 'Listen Together Active'
                     : 'Listening Room'}
                 </span>
-                <span className="text-xs text-sc-dim">• Synced</span>
+                <span className="text-xs text-sc-dim">• Aktywne (Wspólna kontrola)</span>
               </div>
               <p className="text-sm font-semibold text-sc-fg">
-                {syncSession.mode === 'following'
+                {syncSession.mode === 'co-listening'
+                  ? `Słuchacie razem z: ${syncSession.partnerName || syncSession.partnerCode}`
+                  : syncSession.mode === 'following'
                   ? `Following: ${syncSession.targetName || syncSession.targetCode}`
                   : `In room: ${syncSession.roomName || syncSession.roomId} (${syncSession.participants?.length || 1} members)`}
               </p>
@@ -254,7 +338,7 @@ export function ListenTogetherView({
             className="px-3.5 py-1.5 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 font-semibold text-xs flex items-center gap-1.5 border border-red-500/30 transition-all cursor-pointer"
           >
             <LogOut className="w-3.5 h-3.5" />
-            Disconnect
+            Rozłącz
           </button>
         </div>
       )}
@@ -321,6 +405,23 @@ export function ListenTogetherView({
           >
             <Radio className="w-4 h-4" />
             <span>Jam Rooms</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('collab')}
+            className={clsx(
+              'flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer',
+              activeTab === 'collab'
+                ? 'bg-sc-orange text-white shadow-md shadow-sc-orange/20'
+                : 'text-sc-muted hover:text-sc-fg'
+            )}
+          >
+            <ListMusic className="w-4 h-4" />
+            <span>Wspólne playlisty</span>
+            {collabPlaylists.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full bg-white/20 text-[10px]">
+                {collabPlaylists.length}
+              </span>
+            )}
           </button>
         </div>
       </div>
@@ -503,8 +604,11 @@ export function ListenTogetherView({
                   ? Math.min(100, Math.max(0, (currentPos / presence.duration) * 100))
                   : 0;
 
+                const isCoListening =
+                  syncSession.mode === 'co-listening' && syncSession.partnerCode === friend.code;
                 const isFollowingThisFriend =
                   syncSession.mode === 'following' && syncSession.targetCode === friend.code;
+                const isPending = pendingOutgoingRequestTo === friend.code;
 
                 return (
                   <div
@@ -666,22 +770,34 @@ export function ListenTogetherView({
 
                     {/* Bottom: Action Buttons */}
                     <div className="flex items-center gap-2 pt-1">
-                      {isFollowingThisFriend ? (
+                      {isCoListening || isFollowingThisFriend ? (
                         <button
                           onClick={onStopSync}
-                          className="flex-1 py-2 rounded-xl bg-sc-orange/20 hover:bg-sc-orange/30 border border-sc-orange/50 text-sc-orange font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                          className="flex-1 py-2 rounded-xl bg-sc-orange text-sc-on-accent font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-md"
                         >
-                          <Pause className="w-3.5 h-3.5" />
-                          Stop Sync
+                          <Headphones className="w-3.5 h-3.5 animate-pulse" />
+                          Rozłącz wspólne słuchanie
+                        </button>
+                      ) : isPending ? (
+                        <button
+                          onClick={onCancelSessionRequest}
+                          className="flex-1 py-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                        >
+                          <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                          Invitation sent (cancel)
                         </button>
                       ) : (
                         <button
-                          onClick={() => onFollowFriend(friend.code)}
-                          disabled={!isOnline || !hasTrack}
+                          onClick={() =>
+                            onRequestListenTogether
+                              ? onRequestListenTogether(friend.code)
+                              : onFollowFriend(friend.code)
+                          }
+                          disabled={!isOnline}
                           className="flex-1 py-2 rounded-xl bg-sc-orange hover:bg-sc-orange/90 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md shadow-sc-orange/20 cursor-pointer active:scale-98"
                         >
                           <Headphones className="w-3.5 h-3.5" />
-                          Listen Together
+                          Invite to listen together
                         </button>
                       )}
 
@@ -954,6 +1070,236 @@ export function ListenTogetherView({
                   </button>
                 </form>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Main Content: Collaborative Playlists Tab */}
+      {activeTab === 'collab' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Create Shared Playlist Bar */}
+          <div className="p-5 rounded-2xl bg-sc-panel/60 backdrop-blur-xl border border-white/[0.08] flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <h3 className="text-sm font-bold text-sc-fg flex items-center gap-2">
+                <ListMusic className="w-4 h-4 text-sc-orange" />
+                Create a Collaborative Playlist with Friends
+              </h3>
+              <p className="text-xs text-sc-muted mt-0.5">
+                You are the host — your friends can add and remove tracks in real time over P2P.
+              </p>
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!newPlaylistTitle.trim() || !onCreateCollabPlaylist) return;
+                onCreateCollabPlaylist(newPlaylistTitle.trim());
+                setNewPlaylistTitle('');
+              }}
+              className="flex items-center gap-2 w-full sm:w-auto"
+            >
+              <input
+                type="text"
+                placeholder="Shared playlist name..."
+                value={newPlaylistTitle}
+                onChange={(e) => setNewPlaylistTitle(e.target.value)}
+                className="px-3.5 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-sc-fg placeholder:text-sc-faint focus:outline-none focus:border-sc-orange/60 w-full sm:w-64"
+              />
+              <button
+                type="submit"
+                disabled={!newPlaylistTitle.trim() || !onCreateCollabPlaylist}
+                className="px-4 py-2 rounded-xl bg-sc-orange hover:bg-sc-orange/90 disabled:opacity-30 disabled:cursor-not-allowed text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-sc-orange/20 cursor-pointer shrink-0"
+              >
+                <Plus className="w-4 h-4" />
+                Create
+              </button>
+            </form>
+          </div>
+
+          {/* List of Collaborative Playlists */}
+          {collabPlaylists.length === 0 ? (
+            <div className="p-12 rounded-2xl bg-sc-panel/40 border border-white/[0.06] text-center space-y-3">
+              <div className="w-12 h-12 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center justify-center mx-auto text-sc-dim">
+                <ListMusic className="w-6 h-6" />
+              </div>
+              <h4 className="text-sm font-bold text-sc-fg">No collaborative playlists yet</h4>
+              <p className="text-xs text-sc-muted max-w-md mx-auto">
+                Create your first shared playlist above and invite friends, or ask a friend to invite you from their account!
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {collabPlaylists.map((pl) => {
+                const isHost = pl.hostCode === profile.code;
+                return (
+                  <div
+                    key={pl.id}
+                    className="p-5 rounded-2xl bg-sc-panel/70 backdrop-blur-xl border border-white/[0.08] space-y-4"
+                  >
+                    {/* Header */}
+                    <div className="flex items-center justify-between flex-wrap gap-3 pb-3 border-b border-white/[0.06]">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-base font-bold text-sc-fg">{pl.title}</h3>
+                          <span
+                            className={clsx(
+                              'px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider',
+                              isHost
+                                ? 'bg-sc-orange/20 border border-sc-orange/40 text-sc-orange'
+                                : 'bg-purple-500/20 border border-purple-500/40 text-purple-300'
+                            )}
+                          >
+                            {isHost ? 'Host: You' : `Host: ${pl.hostName}`}
+                          </span>
+                          <span className="text-xs text-sc-dim">
+                            • {pl.items.length} {pl.items.length === 1 ? 'track' : 'tracks'}
+                          </span>
+                        </div>
+
+                        {/* Collaborators list */}
+                        {pl.collaborators.length > 0 && (
+                          <div className="flex items-center gap-1.5 mt-1.5 text-[11px] text-sc-muted">
+                            <span>Collaborators:</span>
+                            <div className="flex flex-wrap gap-1">
+                              {pl.collaborators.map((c) => (
+                                <span
+                                  key={c.code}
+                                  className="px-2 py-0.2 rounded-md bg-white/[0.06] text-sc-fg text-[10px] font-semibold"
+                                >
+                                  {c.name}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Top Action Buttons */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {pl.items.length > 0 && onPlayCollabPlaylist && (
+                          <button
+                            onClick={() => onPlayCollabPlaylist(pl.items.map((i) => i.track))}
+                            className="px-3 py-1.5 rounded-xl bg-sc-orange hover:bg-sc-orange/90 text-white font-bold text-xs flex items-center gap-1.5 transition-all shadow-md shadow-sc-orange/20 cursor-pointer"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-current" />
+                            Play
+                          </button>
+                        )}
+
+                        {currentTrack && onAddTrackToCollab && (
+                          <button
+                            onClick={() => onAddTrackToCollab(pl.id, currentTrack)}
+                            className="px-3 py-1.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.14] text-sc-fg font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5 text-sc-orange" />
+                            Add playing ({currentTrack.title.slice(0, 16)}...)
+                          </button>
+                        )}
+
+                        {/* Invite friend select */}
+                        {isHost && friends.length > 0 && onInviteFriendToCollab && (
+                          <select
+                            onChange={(e) => {
+                              if (e.target.value) {
+                                onInviteFriendToCollab(pl.id, e.target.value);
+                                e.target.value = '';
+                              }
+                            }}
+                            defaultValue=""
+                            className="px-2.5 py-1.5 rounded-xl bg-white/[0.06] border border-white/[0.1] text-xs font-semibold text-sc-fg outline-none cursor-pointer"
+                          >
+                            <option value="" disabled>
+                              + Invite friend...
+                            </option>
+                            {friends
+                              .filter((f) => !pl.collaborators.some((c) => c.code === f.code))
+                              .map((f) => (
+                                <option key={f.code} value={f.code} className="bg-neutral-900 text-white">
+                                  {f.name} ({f.code})
+                                </option>
+                              ))}
+                          </select>
+                        )}
+
+                        {onDeleteCollabPlaylist && (
+                          <button
+                            onClick={() => onDeleteCollabPlaylist(pl.id)}
+                            title="Delete playlist"
+                            className="p-1.5 rounded-xl text-sc-dim hover:text-red-400 hover:bg-red-500/10 transition-colors cursor-pointer"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Tracks inside this Collaborative Playlist */}
+                    {pl.items.length === 0 ? (
+                      <div className="py-6 text-center text-xs text-sc-dim">
+                        No tracks in this playlist yet. Add the currently playing track with the button above!
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        {pl.items.map((item, idx) => (
+                          <div
+                            key={`${item.track.id}-${idx}`}
+                            className="group flex items-center justify-between p-2 rounded-xl hover:bg-white/[0.04] transition-colors"
+                          >
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              <span className="text-xs font-bold text-sc-dim w-4 text-center">
+                                {idx + 1}
+                              </span>
+                              <div className="w-8 h-8 rounded-lg overflow-hidden bg-neutral-800 shrink-0">
+                                <Artwork
+                                  src={item.track.artwork}
+                                  seed={item.track.id}
+                                  size={67}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                              <div className="min-w-0">
+                                <div className="text-xs font-semibold text-sc-fg truncate">
+                                  {item.track.title}
+                                </div>
+                                <div className="text-[11px] text-sc-muted truncate">
+                                  {item.track.artist}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-3 shrink-0">
+                              <span className="text-[10px] text-sc-dim px-2 py-0.5 rounded-md bg-white/[0.04]">
+                                Added by: {item.addedBy.name}
+                              </span>
+
+                              {onPlayCollabPlaylist && (
+                                <button
+                                  onClick={() => onPlayCollabPlaylist([item.track])}
+                                  title="Play this track"
+                                  className="p-1 rounded-lg text-sc-dim hover:text-sc-fg hover:bg-white/10 transition-colors cursor-pointer"
+                                >
+                                  <Play className="w-3.5 h-3.5 fill-current" />
+                                </button>
+                              )}
+
+                              {onRemoveTrackFromCollab && (
+                                <button
+                                  onClick={() => onRemoveTrackFromCollab(pl.id, item.track.id)}
+                                  title="Remove from playlist"
+                                  className="p-1 rounded-lg text-sc-dim hover:text-red-400 hover:bg-red-500/10 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

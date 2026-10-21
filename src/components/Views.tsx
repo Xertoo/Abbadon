@@ -46,9 +46,14 @@ import {
   Radio,
   Download,
   ArrowUpCircle,
+  Waves,
+  Headphones,
+  Keyboard,
+  Scissors,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAutoUpdater } from '../hooks/useAutoUpdater';
+import { playTypingSound, type SwitchType } from '../lib/typingAudio';
 import type { Playlist, Track, User } from '../types';
 import { TrackList, SectionHeader, SkeletonRows } from './TrackList';
 import {
@@ -1790,739 +1795,959 @@ export function SettingsView({
 
       <AuthPanel {...auth} />
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Toggle
-          icon={Compass}
-          label="Autodiscovery"
-          hint="When the queue runs out, play something related instead of stopping. Suspended while Shuffle or Repeat is on."
-          checked={prefs.autodiscovery}
-          onChange={(v) => onPref('autodiscovery', v)}
+      {/* 1. AUDIO & PLAYBACK */}
+      <div className="pt-4">
+        <SectionHeader
+          title="Audio & Playback"
+          subtitle="Sound enhancement, spatial audio, silence trim, and volume controls"
+          icon={<Headphones className="w-4 h-4 text-sc-orange" />}
         />
-        <Toggle
-          icon={Sparkles}
-          label="Animations"
-          hint="Popovers, view transitions and the visualizer. Turn off for a still, instant interface."
-          checked={prefs.animations}
-          onChange={(v) => onPref('animations', v)}
-        />
-        <Toggle
-          icon={Volume2}
-          label="Remember volume"
-          hint="Start every launch at the volume you left off at, instead of the default."
-          checked={prefs.rememberVolume}
-          onChange={(v) => onPref('rememberVolume', v)}
-        />
-        <Toggle
-          icon={Rows3}
-          label="Compact track rows"
-          hint="Denser lists, so far more of a playlist fits on screen at once."
-          checked={prefs.compactRows}
-          onChange={(v) => onPref('compactRows', v)}
-        />
-        <Toggle
-          icon={ImageIcon}
-          label="Show cover art"
-          hint="Artwork in every track row. Turning it off leaves more room for titles."
-          checked={prefs.showArtwork}
-          onChange={(v) => onPref('showArtwork', v)}
-        />
-      </div>
-
-      {prefs.rememberVolume && (
-        <div className="rounded-2xl border border-sc-line bg-sc-panel p-4 flex items-center gap-4 animate-fade-in">
-          <Volume2 className="w-4 h-4 text-sc-orange shrink-0" />
-          <div className="min-w-0 flex-1">
-            <div className="text-[12px] font-bold text-sc-fg">
-              Startup volume · {Math.round(prefs.volume * 100)}%
-            </div>
-            <input
-              type="range"
-              min={0}
-              max={100}
-              step={1}
-              value={Math.round(prefs.volume * 100)}
-              onChange={(e) => onPref('volume', Number(e.target.value) / 100)}
-              aria-label="Startup volume"
-              className="w-full mt-2 accent-[var(--color-sc-orange)]"
-            />
-          </div>
-        </div>
-      )}
-
-      <div className="rounded-2xl border border-sc-line bg-sc-panel p-4 flex items-center gap-4">
-        <Activity className="w-4 h-4 text-sc-orange shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-baseline justify-between gap-2">
-            <div className="text-[12px] font-bold text-sc-fg">Crossfade</div>
-            <span className="text-[11px] text-sc-dim tabular-nums">
-              {prefs.crossfade === 0 ? 'Off' : `${prefs.crossfade}s`}
-            </span>
-          </div>
-          <div className="text-[11px] text-sc-dim mt-0.5">
-            The next track ramps up while the current one fades out, so switching never drops to silence.
-          </div>
-          <input
-            type="range"
-            min={0}
-            max={12}
-            step={0.5}
-            value={prefs.crossfade}
-            onChange={(e) => onPref('crossfade', Number(e.target.value))}
-            aria-label="Crossfade length"
-            className="w-full mt-2 accent-[var(--color-sc-orange)]"
-          />
-        </div>
-      </div>
-
-      <ProxyPanel prefs={prefs} onPref={onPref} />
-
-      <Disclosure
-        title="Music source"
-        subtitle="Search and the library screen operate on this catalog"
-        icon={<Cloud className="w-[18px] h-[18px] text-sc-orange" />}
-      >
-        <div className="grid gap-2 sm:grid-cols-2 pt-4">
-          {MUSIC_SOURCES_UI.map((s) => (
-            <button
-              key={s.id}
-              type="button"
-              onClick={() => onPref('source', s.id)}
-              aria-pressed={prefs.source === s.id}
-              className={clsx(
-                'w-full text-left rounded-xl border p-3 transition-all relative overflow-hidden',
-                prefs.source === s.id
-                  ? 'border-sc-orange/60 bg-sc-orange/10'
-                  : 'border-sc-line bg-sc-panel-2/40 hover:border-sc-dim'
-              )}
-            >
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[13px] font-bold text-sc-fg">{s.label}</span>
-                {prefs.source === s.id && (
-                  <Check className="w-3.5 h-3.5 text-sc-orange shrink-0" />
-                )}
-              </div>
-              <div className="text-[11px] text-sc-muted mt-0.5">{s.description}</div>
-            </button>
-          ))}
-        </div>
-      </Disclosure>
-
-      <Disclosure
-        title="Theme"
-        subtitle="Applies immediately and is remembered"
-        icon={<Palette className="w-[18px] h-[18px] text-sc-orange" />}
-      >
-        <div className="grid gap-2 sm:grid-cols-2 pt-4">
-          {themes.map((t) => {
-            const swatch = themeSwatch(t);
-            return (
-              <div key={t.id} className="relative">
-                <button
-                  type="button"
-                  onClick={() => onTheme(t.id)}
-                  aria-pressed={themeId === t.id}
-                  className={clsx(
-                    'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
-                    themeId === t.id
-                      ? 'border-sc-orange/60 bg-sc-orange/10'
-                      : 'border-sc-line bg-sc-panel-2/40 hover:border-sc-dim'
-                  )}
-                >
-                  <div className="flex shrink-0 rounded-md overflow-hidden border border-sc-line">
-                    {swatch.map((c, i) => (
-                      <span key={i} className="w-5 h-8 block" style={{ background: c }} />
-                    ))}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[12px] font-bold text-sc-fg">{t.label}</span>
-                      {themeId === t.id && <Check className="w-3 h-3 text-sc-orange-soft" />}
-                    </div>
-                    <div className="text-[10px] text-sc-dim leading-tight">
-                      {t.mode === 'dark' ? 'Dark' : 'Light'}
-                      {t.custom ? ' · custom' : ''}
-                    </div>
-                  </div>
-                </button>
-                {t.custom && (
-                  <button
-                    type="button"
-                    onClick={() => onDeleteCustomTheme(t.id)}
-                    title="Remove this custom theme"
-                    aria-label={`Remove ${t.label}`}
-                    className="absolute top-2 right-2 w-6 h-6 rounded-md flex items-center justify-center text-sc-faint hover:text-sc-fg bg-sc-bg/60 transition-colors"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-
-        <CustomThemeEditor onSave={onSaveCustomTheme} />
-      </Disclosure>
-
-      <Disclosure
-        id="settings-equalizer"
-        title="Equalizer"
-        subtitle={`${bandCount} bands · ±${EQ_RANGE} dB`}
-        icon={<Sliders className="w-[18px] h-[18px] text-sc-orange" />}
-        isOpen={eqOpen}
-        onToggle={() => setEqOpen((v) => !v)}
-      >
-        <div className="pt-4 space-y-4">
-          <p className="text-[12px] text-sc-muted max-w-[60ch]">
-            Drag a point on the curve to shape it, or start from a preset. Double-click a point to
-            reset it to 0 dB. Changes apply live and are saved.
-          </p>
-
-          {/* Band count. Changing it resamples the current curve instead of
-              throwing it away, so the shape survives an 8 -> 16 comparison. */}
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-sc-muted mr-1">
-              Bands
-            </span>
-            {EQ_BAND_COUNTS.map((n) => (
-              <button
-                key={n}
-                type="button"
-                onClick={() => onBandCount(n)}
-                aria-pressed={bandCount === n}
-                className={clsx(
-                  'px-3 py-1.5 rounded-lg text-[12px] font-bold transition-all',
-                  bandCount === n
-                    ? 'bg-sc-orange/15 text-sc-orange-soft border border-sc-orange/50'
-                    : 'bg-sc-panel-2/40 text-sc-dim border border-sc-line hover:text-sc-fg'
-                )}
-              >
-                {n}
-              </button>
-            ))}
-            <span className="text-[11px] text-sc-faint">
-              {bands.map((b) => b.label).join(' · ')}
-            </span>
-          </div>
-
-          {/* The waveform only. The per-band sliders that used to sit under this
-              were redundant with the curve - same numbers, harder to aim at -
-              and the point markers are what everyone actually uses. */}
-          <div className="rounded-xl border border-sc-line bg-sc-panel-2/40 overflow-hidden">
-            <EqResponseCurve eq={eq} onEq={onEq} bands={bands} height={180} />
-          </div>
-
-          <EqPresets eq={eq} onEq={onEq} count={bandCount} allowCustomSave />
-        </div>
-      </Disclosure>
-
-      <Disclosure
-        id="settings-visualizer"
-        title="Visualizer"
-        subtitle={
-          visualizer === 'off'
-            ? 'Disabled'
-            : `${visualizer} · sensitivity ${(prefs.visualizerSensitivity ?? 1).toFixed(1)}x`
-        }
-        icon={<Activity className="w-[18px] h-[18px] text-sc-orange" />}
-        isOpen={visOpen}
-        onToggle={() => setVisOpen((v) => !v)}
-      >
-        <div className="space-y-5 pt-4">
-          <div className="grid gap-2 sm:grid-cols-2">
-            {VISUALIZER_MODES.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => onVisualizer(m.id)}
-                className={clsx(
-                  'flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
-                  visualizer === m.id
-                    ? 'border-sc-orange/60 bg-sc-orange/10'
-                    : 'border-sc-line bg-sc-panel-2/40 hover:border-neutral-600'
-                )}
-              >
-                {/* Every tile animates from the synthetic spectrum, so an unselected
-                    mode still shows what it does. `off` borrows the bars renderer
-                    for its tile and dims it. */}
-                <div
-                  className={clsx(
-                    'w-11 h-8 rounded-md bg-sc-bg/60 border border-sc-line/60 overflow-hidden flex-shrink-0',
-                    m.id === 'off' && 'opacity-30'
-                  )}
-                >
-                  <Spectrum
-                    getFreq={null}
-                    active={false}
-                    bars={14}
-                    mode={m.id === 'off' ? 'bars' : m.id}
-                    demo
-                    threshold={prefs.visualizerThreshold}
-                    sensitivity={prefs.visualizerSensitivity}
-                    smoothing={prefs.visualizerSmoothing}
-                    className="w-full h-full"
-                  />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[12px] font-bold text-sc-fg">{m.label}</span>
-                    {visualizer === m.id && <Check className="w-3 h-3 text-sc-orange-soft" />}
-                  </div>
-                  <div className="text-[10px] text-sc-dim leading-tight">{m.hint}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {visualizer !== 'off' && (
-            <div className="rounded-xl border border-sc-line bg-sc-panel-2/40 p-4 space-y-4 animate-fade-in">
-              <div className="flex items-center justify-between">
-                <span className="text-[12px] font-bold text-sc-fg">Live Preview & Tuning</span>
-                <span className="text-[11px] text-sc-muted capitalize">{visualizer} mode</span>
-              </div>
-
-              <div className="rounded-lg border border-sc-line bg-sc-bg/80 p-3 h-28 flex items-center justify-center overflow-hidden">
-                <Spectrum
-                  getFreq={null}
-                  active={false}
-                  bars={prefs.visualizerBars ?? (visualizer === 'bars' ? 48 : 64)}
-                  mode={visualizer}
-                  demo
-                  threshold={prefs.visualizerThreshold ?? 0.05}
-                  sensitivity={prefs.visualizerSensitivity ?? 1.0}
-                  smoothing={prefs.visualizerSmoothing ?? 0.8}
-                  className="w-full h-full"
-                />
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2 pt-2">
-                <div>
-                  <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
-                    <span>Noise gate threshold</span>
-                    <span className="text-sc-orange-soft font-mono">
-                      {Math.round((prefs.visualizerThreshold ?? 0.05) * 100)}%
-                    </span>
-                  </div>
-                  <p className="text-[10.5px] text-sc-muted mb-2">
-                    Cuts out background noise so bars remain still when quiet.
-                  </p>
-                  <input
-                    type="range"
-                    min={0}
-                    max={0.35}
-                    step={0.01}
-                    value={prefs.visualizerThreshold ?? 0.05}
-                    onChange={(e) => onPref('visualizerThreshold', Number(e.target.value))}
-                    className="w-full accent-[var(--color-sc-orange)]"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
-                    <span>Sensitivity (Gain)</span>
-                    <span className="text-sc-orange-soft font-mono">
-                      {(prefs.visualizerSensitivity ?? 1.0).toFixed(1)}x
-                    </span>
-                  </div>
-                  <p className="text-[10.5px] text-sc-muted mb-2">
-                    Boosts bar movement on quiet or lower volume tracks.
-                  </p>
-                  <input
-                    type="range"
-                    min={0.5}
-                    max={2.5}
-                    step={0.1}
-                    value={prefs.visualizerSensitivity ?? 1.0}
-                    onChange={(e) => onPref('visualizerSensitivity', Number(e.target.value))}
-                    className="w-full accent-[var(--color-sc-orange)]"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
-                    <span>Falloff smoothing</span>
-                    <span className="text-sc-orange-soft font-mono">
-                      {Math.round((prefs.visualizerSmoothing ?? 0.8) * 100)}%
-                    </span>
-                  </div>
-                  <p className="text-[10.5px] text-sc-muted mb-2">
-                    Higher values make peaks decay smoothly; lower values make bars snappy.
-                  </p>
-                  <input
-                    type="range"
-                    min={0.3}
-                    max={0.95}
-                    step={0.05}
-                    value={prefs.visualizerSmoothing ?? 0.8}
-                    onChange={(e) => onPref('visualizerSmoothing', Number(e.target.value))}
-                    className="w-full accent-[var(--color-sc-orange)]"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
-                    <span>Bar density</span>
-                    <span className="text-sc-orange-soft font-mono">
-                      {prefs.visualizerBars ?? 48} bars
-                    </span>
-                  </div>
-                  <p className="text-[10.5px] text-sc-muted mb-2">
-                    Number of spectrum bands drawn across the canvas.
-                  </p>
-                  <div className="flex items-center gap-1.5 pt-1">
-                    {[24, 36, 48, 64, 80].map((count) => (
-                      <button
-                        key={count}
-                        type="button"
-                        onClick={() => onPref('visualizerBars', count)}
-                        className={clsx(
-                          'flex-1 py-1 rounded-md text-[11px] font-bold border transition-all cursor-pointer',
-                          (prefs.visualizerBars ?? 48) === count
-                            ? 'bg-sc-orange/15 text-sc-orange-soft border-sc-orange/50'
-                            : 'bg-sc-panel border-sc-line text-sc-dim hover:text-sc-fg'
-                        )}
-                      >
-                        {count}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-      </Disclosure>
-
-      <Disclosure
-        id="settings-background"
-        title="Background"
-        subtitle={`${BG_MODES.find((m) => m.id === prefs.bgMode)?.label ?? 'Cosmic'} · variation ${Math.round(
-          (prefs.bgVariation ?? 0) * 100
-        )}%`}
-        icon={<Sparkles className="w-[18px] h-[18px] text-sc-orange" />}
-      >
-        <div className="space-y-5 pt-4">
-          <div className="grid gap-2 sm:grid-cols-3">
-            {BG_MODES.map((m) => (
-              <button
-                key={m.id}
-                type="button"
-                onClick={() => onPref('bgMode', m.id)}
-                aria-pressed={prefs.bgMode === m.id}
-                className={clsx(
-                  'flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
-                  prefs.bgMode === m.id
-                    ? 'border-sc-orange/60 bg-sc-orange/10'
-                    : 'border-sc-line bg-sc-panel-2/40 hover:border-sc-dim'
-                )}
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[12px] font-bold text-sc-fg">{m.label}</span>
-                    {prefs.bgMode === m.id && (
-                      <Check className="w-3 h-3 text-sc-orange-soft" />
-                    )}
-                  </div>
-                  <div className="text-[10px] text-sc-dim leading-tight">{m.hint}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          <div className="grid gap-2 sm:grid-cols-2">
+        <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
             <Toggle
-              icon={Sparkles}
-              label="Shooting stars"
-              hint="Meteors streaking across the sky, more often when the bass hits."
-              checked={prefs.bgShootingStars}
-              onChange={(v) => onPref('bgShootingStars', v)}
+              icon={Waves}
+              label="Loudness Equalizer (Auto-Normalization)"
+              hint="Balances output levels across quiet and loud tracks distortion-free using Web Audio dynamic compression."
+              checked={prefs.loudnessEqualizer}
+              onChange={(v) => onPref('loudnessEqualizer', v)}
             />
             <Toggle
-              icon={Activity}
-              label="React to the music"
-              hint="Twinkle and brightness follow the spectrum of whatever is playing."
-              checked={prefs.bgAudioReactive}
-              onChange={(v) => onPref('bgAudioReactive', v)}
+              icon={Headphones}
+              label="3D Spatial Audio (Dolby Atmos Style)"
+              hint="Immersive stereo soundstage widening (Haas delay + presence contour) for a simulated 3D spatial field."
+              checked={prefs.spatialAudio}
+              onChange={(v) => onPref('spatialAudio', v)}
+            />
+            <Toggle
+              icon={Scissors}
+              label="Auto-Trim Silence"
+              hint="Automatically skips dead intro pauses and cuts trailing silence between tracks for seamless uninterrupted listening."
+              checked={prefs.autoTrimSilence ?? true}
+              onChange={(v) => onPref('autoTrimSilence', v)}
+            />
+            <Toggle
+              icon={Compass}
+              label="Autodiscovery"
+              hint="When the queue runs out, play something related instead of stopping. Suspended while Shuffle or Repeat is on."
+              checked={prefs.autodiscovery}
+              onChange={(v) => onPref('autodiscovery', v)}
             />
           </div>
 
-          <div className="rounded-xl border border-sc-line bg-sc-panel-2/40 p-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <span className="text-[12px] font-bold text-sc-fg">Variation &amp; motion</span>
-              <span className="text-[11px] text-sc-muted">
-                {prefs.bgMode === 'off' ? 'Hidden until a mode is on' : 'Applies live'}
-              </span>
+          <div className="rounded-2xl border border-sc-line bg-sc-panel p-4 flex items-center gap-4">
+            <Activity className="w-4 h-4 text-sc-orange shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-baseline justify-between gap-2">
+                <div className="text-[12px] font-bold text-sc-fg">Crossfade</div>
+                <span className="text-[11px] text-sc-dim tabular-nums">
+                  {prefs.crossfade === 0 ? 'Off' : `${prefs.crossfade}s`}
+                </span>
+              </div>
+              <div className="text-[11px] text-sc-dim mt-0.5">
+                The next track ramps up while the current one fades out, so switching never drops to silence.
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={12}
+                step={0.5}
+                value={prefs.crossfade}
+                onChange={(e) => onPref('crossfade', Number(e.target.value))}
+                aria-label="Crossfade length"
+                className="w-full mt-2 accent-[var(--color-sc-orange)]"
+              />
             </div>
+          </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div>
-                <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
-                  <span>Background variation</span>
-                  <span className="text-sc-orange-soft font-mono">
-                    {Math.round((prefs.bgVariation ?? 0) * 100)}%
-                  </span>
+          {prefs.rememberVolume && (
+            <div className="rounded-2xl border border-sc-line bg-sc-panel p-4 flex items-center gap-4 animate-fade-in">
+              <Volume2 className="w-4 h-4 text-sc-orange shrink-0" />
+              <div className="min-w-0 flex-1">
+                <div className="text-[12px] font-bold text-sc-fg">
+                  Startup volume · {Math.round(prefs.volume * 100)}%
                 </div>
-                <p className="text-[10.5px] text-sc-muted mb-2">
-                  How much the backdrop changes over time. At 0% the palette is pinned;
-                  higher values keep the glow cycling and spread the star colours.
-                </p>
                 <input
                   type="range"
                   min={0}
-                  max={1}
-                  step={0.05}
-                  value={prefs.bgVariation ?? 0}
-                  onChange={(e) => onPref('bgVariation', Number(e.target.value))}
-                  className="w-full accent-[var(--color-sc-orange)]"
+                  max={100}
+                  step={1}
+                  value={Math.round(prefs.volume * 100)}
+                  onChange={(e) => onPref('volume', Number(e.target.value) / 100)}
+                  aria-label="Startup volume"
+                  className="w-full mt-2 accent-[var(--color-sc-orange)]"
                 />
               </div>
+            </div>
+          )}
 
-              <div>
-                <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
-                  <span>Star density</span>
-                  <span className="text-sc-orange-soft font-mono">
-                    {(prefs.bgStarDensity ?? 1).toFixed(1)}x
-                  </span>
-                </div>
-                <p className="text-[10.5px] text-sc-muted mb-2">
-                  Scales the number of stars and dust motes drawn per mode.
-                </p>
-                <input
-                  type="range"
-                  min={0.5}
-                  max={2.5}
-                  step={0.1}
-                  value={prefs.bgStarDensity ?? 1}
-                  onChange={(e) => onPref('bgStarDensity', Number(e.target.value))}
-                  className="w-full accent-[var(--color-sc-orange)]"
-                />
+          <Disclosure
+            id="settings-equalizer"
+            title="Equalizer"
+            subtitle={`${bandCount} bands · ±${EQ_RANGE} dB`}
+            icon={<Sliders className="w-[18px] h-[18px] text-sc-orange" />}
+            isOpen={eqOpen}
+            onToggle={() => setEqOpen((v) => !v)}
+          >
+            <div className="pt-4 space-y-4">
+              <p className="text-[12px] text-sc-muted max-w-[60ch]">
+                Drag a point on the curve to shape it, or start from a preset. Double-click a point to
+                reset it to 0 dB. Changes apply live and are saved.
+              </p>
+
+              {/* Band count. Changing it resamples the current curve instead of
+                  throwing it away, so the shape survives an 8 -> 16 comparison. */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-[0.14em] text-sc-muted mr-1">
+                  Bands
+                </span>
+                {EQ_BAND_COUNTS.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => onBandCount(n)}
+                    aria-pressed={bandCount === n}
+                    className={clsx(
+                      'px-3 py-1.5 rounded-lg text-[12px] font-bold transition-all',
+                      bandCount === n
+                        ? 'bg-sc-orange/15 text-sc-orange-soft border border-sc-orange/50'
+                        : 'bg-sc-panel-2/40 text-sc-dim border border-sc-line hover:text-sc-fg'
+                    )}
+                  >
+                    {n}
+                  </button>
+                ))}
+                <span className="text-[11px] text-sc-faint">
+                  {bands.map((b) => b.label).join(' · ')}
+                </span>
               </div>
 
-              <div>
-                <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
-                  <span>Animation speed</span>
-                  <span className="text-sc-orange-soft font-mono">
-                    {(prefs.bgSpeed ?? 1).toFixed(1)}x
-                  </span>
-                </div>
-                <p className="text-[10.5px] text-sc-muted mb-2">
-                  Drift and twinkle rate for the whole backdrop.
-                </p>
-                <input
-                  type="range"
-                  min={0.5}
-                  max={2}
-                  step={0.1}
-                  value={prefs.bgSpeed ?? 1}
-                  onChange={(e) => onPref('bgSpeed', Number(e.target.value))}
-                  className="w-full accent-[var(--color-sc-orange)]"
-                />
+              {/* The waveform only. The per-band sliders that used to sit under this
+                  were redundant with the curve - same numbers, harder to aim at -
+                  and the point markers are what everyone actually uses. */}
+              <div className="rounded-xl border border-sc-line bg-sc-panel-2/40 overflow-hidden">
+                <EqResponseCurve eq={eq} onEq={onEq} bands={bands} height={180} />
               </div>
 
-              <div>
-                <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
-                  <span>Glow intensity</span>
-                  <span className="text-sc-orange-soft font-mono">
-                    {(prefs.bgIntensity ?? 1).toFixed(1)}x
-                  </span>
-                </div>
-                <p className="text-[10.5px] text-sc-muted mb-2">
-                  Brightness of the orbs and of every star drawn.
-                </p>
-                <input
-                  type="range"
-                  min={0.2}
-                  max={1.8}
-                  step={0.1}
-                  value={prefs.bgIntensity ?? 1}
-                  onChange={(e) => onPref('bgIntensity', Number(e.target.value))}
-                  className="w-full accent-[var(--color-sc-orange)]"
-                />
-              </div>
+              <EqPresets eq={eq} onEq={onEq} count={bandCount} allowCustomSave />
+            </div>
+          </Disclosure>
+        </div>
+      </div>
 
-              {prefs.bgAudioReactive && (
-                <div>
-                  <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
-                    <span>Music sensitivity</span>
-                    <span className="text-sc-orange-soft font-mono">
-                      {(prefs.bgSensitivity ?? 1).toFixed(1)}x
-                    </span>
-                  </div>
-                  <p className="text-[10.5px] text-sc-muted mb-2">
-                    How hard the spectrum pushes the twinkle and the meteors.
-                  </p>
-                  <input
-                    type="range"
-                    min={0.5}
-                    max={2.5}
-                    step={0.1}
-                    value={prefs.bgSensitivity ?? 1}
-                    onChange={(e) => onPref('bgSensitivity', Number(e.target.value))}
-                    className="w-full accent-[var(--color-sc-orange)]"
-                  />
-                </div>
-              )}
-
-              <div>
-                <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
-                  <span>Colour source</span>
-                </div>
-                <p className="text-[10.5px] text-sc-muted mb-2">
-                  What the glow and the stars take their hue from.
-                </p>
-                <div className="flex items-center gap-1.5 pt-1">
-                  {BG_COLOR_SOURCES.map((c) => (
+      {/* 2. APPEARANCE & INTERFACE */}
+      <div className="pt-4">
+        <SectionHeader
+          title="Appearance & Interface"
+          subtitle="Theme colors, artwork accents, animations, and library density"
+          icon={<Palette className="w-4 h-4 text-sc-orange" />}
+        />
+        <div className="space-y-4">
+          <Disclosure
+            title="Theme"
+            subtitle="Applies immediately and is remembered"
+            icon={<Palette className="w-[18px] h-[18px] text-sc-orange" />}
+          >
+            <div className="grid gap-2 sm:grid-cols-2 pt-4">
+              {themes.map((t) => {
+                const swatch = themeSwatch(t);
+                return (
+                  <div key={t.id} className="relative">
                     <button
-                      key={c.id}
                       type="button"
-                      onClick={() => onPref('bgColorSource', c.id)}
+                      onClick={() => onTheme(t.id)}
+                      aria-pressed={themeId === t.id}
                       className={clsx(
-                        'flex-1 py-1.5 rounded-md text-[11px] font-bold border transition-all cursor-pointer',
-                        (prefs.bgColorSource ?? 'artwork') === c.id
-                          ? 'bg-sc-orange/15 text-sc-orange-soft border-sc-orange/50'
-                          : 'bg-sc-panel border-sc-line text-sc-dim hover:text-sc-fg'
+                        'w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
+                        themeId === t.id
+                          ? 'border-sc-orange/60 bg-sc-orange/10'
+                          : 'border-sc-line bg-sc-panel-2/40 hover:border-sc-dim'
                       )}
                     >
-                      {c.label}
+                      <div className="flex shrink-0 rounded-md overflow-hidden border border-sc-line">
+                        {swatch.map((c, i) => (
+                          <span key={i} className="w-5 h-8 block" style={{ background: c }} />
+                        ))}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[12px] font-bold text-sc-fg">{t.label}</span>
+                          {themeId === t.id && <Check className="w-3 h-3 text-sc-orange-soft" />}
+                        </div>
+                        <div className="text-[10px] text-sc-dim leading-tight">
+                          {t.mode === 'dark' ? 'Dark' : 'Light'}
+                          {t.custom ? ' · custom' : ''}
+                        </div>
+                      </div>
+                    </button>
+                    {t.custom && (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteCustomTheme(t.id)}
+                        title="Remove this custom theme"
+                        aria-label={`Remove ${t.label}`}
+                        className="absolute top-2 right-2 w-6 h-6 rounded-md flex items-center justify-center text-sc-faint hover:text-sc-fg bg-sc-bg/60 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            <CustomThemeEditor onSave={onSaveCustomTheme} />
+          </Disclosure>
+
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Toggle
+              icon={Palette}
+              label="Dynamic Artwork Theme"
+              hint="Dynamically blends interface accents (buttons, glows, borders) with the vibrant palette of the playing track."
+              checked={prefs.dynamicArtworkTheme}
+              onChange={(v) => onPref('dynamicArtworkTheme', v)}
+            />
+            <Toggle
+              icon={ImageIcon}
+              label="Show cover art"
+              hint="Artwork in every track row. Turning it off leaves more room for titles."
+              checked={prefs.showArtwork}
+              onChange={(v) => onPref('showArtwork', v)}
+            />
+            <Toggle
+              icon={Rows3}
+              label="Compact track rows"
+              hint="Denser lists, so far more of a playlist fits on screen at once."
+              checked={prefs.compactRows}
+              onChange={(v) => onPref('compactRows', v)}
+            />
+            <Toggle
+              icon={Sparkles}
+              label="Animations"
+              hint="Popovers, view transitions and the visualizer. Turn off for a still, instant interface."
+              checked={prefs.animations}
+              onChange={(v) => onPref('animations', v)}
+            />
+            <Toggle
+              icon={Volume2}
+              label="Remember volume"
+              hint="Start every launch at the volume you left off at, instead of the default."
+              checked={prefs.rememberVolume}
+              onChange={(v) => onPref('rememberVolume', v)}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* 3. TYPING FEEDBACK */}
+      <div className="pt-4">
+        <SectionHeader
+          title="Typing Feedback"
+          subtitle="Mechanical switch acoustics while searching and chatting"
+          icon={<Keyboard className="w-4 h-4 text-sc-orange" />}
+        />
+        <div className="rounded-2xl border border-sc-line bg-sc-panel p-5 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-orange-500/15 border border-orange-500/30 flex items-center justify-center text-sc-orange">
+                <Keyboard className="w-4 h-4" />
+              </div>
+              <div>
+                <div className="text-[13px] font-bold text-sc-fg flex items-center gap-2">
+                  Mechanical Typing Feedback
+                  <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-white/10 text-white/70">
+                    Search &amp; Chat
+                  </span>
+                </div>
+                <p className="text-[11.5px] text-sc-muted mt-0.5">
+                  Authentic mechanical switch sounds while typing when music is paused.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                playTypingSound(undefined, prefs.typingSoundVolume ?? 0.6, prefs.typingSoundSwitch ?? 'tactile');
+              }}
+              title="Preview current switch sound"
+              className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white transition-all active:scale-95 cursor-pointer flex items-center gap-1.5"
+            >
+              <Volume2 className="w-3.5 h-3.5 text-sc-orange" />
+              Test Click
+            </button>
+          </div>
+
+          <Toggle
+            icon={Keyboard}
+            label="Enable typing sound effects"
+            hint="Plays realistic mechanical keystrokes only when no track is currently playing."
+            checked={prefs.typingSoundEnabled ?? true}
+            onChange={(v) => onPref('typingSoundEnabled', v)}
+          />
+
+          {prefs.typingSoundEnabled !== false && (
+            <div className="grid gap-4 sm:grid-cols-2 pt-2 border-t border-white/5">
+              <div>
+                <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
+                  <span>Keystroke volume</span>
+                  <span className="text-sc-orange-soft font-mono">
+                    {Math.round((prefs.typingSoundVolume ?? 0.6) * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={Math.round((prefs.typingSoundVolume ?? 0.6) * 100)}
+                  onChange={(e) => onPref('typingSoundVolume', Number(e.target.value) / 100)}
+                  className="w-full accent-[var(--color-sc-orange)]"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11.5px] font-semibold text-sc-fg block mb-1.5">
+                  Switch acoustic profile
+                </label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(
+                    [
+                      { id: 'tactile', label: 'Brown (Tactile)' },
+                      { id: 'clicky', label: 'Blue (Clicky)' },
+                      { id: 'thock', label: 'Cream (Thock)' },
+                      { id: 'typewriter', label: 'Typewriter' },
+                    ] as const
+                  ).map((sw) => (
+                    <button
+                      key={sw.id}
+                      type="button"
+                      onClick={() => {
+                        onPref('typingSoundSwitch', sw.id);
+                        playTypingSound(undefined, prefs.typingSoundVolume ?? 0.6, sw.id);
+                      }}
+                      className={clsx(
+                        'py-1.5 px-2.5 rounded-lg text-[11px] font-semibold border transition-all cursor-pointer text-left',
+                        (prefs.typingSoundSwitch || 'tactile') === sw.id
+                          ? 'bg-orange-500/15 border-orange-500/50 text-sc-orange font-bold'
+                          : 'bg-white/5 border-white/5 text-white/70 hover:bg-white/10 hover:text-white'
+                      )}
+                    >
+                      {sw.label}
                     </button>
                   ))}
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      </Disclosure>
-
-      <Disclosure
-        title="Storage"
-        subtitle={`${stats.alive} cached responses · ${stats.entries} keys total`}
-        icon={<ListVideo className="w-[18px] h-[18px] text-sc-orange" />}
-      >
-        <div className="pt-4 space-y-3">
-          <p className="text-[12px] text-sc-muted max-w-[60ch]">
-            Responses are cached so paging through the app does not re-hit SoundCloud. Clearing
-            the cache is safe: it is refetched as you browse, and your likes and playlists are
-            re-synced straight afterwards.
-          </p>
-          {error && (
-            <p className="text-[11px] text-rose-400/90 flex items-start gap-1.5">
-              <AlertTriangle className="w-3 h-3 mt-px shrink-0" />
-              Last error: {error}
-            </p>
           )}
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={onClearCache}
-              className="rounded-full bg-sc-fg px-4 py-2 text-[12px] font-bold text-sc-bg hover:scale-[1.03] active:scale-95 transition-all"
-            >
-              Clear cache
-            </button>
-            <button
-              type="button"
-              onClick={onClearHistory}
-              className="rounded-full border border-sc-line px-4 py-2 text-[12px] font-semibold text-sc-muted hover:text-sc-fg hover:border-neutral-600 transition-colors"
-            >
-              Clear listen history
-            </button>
-          </div>
-          <p className="text-[11px] text-sc-faint">
-            Connection status: {status}
-            {stats.inflight > 0 && ` · ${stats.inflight} request in flight`}
-            {stats.queued > 0 && ` · ${stats.queued} queued`}
-          </p>
         </div>
-      </Disclosure>
+      </div>
 
-      <Disclosure
-        title="Discord Rich Presence"
-        subtitle="Displays music status on your Discord profile"
-        icon={<Music className="w-[18px] h-[18px] text-sc-orange" />}
-      >
-        <div className="pt-4 space-y-3">
-          <p className="text-[12px] text-sc-muted max-w-[60ch]">
-            Status is active with the music listening icon (Listening to). To display a custom name like <strong>Abbadon</strong> instead of the default, create a free application named <strong>Abbadon</strong> on the{' '}
-            <a
-              href="https://discord.com/developers/applications"
-              target="_blank"
-              rel="noreferrer"
-              className="text-sc-orange underline hover:text-sc-orange/80 cursor-pointer"
-            >
-              Discord Developer Portal
-            </a>
-            , and paste its <strong>Application ID</strong> below:
-          </p>
-          <div className="flex gap-2 max-w-md">
-            <input
-              type="text"
-              placeholder="1177081335727267940 (Default)"
-              value={customDiscordId}
-              onChange={(e) => setCustomDiscordId(e.target.value)}
-              className="flex-1 rounded-xl border border-sc-line bg-sc-panel-2/60 px-3 py-1.5 text-xs text-sc-fg font-mono outline-none focus:border-sc-orange"
-            />
-            <button
-              type="button"
-              onClick={handleSaveDiscordId}
-              className="rounded-xl bg-sc-orange px-4 py-1.5 text-xs font-bold text-white hover:brightness-110 active:scale-95 transition-all cursor-pointer"
-            >
-              {savedDiscordMsg || 'Save'}
-            </button>
-          </div>
-        </div>
-      </Disclosure>
-
-      <SoftwareUpdatesPanel />
-
-      <SpotifyPanel {...spotify} />
-
-      {prefs.hiddenPlaylistIds?.length > 0 && (
-        <Disclosure
-          title={`Hidden Playlists (${prefs.hiddenPlaylistIds.length})`}
-          subtitle="Manage playlists hidden from your sidebar"
-          icon={<EyeOff className="w-[18px] h-[18px] text-sc-orange" />}
-          defaultOpen={false}
-        >
-          <div className="pt-3 space-y-2">
-            <div className="flex items-center justify-between pb-2">
-              <span className="text-[12px] text-sc-muted">
-                These playlists are hidden from your sidebar list.
-              </span>
-              <button
-                type="button"
-                onClick={() => onPref('hiddenPlaylistIds', [])}
-                className="text-[11px] font-semibold text-sc-orange-soft hover:underline cursor-pointer"
-              >
-                Unhide all
-              </button>
-            </div>
-            <div className="space-y-1.5 max-h-60 overflow-y-auto">
-              {prefs.hiddenPlaylistIds.map((hid) => {
-                const found = accountPlaylists?.find((p) => p.id === hid);
-                const title = found?.title ?? `Playlist #${hid}`;
-                return (
-                  <div
-                    key={hid}
-                    className="flex items-center justify-between p-2.5 rounded-xl border border-sc-line bg-sc-panel-2/40"
+      {/* 4. VISUALIZER & ATMOSPHERE */}
+      <div className="pt-4">
+        <SectionHeader
+          title="Visualizer & Atmosphere"
+          subtitle="Audio-reactive spectrum visualizers and cosmic backdrop styling"
+          icon={<Activity className="w-4 h-4 text-sc-orange" />}
+        />
+        <div className="space-y-4">
+          <Disclosure
+            id="settings-visualizer"
+            title="Visualizer"
+            subtitle={
+              visualizer === 'off'
+                ? 'Disabled'
+                : `${visualizer} · sensitivity ${(prefs.visualizerSensitivity ?? 1).toFixed(1)}x`
+            }
+            icon={<Activity className="w-[18px] h-[18px] text-sc-orange" />}
+            isOpen={visOpen}
+            onToggle={() => setVisOpen((v) => !v)}
+          >
+            <div className="space-y-5 pt-4">
+              <div className="grid gap-2 sm:grid-cols-2">
+                {VISUALIZER_MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => onVisualizer(m.id)}
+                    className={clsx(
+                      'flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
+                      visualizer === m.id
+                        ? 'border-sc-orange/60 bg-sc-orange/10'
+                        : 'border-sc-line bg-sc-panel-2/40 hover:border-neutral-600'
+                    )}
                   >
-                    <span className="text-[12.5px] font-medium text-sc-fg truncate">{title}</span>
-                    <button
-                      type="button"
-                      onClick={() =>
-                        onPref(
-                          'hiddenPlaylistIds',
-                          prefs.hiddenPlaylistIds.filter((id) => id !== hid)
-                        )
-                      }
-                      className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-sc-fill/10 hover:bg-sc-fill/20 text-sc-fg transition-colors cursor-pointer"
+                    <div
+                      className={clsx(
+                        'w-11 h-8 rounded-md bg-sc-bg/60 border border-sc-line/60 overflow-hidden flex-shrink-0',
+                        m.id === 'off' && 'opacity-30'
+                      )}
                     >
-                      Unhide
-                    </button>
+                      <Spectrum
+                        getFreq={null}
+                        active={false}
+                        bars={14}
+                        mode={m.id === 'off' ? 'bars' : m.id}
+                        demo
+                        threshold={prefs.visualizerThreshold}
+                        sensitivity={prefs.visualizerSensitivity}
+                        smoothing={prefs.visualizerSmoothing}
+                        className="w-full h-full"
+                      />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[12px] font-bold text-sc-fg">{m.label}</span>
+                        {visualizer === m.id && <Check className="w-3 h-3 text-sc-orange-soft" />}
+                      </div>
+                      <div className="text-[10px] text-sc-dim leading-tight">{m.hint}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {visualizer !== 'off' && (
+                <div className="rounded-xl border border-sc-line bg-sc-panel-2/40 p-4 space-y-4 animate-fade-in">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[12px] font-bold text-sc-fg">Live Preview & Tuning</span>
+                    <span className="text-[11px] text-sc-muted capitalize">{visualizer} mode</span>
                   </div>
-                );
-              })}
+
+                  <div className="rounded-lg border border-sc-line bg-sc-bg/80 p-3 h-28 flex items-center justify-center overflow-hidden">
+                    <Spectrum
+                      getFreq={null}
+                      active={false}
+                      bars={prefs.visualizerBars ?? (visualizer === 'bars' ? 48 : 64)}
+                      mode={visualizer}
+                      demo
+                      threshold={prefs.visualizerThreshold ?? 0.05}
+                      sensitivity={prefs.visualizerSensitivity ?? 1.0}
+                      smoothing={prefs.visualizerSmoothing ?? 0.8}
+                      className="w-full h-full"
+                    />
+                  </div>
+
+                  <div className="grid gap-4 sm:grid-cols-2 pt-2">
+                    <div>
+                      <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
+                        <span>Noise gate threshold</span>
+                        <span className="text-sc-orange-soft font-mono">
+                          {Math.round((prefs.visualizerThreshold ?? 0.05) * 100)}%
+                        </span>
+                      </div>
+                      <p className="text-[10.5px] text-sc-muted mb-2">
+                        Cuts out background noise so bars remain still when quiet.
+                      </p>
+                      <input
+                        type="range"
+                        min={0}
+                        max={0.35}
+                        step={0.01}
+                        value={prefs.visualizerThreshold ?? 0.05}
+                        onChange={(e) => onPref('visualizerThreshold', Number(e.target.value))}
+                        className="w-full accent-[var(--color-sc-orange)]"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
+                        <span>Sensitivity (Gain)</span>
+                        <span className="text-sc-orange-soft font-mono">
+                          {(prefs.visualizerSensitivity ?? 1.0).toFixed(1)}x
+                        </span>
+                      </div>
+                      <p className="text-[10.5px] text-sc-muted mb-2">
+                        Boosts bar movement on quiet or lower volume tracks.
+                      </p>
+                      <input
+                        type="range"
+                        min={0.5}
+                        max={2.5}
+                        step={0.1}
+                        value={prefs.visualizerSensitivity ?? 1.0}
+                        onChange={(e) => onPref('visualizerSensitivity', Number(e.target.value))}
+                        className="w-full accent-[var(--color-sc-orange)]"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
+                        <span>Falloff smoothing</span>
+                        <span className="text-sc-orange-soft font-mono">
+                          {Math.round((prefs.visualizerSmoothing ?? 0.8) * 100)}%
+                        </span>
+                      </div>
+                      <p className="text-[10.5px] text-sc-muted mb-2">
+                        Higher values make peaks decay smoothly; lower values make bars snappy.
+                      </p>
+                      <input
+                        type="range"
+                        min={0.3}
+                        max={0.95}
+                        step={0.05}
+                        value={prefs.visualizerSmoothing ?? 0.8}
+                        onChange={(e) => onPref('visualizerSmoothing', Number(e.target.value))}
+                        className="w-full accent-[var(--color-sc-orange)]"
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
+                        <span>Bar density</span>
+                        <span className="text-sc-orange-soft font-mono">
+                          {prefs.visualizerBars ?? 48} bars
+                        </span>
+                      </div>
+                      <p className="text-[10.5px] text-sc-muted mb-2">
+                        Number of spectrum bands drawn across the canvas.
+                      </p>
+                      <div className="flex items-center gap-1.5 pt-1">
+                        {[24, 36, 48, 64, 80].map((count) => (
+                          <button
+                            key={count}
+                            type="button"
+                            onClick={() => onPref('visualizerBars', count)}
+                            className={clsx(
+                              'flex-1 py-1 rounded-md text-[11px] font-bold border transition-all cursor-pointer',
+                              (prefs.visualizerBars ?? 48) === count
+                                ? 'bg-sc-orange/15 text-sc-orange-soft border-sc-orange/50'
+                                : 'bg-sc-panel border-sc-line text-sc-dim hover:text-sc-fg'
+                            )}
+                          >
+                            {count}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        </Disclosure>
-      )}
+          </Disclosure>
+
+          <Disclosure
+            id="settings-background"
+            title="Background"
+            subtitle={`${BG_MODES.find((m) => m.id === prefs.bgMode)?.label ?? 'Cosmic'} · variation ${Math.round(
+              (prefs.bgVariation ?? 0) * 100
+            )}%`}
+            icon={<Sparkles className="w-[18px] h-[18px] text-sc-orange" />}
+          >
+            <div className="space-y-5 pt-4">
+              <div className="grid gap-2 sm:grid-cols-3">
+                {BG_MODES.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => onPref('bgMode', m.id)}
+                    aria-pressed={prefs.bgMode === m.id}
+                    className={clsx(
+                      'flex items-center gap-3 rounded-xl border p-3 text-left transition-all',
+                      prefs.bgMode === m.id
+                        ? 'border-sc-orange/60 bg-sc-orange/10'
+                        : 'border-sc-line bg-sc-panel-2/40 hover:border-sc-dim'
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-[12px] font-bold text-sc-fg">{m.label}</span>
+                        {prefs.bgMode === m.id && (
+                          <Check className="w-3 h-3 text-sc-orange-soft" />
+                        )}
+                      </div>
+                      <div className="text-[10px] text-sc-dim leading-tight">{m.hint}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              <div className="grid gap-2 sm:grid-cols-2">
+                <Toggle
+                  icon={Sparkles}
+                  label="Shooting stars"
+                  hint="Meteors streaking across the sky, more often when the bass hits."
+                  checked={prefs.bgShootingStars}
+                  onChange={(v) => onPref('bgShootingStars', v)}
+                />
+                <Toggle
+                  icon={Activity}
+                  label="React to the music"
+                  hint="Twinkle and brightness follow the spectrum of whatever is playing."
+                  checked={prefs.bgAudioReactive}
+                  onChange={(v) => onPref('bgAudioReactive', v)}
+                />
+              </div>
+
+              <div className="rounded-xl border border-sc-line bg-sc-panel-2/40 p-4 space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[12px] font-bold text-sc-fg">Variation &amp; motion</span>
+                  <span className="text-[11px] text-sc-muted">
+                    {prefs.bgMode === 'off' ? 'Hidden until a mode is on' : 'Applies live'}
+                  </span>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
+                      <span>Background variation</span>
+                      <span className="text-sc-orange-soft font-mono">
+                        {Math.round((prefs.bgVariation ?? 0) * 100)}%
+                      </span>
+                    </div>
+                    <p className="text-[10.5px] text-sc-muted mb-2">
+                      How much the backdrop changes over time. At 0% the palette is pinned;
+                      higher values keep the glow cycling and spread the star colours.
+                    </p>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={prefs.bgVariation ?? 0}
+                      onChange={(e) => onPref('bgVariation', Number(e.target.value))}
+                      className="w-full accent-[var(--color-sc-orange)]"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
+                      <span>Star density</span>
+                      <span className="text-sc-orange-soft font-mono">
+                        {(prefs.bgStarDensity ?? 1).toFixed(1)}x
+                      </span>
+                    </div>
+                    <p className="text-[10.5px] text-sc-muted mb-2">
+                      Scales the number of stars and dust motes drawn per mode.
+                    </p>
+                    <input
+                      type="range"
+                      min={0.5}
+                      max={2.5}
+                      step={0.1}
+                      value={prefs.bgStarDensity ?? 1}
+                      onChange={(e) => onPref('bgStarDensity', Number(e.target.value))}
+                      className="w-full accent-[var(--color-sc-orange)]"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
+                      <span>Animation speed</span>
+                      <span className="text-sc-orange-soft font-mono">
+                        {(prefs.bgSpeed ?? 1).toFixed(1)}x
+                      </span>
+                    </div>
+                    <p className="text-[10.5px] text-sc-muted mb-2">
+                      Drift and twinkle rate for the whole backdrop.
+                    </p>
+                    <input
+                      type="range"
+                      min={0.5}
+                      max={2}
+                      step={0.1}
+                      value={prefs.bgSpeed ?? 1}
+                      onChange={(e) => onPref('bgSpeed', Number(e.target.value))}
+                      className="w-full accent-[var(--color-sc-orange)]"
+                    />
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
+                      <span>Glow intensity</span>
+                      <span className="text-sc-orange-soft font-mono">
+                        {(prefs.bgIntensity ?? 1).toFixed(1)}x
+                      </span>
+                    </div>
+                    <p className="text-[10.5px] text-sc-muted mb-2">
+                      Brightness of the orbs and of every star drawn.
+                    </p>
+                    <input
+                      type="range"
+                      min={0.2}
+                      max={1.8}
+                      step={0.1}
+                      value={prefs.bgIntensity ?? 1}
+                      onChange={(e) => onPref('bgIntensity', Number(e.target.value))}
+                      className="w-full accent-[var(--color-sc-orange)]"
+                    />
+                  </div>
+
+                  {prefs.bgAudioReactive && (
+                    <div>
+                      <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
+                        <span>Music sensitivity</span>
+                        <span className="text-sc-orange-soft font-mono">
+                          {(prefs.bgSensitivity ?? 1).toFixed(1)}x
+                        </span>
+                      </div>
+                      <p className="text-[10.5px] text-sc-muted mb-2">
+                        How hard the spectrum pushes the twinkle and the meteors.
+                      </p>
+                      <input
+                        type="range"
+                        min={0.5}
+                        max={2.5}
+                        step={0.1}
+                        value={prefs.bgSensitivity ?? 1}
+                        onChange={(e) => onPref('bgSensitivity', Number(e.target.value))}
+                        className="w-full accent-[var(--color-sc-orange)]"
+                      />
+                    </div>
+                  )}
+
+                  <div>
+                    <div className="flex justify-between text-[11.5px] font-semibold text-sc-fg mb-1">
+                      <span>Colour source</span>
+                    </div>
+                    <p className="text-[10.5px] text-sc-muted mb-2">
+                      What the glow and the stars take their hue from.
+                    </p>
+                    <div className="flex items-center gap-1.5 pt-1">
+                      {BG_COLOR_SOURCES.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          onClick={() => onPref('bgColorSource', c.id)}
+                          className={clsx(
+                            'flex-1 py-1.5 rounded-md text-[11px] font-bold border transition-all cursor-pointer',
+                            (prefs.bgColorSource ?? 'artwork') === c.id
+                              ? 'bg-sc-orange/15 text-sc-orange-soft border-sc-orange/50'
+                              : 'bg-sc-panel border-sc-line text-sc-dim hover:text-sc-fg'
+                          )}
+                        >
+                          {c.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </Disclosure>
+        </div>
+      </div>
+
+      {/* 5. INTEGRATIONS & SOCIAL */}
+      <div className="pt-4">
+        <SectionHeader
+          title="Integrations & Social"
+          subtitle="Connect Discord Rich Presence, Last.fm scrobbler, and Spotify playlists"
+          icon={<Users className="w-4 h-4 text-sc-orange" />}
+        />
+        <div className="space-y-4">
+          <Disclosure
+            title="Discord Rich Presence"
+            subtitle="Displays music status on your Discord profile"
+            icon={<Music className="w-[18px] h-[18px] text-sc-orange" />}
+          >
+            <div className="pt-4 space-y-3">
+              <p className="text-[12px] text-sc-muted max-w-[60ch]">
+                Status is active with the music listening icon (Listening to). To display a custom name like <strong>Abbadon</strong> instead of the default, create a free application named <strong>Abbadon</strong> on the{' '}
+                <a
+                  href="https://discord.com/developers/applications"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-sc-orange underline hover:text-sc-orange/80 cursor-pointer"
+                >
+                  Discord Developer Portal
+                </a>
+                , and paste its <strong>Application ID</strong> below:
+              </p>
+              <div className="flex gap-2 max-w-md">
+                <input
+                  type="text"
+                  placeholder="1177081335727267940 (Default)"
+                  value={customDiscordId}
+                  onChange={(e) => setCustomDiscordId(e.target.value)}
+                  className="flex-1 rounded-xl border border-sc-line bg-sc-panel-2/60 px-3 py-1.5 text-xs text-sc-fg font-mono outline-none focus:border-sc-orange"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveDiscordId}
+                  className="rounded-xl bg-sc-orange px-4 py-1.5 text-xs font-bold text-white hover:brightness-110 active:scale-95 transition-all cursor-pointer"
+                >
+                  {savedDiscordMsg || 'Save'}
+                </button>
+              </div>
+            </div>
+          </Disclosure>
+
+          <Disclosure
+            title="Last.fm Scrobbler"
+            subtitle="Automatic scrobbling and live Now Playing status"
+            icon={<Radio className="w-[18px] h-[18px] text-sc-orange" />}
+          >
+            <div className="pt-4 space-y-4">
+              <Toggle
+                icon={Radio}
+                label="Enable Last.fm scrobbling"
+                hint="Broadcasts real-time Now Playing status and automatically submits completed tracks."
+                checked={prefs.lastFmEnabled}
+                onChange={(v) => onPref('lastFmEnabled', v)}
+              />
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs font-semibold text-sc-muted block mb-1">Last.fm Username</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. your_lastfm_user"
+                    value={prefs.lastFmUsername || ''}
+                    onChange={(e) => onPref('lastFmUsername', e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-sc-fg placeholder:text-sc-faint focus:outline-none focus:border-sc-orange/60"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-sc-muted block mb-1">Session Key</label>
+                  <input
+                    type="password"
+                    placeholder="Last.fm 32-character session key..."
+                    value={prefs.lastFmSessionKey || ''}
+                    onChange={(e) => onPref('lastFmSessionKey', e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/[0.08] text-xs text-sc-fg placeholder:text-sc-faint focus:outline-none focus:border-sc-orange/60 font-mono"
+                  />
+                </div>
+              </div>
+            </div>
+          </Disclosure>
+
+          <SpotifyPanel {...spotify} />
+        </div>
+      </div>
+
+      {/* 6. SYSTEM & STORAGE */}
+      <div className="pt-4">
+        <SectionHeader
+          title="System & Storage"
+          subtitle="Catalog sources, proxy bypass, updates, cache, and hidden playlists"
+          icon={<ListVideo className="w-4 h-4 text-sc-orange" />}
+        />
+        <div className="space-y-4">
+          <Disclosure
+            title="Music source"
+            subtitle="Search and the library screen operate on this catalog"
+            icon={<Cloud className="w-[18px] h-[18px] text-sc-orange" />}
+          >
+            <div className="grid gap-2 sm:grid-cols-2 pt-4">
+              {MUSIC_SOURCES_UI.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => onPref('source', s.id)}
+                  aria-pressed={prefs.source === s.id}
+                  className={clsx(
+                    'w-full text-left rounded-xl border p-3 transition-all relative overflow-hidden',
+                    prefs.source === s.id
+                      ? 'border-sc-orange/60 bg-sc-orange/10'
+                      : 'border-sc-line bg-sc-panel-2/40 hover:border-sc-dim'
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[13px] font-bold text-sc-fg">{s.label}</span>
+                    {prefs.source === s.id && (
+                      <Check className="w-3.5 h-3.5 text-sc-orange shrink-0" />
+                    )}
+                  </div>
+                  <div className="text-[11px] text-sc-muted mt-0.5">{s.description}</div>
+                </button>
+              ))}
+            </div>
+          </Disclosure>
+
+          <SoftwareUpdatesPanel />
+
+          <ProxyPanel prefs={prefs} onPref={onPref} />
+
+          <Disclosure
+            title="Storage"
+            subtitle={`${stats.alive} cached responses · ${stats.entries} keys total`}
+            icon={<ListVideo className="w-[18px] h-[18px] text-sc-orange" />}
+          >
+            <div className="pt-4 space-y-3">
+              <p className="text-[12px] text-sc-muted max-w-[60ch]">
+                Responses are cached so paging through the app does not re-hit SoundCloud. Clearing
+                the cache is safe: it is refetched as you browse, and your likes and playlists are
+                re-synced straight afterwards.
+              </p>
+              {error && (
+                <p className="text-[11px] text-rose-400/90 flex items-start gap-1.5">
+                  <AlertTriangle className="w-3 h-3 mt-px shrink-0" />
+                  Last error: {error}
+                </p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={onClearCache}
+                  className="rounded-full bg-sc-fg px-4 py-2 text-[12px] font-bold text-sc-bg hover:scale-[1.03] active:scale-95 transition-all"
+                >
+                  Clear cache
+                </button>
+                <button
+                  type="button"
+                  onClick={onClearHistory}
+                  className="rounded-full border border-sc-line px-4 py-2 text-[12px] font-semibold text-sc-muted hover:text-sc-fg hover:border-neutral-600 transition-colors"
+                >
+                  Clear listen history
+                </button>
+              </div>
+              <p className="text-[11px] text-sc-faint">
+                Connection status: {status}
+                {stats.inflight > 0 && ` · ${stats.inflight} request in flight`}
+                {stats.queued > 0 && ` · ${stats.queued} queued`}
+              </p>
+            </div>
+          </Disclosure>
+
+          {prefs.hiddenPlaylistIds?.length > 0 && (
+            <Disclosure
+              title={`Hidden Playlists (${prefs.hiddenPlaylistIds.length})`}
+              subtitle="Manage playlists hidden from your sidebar"
+              icon={<EyeOff className="w-[18px] h-[18px] text-sc-orange" />}
+              defaultOpen={false}
+            >
+              <div className="pt-3 space-y-2">
+                <div className="flex items-center justify-between pb-2">
+                  <span className="text-[12px] text-sc-muted">
+                    These playlists are hidden from your sidebar list.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => onPref('hiddenPlaylistIds', [])}
+                    className="text-[11px] font-semibold text-sc-orange-soft hover:underline cursor-pointer"
+                  >
+                    Unhide all
+                  </button>
+                </div>
+                <div className="space-y-1.5 max-h-60 overflow-y-auto">
+                  {prefs.hiddenPlaylistIds.map((hid) => {
+                    const found = accountPlaylists?.find((p) => p.id === hid);
+                    const title = found?.title ?? `Playlist #${hid}`;
+                    return (
+                      <div
+                        key={hid}
+                        className="flex items-center justify-between p-2.5 rounded-xl border border-sc-line bg-sc-panel-2/40"
+                      >
+                        <span className="text-[12.5px] font-medium text-sc-fg truncate">{title}</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onPref(
+                              'hiddenPlaylistIds',
+                              prefs.hiddenPlaylistIds.filter((id) => id !== hid)
+                            )
+                          }
+                          className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-sc-fill/10 hover:bg-sc-fill/20 text-sc-fg transition-colors cursor-pointer"
+                        >
+                          Unhide
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </Disclosure>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

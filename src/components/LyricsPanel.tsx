@@ -371,10 +371,14 @@ export function LyricsPanel({
           <div className="mb-2.5 flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-sc-dim shrink-0 pb-2 border-b border-white/5">
             <div className="flex items-center gap-2">
               <Music4 className="w-3.5 h-3.5 text-sc-orange" />
-              <span>Lyrics</span>
-              {state.lyrics.synced && (
+              <span>Tekst utworu</span>
+              {state.lyrics.synced ? (
                 <span className="text-sc-orange normal-case tracking-normal font-semibold px-2 py-0.5 rounded-full bg-sc-orange/15 text-[10px]">
-                  synced
+                  synced (LRC)
+                </span>
+              ) : (
+                <span className="text-sc-muted normal-case tracking-normal font-medium px-2 py-0.5 rounded-full bg-white/5 text-[10px]">
+                  {state.lyrics.source === 'lyrics.ovh' ? 'lyrics.ovh' : 'tekst'}
                 </span>
               )}
             </div>

@@ -2149,38 +2149,38 @@ function GlobalShortcutsPanel({
   }[] = [
     {
       key: 'shortcutToggle',
-      label: 'Play / Pause (Odtwarzaj / Wstrzymaj)',
-      desc: 'Wznawia lub pauzuje aktualnie odtwarzany utwór',
+      label: 'Play / Pause',
+      desc: 'Resume or pause the currently playing track',
       defaultVal: 'Ctrl+Alt+Space',
     },
     {
       key: 'shortcutNext',
-      label: 'Następny utwór (Next Track)',
-      desc: 'Przechodzi do kolejnego utworu w kolejce',
+      label: 'Next Track',
+      desc: 'Skip forward to the next track in queue',
       defaultVal: 'Ctrl+Alt+Right',
     },
     {
       key: 'shortcutPrev',
-      label: 'Poprzedni utwór (Previous Track)',
-      desc: 'Cofa do poprzedniego utworu lub na początek',
+      label: 'Previous Track',
+      desc: 'Return to previous track or start of current track',
       defaultVal: 'Ctrl+Alt+Left',
     },
     {
       key: 'shortcutVolumeUp',
-      label: 'Zwiększ głośność (Volume Up)',
-      desc: 'Podgłaśnia odtwarzacz o +5%',
+      label: 'Volume Up',
+      desc: 'Increase master playback volume by +5%',
       defaultVal: 'Ctrl+Alt+Up',
     },
     {
       key: 'shortcutVolumeDown',
-      label: 'Zmniejsz głośność (Volume Down)',
-      desc: 'Ścisza odtwarzacz o -5%',
+      label: 'Volume Down',
+      desc: 'Decrease master playback volume by -5%',
       defaultVal: 'Ctrl+Alt+Down',
     },
     {
       key: 'shortcutMiniPlayer',
-      label: 'Przełącz Mini Player',
-      desc: 'Szybkie otwieranie / ukrywanie pływającego mini playera',
+      label: 'Toggle Mini Player',
+      desc: 'Quickly open or hide floating desktop mini player',
       defaultVal: 'Ctrl+Alt+M',
     },
   ];
@@ -2188,6 +2188,12 @@ function GlobalShortcutsPanel({
   const handleKeyDown = (e: React.KeyboardEvent, prefKey: keyof Prefs) => {
     e.preventDefault();
     e.stopPropagation();
+
+    // Cancel recording on Escape
+    if (e.key === 'Escape') {
+      setRecordingKey(null);
+      return;
+    }
 
     // Ignore standalone modifier presses
     if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
@@ -2221,76 +2227,159 @@ function GlobalShortcutsPanel({
     onPref('globalShortcutsEnabled', true);
   };
 
+  const isEnabled = Boolean(prefs.globalShortcutsEnabled);
+
   return (
     <div className="space-y-4">
-      {/* Master Toggle */}
-      <div className="flex items-center justify-between p-3.5 rounded-xl border border-sc-line bg-sc-panel-2/30">
-        <div>
-          <div className="text-[13px] font-bold text-sc-fg">Globalne skróty multimedialne</div>
-          <div className="text-[11.5px] text-sc-muted mt-0.5">
-            Działają w całym systemie Windows, również przy zminimalizowanej aplikacji i podczas gier.
+      {/* Master Toggle Banner */}
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onPref('globalShortcutsEnabled', !isEnabled)}
+        onKeyDown={(e) => {
+          if (e.key === ' ' || e.key === 'Enter') {
+            e.preventDefault();
+            onPref('globalShortcutsEnabled', !isEnabled);
+          }
+        }}
+        className={clsx(
+          'w-full flex items-center justify-between p-3.5 rounded-xl border text-left transition-all duration-200 cursor-pointer select-none',
+          isEnabled
+            ? 'border-sc-orange/50 bg-sc-orange/8 shadow-sm'
+            : 'border-sc-line bg-sc-panel-2/30 hover:border-sc-dim hover:bg-sc-fill/5'
+        )}
+      >
+        <div className="flex items-center gap-3">
+          <div
+            className={clsx(
+              'w-8 h-8 rounded-lg flex items-center justify-center shrink-0 transition-colors duration-200',
+              isEnabled ? 'bg-sc-orange/15 text-sc-orange-soft' : 'bg-sc-fill/6 text-sc-dim'
+            )}
+          >
+            <Keyboard className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="text-[13px] font-bold text-sc-fg flex items-center gap-2">
+              <span>Enable Global Shortcuts</span>
+              <span
+                className={clsx(
+                  'text-[10px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider',
+                  isEnabled
+                    ? 'bg-sc-orange/20 text-sc-orange'
+                    : 'bg-sc-fill/10 text-sc-dim'
+                )}
+              >
+                {isEnabled ? 'Enabled' : 'Disabled'}
+              </span>
+            </div>
+            <div className="text-[11.5px] text-sc-muted mt-0.5">
+              Control music playback from any background application or game
+            </div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => onPref('globalShortcutsEnabled', !prefs.globalShortcutsEnabled)}
+
+        {/* Sliding Switch Control */}
+        <span
           className={clsx(
-            'px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer',
-            prefs.globalShortcutsEnabled
-              ? 'bg-sc-orange text-white shadow-md shadow-sc-orange/20'
-              : 'border border-sc-line bg-sc-panel text-sc-muted hover:text-sc-fg'
+            'relative h-5 w-9 shrink-0 rounded-full transition-colors duration-200',
+            isEnabled ? 'bg-sc-orange' : 'bg-sc-fill/20'
           )}
         >
-          {prefs.globalShortcutsEnabled ? 'Włączone' : 'Wyłączone'}
-        </button>
+          <span
+            className={clsx(
+              'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-all duration-200',
+              isEnabled ? 'left-[1.125rem]' : 'left-0.5'
+            )}
+          />
+        </span>
       </div>
 
       {/* Shortcut list */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
+      <div
+        className={clsx(
+          'grid grid-cols-1 md:grid-cols-2 gap-2.5 transition-opacity duration-200',
+          !isEnabled && 'opacity-40 pointer-events-none select-none'
+        )}
+      >
         {SHORTCUT_ROWS.map((row) => {
           const val = String(prefs[row.key] || row.defaultVal);
           const isRecording = recordingKey === row.key;
+          const isCustom = val !== row.defaultVal;
 
           return (
             <div
               key={row.key}
               className={clsx(
-                'p-3 rounded-xl border transition-all flex flex-col justify-between gap-2',
+                'p-3.5 rounded-xl border transition-all flex flex-col justify-between gap-2.5',
                 isRecording
-                  ? 'border-sc-orange bg-sc-orange/10 ring-2 ring-sc-orange/30'
+                  ? 'border-sc-orange bg-sc-orange/10 ring-2 ring-sc-orange/30 shadow-md'
                   : 'border-sc-line bg-sc-panel-2/40'
               )}
             >
               <div className="min-w-0">
-                <div className="text-[12.5px] font-bold text-sc-fg">{row.label}</div>
-                <div className="text-[10.5px] text-sc-muted mt-0.5 leading-snug">{row.desc}</div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[12.5px] font-bold text-sc-fg">{row.label}</span>
+                  {isCustom && (
+                    <span className="text-[9.5px] font-semibold text-sc-orange bg-sc-orange/10 px-1.5 py-0.5 rounded">
+                      Custom
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-sc-muted mt-0.5 leading-snug">{row.desc}</div>
               </div>
 
-              <div className="flex items-center gap-2 mt-1">
+              <div className="flex items-center gap-2 mt-0.5">
                 <button
                   type="button"
                   onClick={() => setRecordingKey(isRecording ? null : (row.key as string))}
                   onKeyDown={(e) => isRecording && handleKeyDown(e, row.key)}
                   className={clsx(
-                    'flex-1 py-1.5 px-3 rounded-lg text-xs font-mono font-bold text-center border transition-all cursor-pointer select-none',
+                    'flex-1 min-h-[34px] py-1.5 px-3 rounded-lg text-xs font-mono font-bold text-center border transition-all cursor-pointer select-none flex items-center justify-center gap-1.5',
                     isRecording
-                      ? 'bg-sc-orange text-white border-sc-orange animate-pulse'
-                      : 'bg-sc-panel border-sc-line text-sc-fg hover:border-sc-dim hover:text-sc-orange'
+                      ? 'bg-sc-orange text-white border-sc-orange animate-pulse shadow-sm'
+                      : 'bg-sc-panel border-sc-line text-sc-fg hover:border-sc-dim hover:text-sc-orange hover:bg-sc-panel-2/80'
                   )}
-                  title="Kliknij, aby zmienić skrót klawiszowy"
+                  title={isRecording ? 'Press combination or Esc to cancel' : 'Click to rebind shortcut'}
                 >
-                  {isRecording ? 'Wciśnij klawisze...' : val}
+                  {isRecording ? (
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                      <span>Press key combo... (Esc to cancel)</span>
+                    </span>
+                  ) : (
+                    <span className="flex flex-wrap items-center gap-1">
+                      {val.split('+').map((part, idx, arr) => (
+                        <span key={idx} className="inline-flex items-center gap-1">
+                          <kbd className="px-1.5 py-0.5 text-[11px] font-mono font-semibold rounded bg-sc-panel-2 border border-sc-line shadow-xs text-sc-fg">
+                            {part}
+                          </kbd>
+                          {idx < arr.length - 1 && <span className="text-[10px] text-sc-dim font-bold">+</span>}
+                        </span>
+                      ))}
+                    </span>
+                  )}
                 </button>
 
-                {val !== row.defaultVal && (
+                {isRecording ? (
                   <button
                     type="button"
-                    onClick={() => onPref(row.key, row.defaultVal as any)}
-                    className="p-1.5 text-sc-muted hover:text-sc-fg text-[11px] rounded-lg border border-sc-line hover:border-sc-dim transition-colors cursor-pointer"
-                    title="Przywróć domyślny skrót"
+                    onClick={() => setRecordingKey(null)}
+                    className="p-2 text-sc-muted hover:text-sc-fg text-[11px] rounded-lg border border-sc-line bg-sc-panel hover:border-sc-dim transition-colors cursor-pointer"
+                    title="Cancel recording"
                   >
-                    <RotateCcw className="w-3.5 h-3.5" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
+                ) : (
+                  isCustom && (
+                    <button
+                      type="button"
+                      onClick={() => onPref(row.key, row.defaultVal as any)}
+                      className="p-2 text-sc-muted hover:text-sc-fg text-[11px] rounded-lg border border-sc-line bg-sc-panel hover:border-sc-dim transition-colors cursor-pointer"
+                      title={`Reset to default (${row.defaultVal})`}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                  )
                 )}
               </div>
             </div>
@@ -2302,9 +2391,10 @@ function GlobalShortcutsPanel({
         <button
           type="button"
           onClick={resetAllDefaults}
-          className="px-3 py-1.5 text-xs text-sc-muted hover:text-sc-fg border border-sc-line rounded-xl hover:border-sc-dim transition-colors cursor-pointer"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs text-sc-muted hover:text-sc-fg border border-sc-line rounded-xl hover:border-sc-dim transition-colors cursor-pointer"
         >
-          Przywróć wszystkie domyślne skróty
+          <RotateCcw className="w-3.5 h-3.5" />
+          <span>Reset all shortcuts to defaults</span>
         </button>
       </div>
     </div>
@@ -2546,8 +2636,8 @@ export function SettingsView({
           </Disclosure>
 
           <Disclosure
-            title="Global Media Keybinds"
-            subtitle="System-wide shortcuts to control playback anywhere on your PC"
+            title="Global Media Shortcuts"
+            subtitle="System-wide key combinations to control playback while using other apps or games"
             icon={<Keyboard className="w-[18px] h-[18px] text-sc-orange" />}
             defaultOpen={false}
           >
@@ -3171,7 +3261,7 @@ export function SettingsView({
         <div className="space-y-4">
           <Disclosure
             title="Discord Rich Presence"
-            subtitle="Automatycznie wyświetla słuchany utwór na Twoim profilu Discord"
+            subtitle="Automatically broadcast your currently playing track to your Discord profile"
             icon={<Music className="w-[18px] h-[18px] text-sc-orange" />}
           >
             <div className="pt-4 space-y-3">
@@ -3181,13 +3271,13 @@ export function SettingsView({
                 </div>
                 <div className="space-y-1">
                   <div className="text-[12.5px] font-bold text-sc-fg flex items-center gap-2">
-                    Oficjalna integracja Abbadon na Discordzie
+                    Official Abbadon Discord Presence
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold bg-emerald-500/15 text-emerald-400">
-                      Aktywna
+                      Active
                     </span>
                   </div>
                   <p className="text-[11.5px] text-sc-muted leading-relaxed">
-                    Aplikacja automatycznie łączy się z Twoim Discordem i wyświetla status <strong>„Słucha Abbadon”</strong> z okładką albumu, tytułem utworu, wykonawcą oraz przyciskami do wspólnego słuchania z przyjaciółmi.
+                    The app automatically connects to local Discord on your PC and shows <strong>"Listening to Abbadon"</strong> status with high-res artwork, track title, artist, live elapsed time, and quick listen buttons for friends.
                   </p>
                 </div>
               </div>

@@ -2,7 +2,7 @@
   "name": "abbadon",
   "productName": "Abbadon",
   "private": true,
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Desktop SoundCloud player with rate-limit protection",
   "author": "Abbadon",
   "license": "MIT",

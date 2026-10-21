@@ -1783,10 +1783,10 @@ function MiniPlayerSettingsPanel({
   onPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
 }) {
   const BLUR_OPTIONS = [
-    { id: 'none', label: 'Brak / Transparent', desc: 'Czyste przezroczyste szkło bez rozmywania tła' },
-    { id: 'subtle', label: 'Lekki blur', desc: 'Subtelne zmiękczenie krawędzi i tła (8px)' },
-    { id: 'frosted', label: 'Matowe szkło (Frosted)', desc: 'Klasyczne mleczne szkło z refleksem (20px)' },
-    { id: 'heavy', label: 'Głęboki akryl (Acrylic)', desc: 'Głębokie rozmycie Fluent Acrylic (40px)' },
+    { id: 'none', label: 'Krystaliczne szkło (Clear)', desc: 'Czysta przezroczystość bez zmatowienia' },
+    { id: 'subtle', label: 'Satynowe szkło (Satin)', desc: 'Subtelne wykończenie z refleksem krawędzi' },
+    { id: 'frosted', label: 'Matowe / Mleczne (Frosted)', desc: 'Tekstura mlecznego szkła ze specularnym blaskiem' },
+    { id: 'heavy', label: 'Dymione szkło (Smoked)', desc: 'Głębokie ciemniejsze szkło z nasyconym refleksem' },
     { id: 'solid', label: 'Pełne krycie (Solid)', desc: '100% nieprzezroczyste tło motywu' },
   ] as const;
 
@@ -1818,42 +1818,50 @@ function MiniPlayerSettingsPanel({
 
     if (blur === 'none') {
       return {
-        className: 'backdrop-blur-none border border-white/20 shadow-2xl',
+        className: 'border border-white/20 shadow-2xl',
         style: {
           backgroundColor: baseBg,
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
+          backdropFilter: 'none',
+          WebkitBackdropFilter: 'none',
         },
       };
     }
 
     if (blur === 'subtle') {
       return {
-        className: 'backdrop-blur-sm border border-white/25 shadow-2xl',
+        className: 'border border-white/25 shadow-2xl',
         style: {
           backgroundColor: baseBg,
-          boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.18), 0 12px 36px rgba(0, 0, 0, 0.55)',
+          boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.20), 0 12px 36px rgba(0, 0, 0, 0.55)',
+          backdropFilter: 'blur(8px)',
+          WebkitBackdropFilter: 'blur(8px)',
         },
       };
     }
 
     if (blur === 'frosted') {
       return {
-        className: 'backdrop-blur-md border border-white/35 shadow-2xl',
+        className: 'border border-white/35 shadow-2xl',
         style: {
-          backgroundImage: 'linear-gradient(135deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.02) 100%)',
+          backgroundImage: 'linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.02) 100%)',
           backgroundColor: baseBg,
           boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.25), 0 16px 44px rgba(0, 0, 0, 0.65)',
+          backdropFilter: 'blur(20px)',
+          WebkitBackdropFilter: 'blur(20px)',
         },
       };
     }
 
-    // heavy (acrylic)
+    // heavy (smoked)
     return {
-      className: 'backdrop-blur-2xl border border-white/30 shadow-2xl',
+      className: 'border border-white/30 shadow-2xl',
       style: {
         backgroundImage: 'radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.12) 0%, transparent 75%)',
         backgroundColor: baseBg,
         boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.35), 0 20px 50px rgba(0, 0, 0, 0.75)',
+        backdropFilter: 'blur(36px)',
+        WebkitBackdropFilter: 'blur(36px)',
       },
     };
   };

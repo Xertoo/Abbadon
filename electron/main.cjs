@@ -1631,8 +1631,24 @@ let isMiniPinned = true;
 let miniCustomPos = null;
 let lastMiniPrefs = null;
 
+function applyMiniWindowMaterial(blurMode) {
+  if (!trayWin || trayWin.isDestroyed()) return;
+  try {
+    if (blurMode === 'solid' || blurMode === 'none') {
+      trayWin.setBackgroundMaterial('none');
+    } else if (blurMode === 'subtle') {
+      trayWin.setBackgroundMaterial('mica');
+    } else {
+      trayWin.setBackgroundMaterial('acrylic');
+    }
+  } catch {}
+}
+
 function createTrayWindow() {
   if (trayWin && !trayWin.isDestroyed()) return trayWin;
+  const initialBlur = lastMiniPrefs?.miniBlur || 'heavy';
+  const initialMaterial = (initialBlur === 'solid' || initialBlur === 'none') ? 'none' : (initialBlur === 'subtle' ? 'mica' : 'acrylic');
+
   trayWin = new BrowserWindow({
     width: 360,
     height: 205,
@@ -1643,6 +1659,7 @@ function createTrayWindow() {
     skipTaskbar: true,
     transparent: true,
     backgroundColor: '#00000000',
+    backgroundMaterial: initialMaterial,
     hasShadow: false,
     title: 'Abbadon Mini',
     webPreferences: {
@@ -1706,6 +1723,7 @@ function toggleTrayWindow() {
   }
   trayWin.setAlwaysOnTop(isMiniPinned, 'screen-saver');
   if (lastMiniPrefs) {
+    applyMiniWindowMaterial(lastMiniPrefs.miniBlur);
     trayWin.webContents.send('sc:sync-mini-prefs', lastMiniPrefs);
   }
   trayWin.show();
@@ -1717,6 +1735,7 @@ function toggleTrayWindow() {
 ipcMain.on('mini:prefs', (_e, prefs) => {
   lastMiniPrefs = prefs;
   if (trayWin && !trayWin.isDestroyed()) {
+    applyMiniWindowMaterial(prefs?.miniBlur);
     trayWin.webContents.send('sc:sync-mini-prefs', prefs);
   }
 });

@@ -566,7 +566,6 @@ export function useAudioEngine(): PlayerApi {
   const compGainRef = useRef<GainNode | null>(null);
   const autoTrimSilenceRef = useRef(true);
   const silenceStreakRef = useRef(0);
-  const introCheckCountRef = useRef(0);
 
   const ensureGraph = useCallback(() => {
     const slots = slotsRef.current;
@@ -731,8 +730,8 @@ export function useAudioEngine(): PlayerApi {
       const el = curSlot?.el;
       if (!el || el.paused || el.ended || !isFinite(el.duration) || el.duration <= 10) return;
 
-      // 1. Bound-based start silence check (e.g. from waveform)
-      if (curSlot.startSilenceSec && curSlot.startSilenceSec >= 1.5 && el.currentTime < curSlot.startSilenceSec) {
+      // 1. Bound-based start silence check (from precomputed waveform)
+      if (curSlot.startSilenceSec && curSlot.startSilenceSec >= 2.0 && el.currentTime < curSlot.startSilenceSec) {
         curSlot.introDone = true;
         try {
           el.currentTime = curSlot.startSilenceSec;
@@ -742,8 +741,13 @@ export function useAudioEngine(): PlayerApi {
         return;
       }
 
-      // 2. Bound-based outro silence check (e.g. from waveform)
-      if (curSlot.endSilenceSec && curSlot.endSilenceSec > 0 && el.currentTime >= curSlot.endSilenceSec) {
+      // 2. Bound-based outro silence check (from precomputed waveform)
+      if (
+        curSlot.endSilenceSec &&
+        curSlot.endSilenceSec > 0 &&
+        curSlot.endSilenceSec < el.duration &&
+        el.currentTime >= curSlot.endSilenceSec
+      ) {
         if (!curSlot.nearFired) {
           curSlot.nearFired = true;
           nearEndRef.current.forEach((f) => f());
@@ -770,32 +774,16 @@ export function useAudioEngine(): PlayerApi {
         sumAmp += buf[i];
       }
       const avgAmp = sumAmp / bins;
-      // Realistic silence: maxAmp <= 8 and avgAmp <= 3 (handles MP3 encoding dither/noise floor)
-      const isSilent = maxAmp <= 8 && avgAmp <= 3;
+      // Strict dead silence: maxAmp <= 5 and avgAmp <= 2 (guards against ambient decay / quiet bridges)
+      const isSilent = maxAmp <= 5 && avgAmp <= 2;
 
-      // 3. Dynamic intro silence: check up to 180s or 50% of track duration (no 35s hardcap!)
-      const maxIntroCheckTime = Math.min(180, el.duration * 0.5);
-      if (el.currentTime < maxIntroCheckTime && !curSlot.introDone) {
-        if (isSilent) {
-          introCheckCountRef.current += 1;
-          // After 2 checks (~500ms of dead silence), fast-forward by 10s to find the audio
-          if (introCheckCountRef.current >= 2) {
-            introCheckCountRef.current = 0;
-            const nextTime = Math.min(maxIntroCheckTime, el.currentTime + 10);
-            el.currentTime = nextTime;
-          }
-        } else {
-          introCheckCountRef.current = 0;
-          curSlot.introDone = true;
-        }
-      }
-
-      // 4. Dynamic outro silence (within last 60s of track)
-      if (el.duration > 30 && el.duration - el.currentTime <= 60 && el.currentTime > 20) {
+      // 3. Dynamic outro silence fallback:
+      // Only check within the very end of the track (last 15s) and require at least 4.0s of continuous silence
+      // (16 consecutive checks at 250ms), ensuring breakdowns and quiet bridges are never cut.
+      if (el.duration > 30 && el.duration - el.currentTime <= 15 && el.currentTime > 20) {
         if (isSilent) {
           silenceStreakRef.current += 1;
-          // After 5 checks (~1.25s of pure silence), advance to natural end / crossfade
-          if (silenceStreakRef.current >= 5) {
+          if (silenceStreakRef.current >= 16) {
             silenceStreakRef.current = 0;
             if (!curSlot.nearFired) {
               curSlot.nearFired = true;
@@ -1014,7 +1002,7 @@ export function useAudioEngine(): PlayerApi {
     curSlot.startSilenceSec = Math.max(0, startSec);
     curSlot.endSilenceSec = endSec > 0 ? endSec : 0;
 
-    if (autoTrimSilenceRef.current && startSec >= 1.5) {
+    if (autoTrimSilenceRef.current && startSec >= 2.0) {
       curSlot.introDone = true;
       try {
         if (curSlot.el.currentTime < startSec) {

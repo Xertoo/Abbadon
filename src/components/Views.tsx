@@ -1783,11 +1783,11 @@ function MiniPlayerSettingsPanel({
   onPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
 }) {
   const BLUR_OPTIONS = [
-    { id: 'none', label: 'Brak / Transparent', desc: 'Pełna przezroczystość bez rozmycia (krystaliczne szkło)', defaultOpacity: 0.38 },
-    { id: 'subtle', label: 'Lekki blur', desc: 'Subtelne rozmycie szkła z delikatnym refleksem (12px)', defaultOpacity: 0.65 },
-    { id: 'frosted', label: 'Matowe szkło (Frosted)', desc: 'Satynowe, mleczne szkło z wyraźnym rozmyciem (24px)', defaultOpacity: 0.78 },
-    { id: 'heavy', label: 'Głęboki akryl (Acrylic)', desc: 'Mocne, nasycone rozmycie w stylu Fluent Acrylic (48px)', defaultOpacity: 0.88 },
-    { id: 'solid', label: 'Pełne krycie (Solid)', desc: 'Klasyczne tło bez przezroczystości (100% nieprzezroczyste)', defaultOpacity: 1.0 },
+    { id: 'none', label: 'Brak / Transparent', desc: 'Czyste przezroczyste szkło bez rozmywania tła' },
+    { id: 'subtle', label: 'Lekki blur', desc: 'Subtelne zmiękczenie krawędzi i tła (8px)' },
+    { id: 'frosted', label: 'Matowe szkło (Frosted)', desc: 'Klasyczne mleczne szkło z refleksem (20px)' },
+    { id: 'heavy', label: 'Głęboki akryl (Acrylic)', desc: 'Głębokie rozmycie Fluent Acrylic (40px)' },
+    { id: 'solid', label: 'Pełne krycie (Solid)', desc: '100% nieprzezroczyste tło motywu' },
   ] as const;
 
   const BUTTON_TOGGLES: { key: keyof Prefs; label: string; desc: string }[] = [
@@ -1803,7 +1803,7 @@ function MiniPlayerSettingsPanel({
 
   const getPreviewGlassStyle = () => {
     const blur = prefs.miniBlur || 'heavy';
-    const op = blur === 'solid' ? 1 : (prefs.miniOpacity ?? 0.88);
+    const op = blur === 'solid' ? 1 : (prefs.miniOpacity ?? 0.65);
 
     if (blur === 'solid') {
       return {
@@ -1814,42 +1814,45 @@ function MiniPlayerSettingsPanel({
       };
     }
 
+    const baseBg = `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(op * 100)}%, transparent)`;
+
     if (blur === 'none') {
       return {
-        className: 'border border-white/20 shadow-2xl',
+        className: 'backdrop-blur-none border border-white/20 shadow-2xl',
         style: {
-          backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(op * 100)}%, transparent)`,
+          backgroundColor: baseBg,
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
         },
       };
     }
 
     if (blur === 'subtle') {
       return {
-        className: 'backdrop-blur-md border border-white/25 shadow-2xl',
+        className: 'backdrop-blur-sm border border-white/25 shadow-2xl',
         style: {
-          backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(Math.min(0.85, op) * 100)}%, transparent)`,
-          boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.2), 0 12px 36px rgba(0, 0, 0, 0.55)',
+          backgroundColor: baseBg,
+          boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.18), 0 12px 36px rgba(0, 0, 0, 0.55)',
         },
       };
     }
 
     if (blur === 'frosted') {
       return {
-        className: 'backdrop-blur-xl border border-white/35 shadow-2xl',
+        className: 'backdrop-blur-md border border-white/35 shadow-2xl',
         style: {
-          backgroundImage: 'linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.02) 100%)',
-          backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(Math.min(0.85, op) * 100)}%, transparent)`,
-          boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.3), 0 16px 44px rgba(0, 0, 0, 0.65)',
+          backgroundImage: 'linear-gradient(135deg, rgba(255, 255, 255, 0.10) 0%, rgba(255, 255, 255, 0.02) 100%)',
+          backgroundColor: baseBg,
+          boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.25), 0 16px 44px rgba(0, 0, 0, 0.65)',
         },
       };
     }
 
     // heavy (acrylic)
     return {
-      className: 'backdrop-blur-3xl border border-white/30 shadow-2xl',
+      className: 'backdrop-blur-2xl border border-white/30 shadow-2xl',
       style: {
-        backgroundImage: 'radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.1) 0%, transparent 75%)',
-        backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(op * 100)}%, transparent)`,
+        backgroundImage: 'radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.12) 0%, transparent 75%)',
+        backgroundColor: baseBg,
         boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.35), 0 20px 50px rgba(0, 0, 0, 0.75)',
       },
     };
@@ -1877,38 +1880,83 @@ function MiniPlayerSettingsPanel({
         </div>
 
         {/* Desktop Wallpaper Simulation Container */}
-        <div className="relative rounded-2xl overflow-hidden p-8 flex items-center justify-center border border-sc-line bg-[#07070c] min-h-[290px]">
-          {/* Wallpaper simulation elements behind mini player */}
+        <div className="relative rounded-2xl overflow-hidden p-8 flex items-center justify-center border border-sc-line bg-gradient-to-br from-[#0a0c16] via-[#101426] to-[#180d22] min-h-[300px]">
+          {/* Real desktop scene elements positioned behind and around the player */}
           <div className="absolute inset-0 pointer-events-none select-none overflow-hidden">
-            {/* Colorful glowing ambient orbs */}
-            <div className="absolute top-2 left-6 w-56 h-56 rounded-full bg-gradient-to-tr from-cyan-500/40 via-blue-600/30 to-purple-600/30 blur-2xl opacity-75" />
-            <div className="absolute bottom-2 right-8 w-60 h-60 rounded-full bg-gradient-to-bl from-orange-500/50 via-rose-500/40 to-amber-500/30 blur-2xl opacity-80" />
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-80 h-32 rounded-full bg-emerald-500/20 blur-3xl opacity-60" />
+            {/* Vivid colorful wallpaper artwork with SHARP shapes (NO pre-blur!) */}
+            <div className="absolute -top-12 -left-12 w-96 h-96 rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-indigo-600 opacity-40 mix-blend-screen" />
+            <div className="absolute -bottom-16 -right-16 w-96 h-96 rounded-full bg-gradient-to-tl from-orange-500 via-rose-500 to-fuchsia-600 opacity-45 mix-blend-screen" />
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 rounded-full bg-amber-400/25 mix-blend-screen" />
 
-            {/* Sharp desktop wallpaper pattern & typography */}
-            <div className="absolute inset-0 opacity-15 bg-[radial-gradient(#ffffff_1px,transparent_1px)] [background-size:20px_20px]" />
-            <div className="absolute top-3 left-5 flex items-center gap-2 text-[11px] font-mono text-cyan-400/80 font-bold tracking-widest uppercase">
-              <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
-              Desktop Screen Wallpaper
-            </div>
-            <div className="absolute bottom-3 right-6 text-right">
-              <div className="text-[26px] font-black tracking-tight text-white/25 select-none font-sans leading-none">
-                ABBADON 2026
+            {/* High-contrast geometric grid pattern */}
+            <div className="absolute inset-0 opacity-20 bg-[linear-gradient(to_right,#ffffff_1px,transparent_1px),linear-gradient(to_bottom,#ffffff_1px,transparent_1px)] bg-[size:28px_28px]" />
+
+            {/* Sharp Desktop Icons positioned directly behind the player's glass window */}
+            <div className="absolute top-6 left-8 flex flex-col gap-4 text-white/90">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-blue-500/80 border border-white/30 flex items-center justify-center shadow-lg text-white">
+                  <Folder className="w-4 h-4 fill-current" />
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold tracking-tight">Dokumenty</div>
+                  <div className="text-[9px] text-white/60 font-mono">1.24 GB • Folder</div>
+                </div>
               </div>
-              <div className="text-[9.5px] font-mono text-white/40 tracking-widest uppercase mt-1">
-                High-Resolution Audio Engine • Ultra Glass
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/80 border border-white/30 flex items-center justify-center shadow-lg text-white">
+                  <Globe className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-[11px] font-bold tracking-tight">Przeglądarka Web</div>
+                  <div className="text-[9px] text-white/60 font-mono">soundcloud.com</div>
+                </div>
               </div>
             </div>
-            {/* High contrast geometric accent lines across the center so blur difference is super crisp */}
-            <div className="absolute top-[38%] left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-cyan-400/40 to-transparent" />
-            <div className="absolute bottom-[38%] left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-orange-400/40 to-transparent" />
+
+            {/* Sharp Terminal window snippet positioned right through the center behind the player */}
+            <div className="absolute bottom-6 right-8 w-80 rounded-xl border border-white/20 bg-black/60 p-3 shadow-2xl">
+              <div className="flex items-center gap-1.5 pb-2 border-b border-white/10 text-[10px] font-mono text-white/50">
+                <span className="w-2 h-2 rounded-full bg-red-400" />
+                <span className="w-2 h-2 rounded-full bg-amber-400" />
+                <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <span className="ml-1 text-white/70 font-bold">Terminal: desktop_dwm</span>
+              </div>
+              <div className="mt-2 space-y-1 font-mono text-[10px] leading-relaxed">
+                <div className="text-emerald-400 font-bold">&gt; win.dwm.status: ACTIVE</div>
+                <div className="text-cyan-300 font-semibold">&gt; rendering: UltraGlass Engine 2026</div>
+                <div className="text-amber-300">&gt; track: Midnight City (Lossless M83)</div>
+              </div>
+            </div>
+
+            {/* High-contrast colorful horizon line across the center */}
+            <div className="absolute top-[48%] left-0 right-0 h-[2px] bg-gradient-to-r from-cyan-400 via-amber-400 to-rose-500 opacity-70 shadow-[0_0_8px_rgba(251,191,36,0.8)]" />
           </div>
 
           {/* Actual Mini Player Mockup */}
           <div
             style={previewGlass.style}
-            className={`w-[360px] h-[195px] box-border ${previewGlass.className} text-sc-fg select-none rounded-2xl p-3 flex flex-col justify-between relative transition-all duration-300 z-10`}
+            className={`w-[360px] h-[195px] box-border ${previewGlass.className} text-sc-fg select-none rounded-2xl p-3 flex flex-col justify-between relative transition-all duration-300 z-10 overflow-hidden`}
           >
+            {/* Ambient Artwork Glass Background Layer */}
+            {prefs.miniBlur !== 'none' && prefs.miniBlur !== 'solid' && (
+              <div className="absolute inset-0 pointer-events-none overflow-hidden -z-10 rounded-2xl">
+                <div
+                  className="w-full h-full scale-125 select-none transition-all duration-500"
+                  style={{
+                    background:
+                      'radial-gradient(circle at 75% 25%, #ff5500 0%, transparent 60%), radial-gradient(circle at 25% 75%, #6366f1 0%, transparent 60%)',
+                    filter:
+                      prefs.miniBlur === 'subtle'
+                        ? 'blur(16px)'
+                        : prefs.miniBlur === 'frosted'
+                          ? 'blur(30px)'
+                          : 'blur(50px)',
+                    opacity: Math.max(0.12, (1 - (prefs.miniOpacity ?? 0.65)) * 0.55),
+                  }}
+                />
+              </div>
+            )}
+
             {/* Top Bar */}
             <div className="flex items-center justify-between gap-2 border-b border-sc-line/40 pb-1.5">
               <div className="flex items-center gap-1.5">
@@ -2030,10 +2078,7 @@ function MiniPlayerSettingsPanel({
             <button
               key={opt.id}
               type="button"
-              onClick={() => {
-                onPref('miniBlur', opt.id);
-                onPref('miniOpacity', opt.defaultOpacity);
-              }}
+              onClick={() => onPref('miniBlur', opt.id)}
               className={clsx(
                 'text-left rounded-xl border p-3 transition-all relative cursor-pointer',
                 prefs.miniBlur === opt.id

@@ -221,7 +221,7 @@ export function defaultPrefs(): Prefs {
     autoTrimSilence: true,
     downloadPath: '',
     miniAlwaysOnTop: true,
-    miniOpacity: 0.92,
+    miniOpacity: 0.65,
     miniBlur: 'heavy',
     miniShowProgress: true,
     miniShowVolume: true,

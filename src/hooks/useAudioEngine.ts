@@ -852,6 +852,11 @@ export function useAudioEngine(): PlayerApi {
 
       if (cur.src === src) {
         pendingIdxRef.current = null;
+        try {
+          cur.el.currentTime = 0;
+        } catch {
+          /* no metadata yet */
+        }
         return;
       }
       if (standby.src === src) {
@@ -909,7 +914,9 @@ export function useAudioEngine(): PlayerApi {
     const cur = slots[ai];
     const nxt = slots[si];
     const ctx = ctxRef.current;
-    const swapping = nxt.src !== null && nxt.src !== cur.src;
+    const swapping =
+      (pendingIdxRef.current === si && nxt.src !== null) ||
+      (cur.src === null && nxt.src !== null);
 
     if (!swapping) {
       pendingIdxRef.current = null;

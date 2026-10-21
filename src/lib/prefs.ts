@@ -142,7 +142,7 @@ export interface Prefs {
   /** Mini Player preferences */
   miniAlwaysOnTop: boolean;
   miniOpacity: number;
-  miniBlur: 'none' | 'subtle' | 'frosted' | 'heavy' | 'solid';
+  miniBlur: 'none' | 'tinted' | 'solid';
   miniShowProgress: boolean;
   miniShowVolume: boolean;
   miniShowVisualizer: boolean;
@@ -222,7 +222,7 @@ export function defaultPrefs(): Prefs {
     downloadPath: '',
     miniAlwaysOnTop: true,
     miniOpacity: 0.65,
-    miniBlur: 'heavy',
+    miniBlur: 'tinted',
     miniShowProgress: true,
     miniShowVolume: true,
     miniShowVisualizer: true,
@@ -338,10 +338,10 @@ export function loadPrefs(): Prefs {
         typeof saved.downloadPath === 'string' ? saved.downloadPath : base.downloadPath,
       miniAlwaysOnTop:
         typeof saved.miniAlwaysOnTop === 'boolean' ? saved.miniAlwaysOnTop : base.miniAlwaysOnTop,
-      miniOpacity: clampRange(saved.miniOpacity, base.miniOpacity, 0.2, 1.0),
-      miniBlur: ['none', 'subtle', 'frosted', 'heavy', 'solid'].includes(saved.miniBlur as any)
+      miniOpacity: clampRange(saved.miniOpacity, base.miniOpacity, 0.15, 1.0),
+      miniBlur: ['none', 'tinted', 'solid'].includes(saved.miniBlur as any)
         ? (saved.miniBlur as any)
-        : base.miniBlur,
+        : (saved.miniBlur === 'solid' ? 'solid' : (saved.miniBlur === 'none' ? 'none' : 'tinted')),
       miniShowProgress:
         typeof saved.miniShowProgress === 'boolean' ? saved.miniShowProgress : base.miniShowProgress,
       miniShowVolume:

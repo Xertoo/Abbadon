@@ -1782,30 +1782,40 @@ function MiniPlayerSettingsPanel({
   prefs: Prefs;
   onPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
 }) {
-  const BLUR_OPTIONS = [
-    { id: 'none', label: 'Krystaliczne szkło (Clear)', desc: 'Czysta przezroczystość bez zmatowienia' },
-    { id: 'subtle', label: 'Satynowe szkło (Satin)', desc: 'Subtelne wykończenie z refleksem krawędzi' },
-    { id: 'frosted', label: 'Matowe / Mleczne (Frosted)', desc: 'Tekstura mlecznego szkła ze specularnym blaskiem' },
-    { id: 'heavy', label: 'Dymione szkło (Smoked)', desc: 'Głębokie ciemniejsze szkło z nasyconym refleksem' },
-    { id: 'solid', label: 'Pełne krycie (Solid)', desc: '100% nieprzezroczyste tło motywu' },
+  const STYLE_OPTIONS = [
+    {
+      id: 'none',
+      label: 'Clear Transparent',
+      desc: 'Crystal clear window with maximum see-through to your desktop',
+    },
+    {
+      id: 'tinted',
+      label: 'Tinted Transparency',
+      desc: 'Translucent glass with an elegant customizable background tint',
+    },
+    {
+      id: 'solid',
+      label: 'Full Opacity',
+      desc: 'Classic opaque panel without transparency (100% solid)',
+    },
   ] as const;
 
   const BUTTON_TOGGLES: { key: keyof Prefs; label: string; desc: string }[] = [
-    { key: 'miniShowPrevNext', label: 'Poprzedni / Następny utwór', desc: 'Przyciski przewijania do poprzedniego i następnego utworu' },
-    { key: 'miniShowVolume', label: 'Suwak głośności i wyciszenie', desc: 'Kontrola poziomu dźwięku z możliwością szybkiego wyciszenia' },
-    { key: 'miniShowProgress', label: 'Pasek postępu i czas', desc: 'Interaktywny pasek przewijania pozycji utworu' },
-    { key: 'miniShowVisualizer', label: 'Animowane słupki spektrum', desc: 'Mini wizualizator częstotliwości audio dopasowany do motywu' },
-    { key: 'miniShowLike', label: 'Przycisk Polub (Serduszko)', desc: 'Szybkie dodawanie utworu do polubionych' },
-    { key: 'miniShowShuffle', label: 'Przycisk Losowo (Shuffle)', desc: 'Włączanie i wyłączanie losowej kolejności' },
-    { key: 'miniShowRepeat', label: 'Przycisk Powtarzaj (Repeat)', desc: 'Przełączanie trybu pętli (jeden / wszystkie / wyłączony)' },
-    { key: 'miniAlwaysOnTop', label: 'Zawsze na wierzchu (Always on Top)', desc: 'Domyślne przypinanie okna ponad innymi aplikacjami' },
+    { key: 'miniShowPrevNext', label: 'Previous & Next buttons', desc: 'Skip to previous or next track' },
+    { key: 'miniShowVolume', label: 'Volume slider & mute', desc: 'Control playback volume with quick mute toggle' },
+    { key: 'miniShowProgress', label: 'Progress bar & time', desc: 'Interactive seek slider with elapsed & total duration' },
+    { key: 'miniShowVisualizer', label: 'Audio spectrum bars', desc: 'Animated frequency bars matching current theme' },
+    { key: 'miniShowLike', label: 'Favorite button (Heart)', desc: 'Quick button to like/unlike playing track' },
+    { key: 'miniShowShuffle', label: 'Shuffle button', desc: 'Toggle random track playback order' },
+    { key: 'miniShowRepeat', label: 'Repeat button', desc: 'Cycle repeat modes (one, all, off)' },
+    { key: 'miniAlwaysOnTop', label: 'Always on Top (Pin)', desc: 'Keep mini player floating above other applications' },
   ];
 
   const getPreviewGlassStyle = () => {
-    const blur = prefs.miniBlur || 'heavy';
-    const op = blur === 'solid' ? 1 : (prefs.miniOpacity ?? 0.65);
+    const mode = prefs.miniBlur || 'tinted';
+    const op = mode === 'solid' ? 1 : (prefs.miniOpacity ?? 0.65);
 
-    if (blur === 'solid') {
+    if (mode === 'solid') {
       return {
         className: 'border border-sc-line/80 shadow-2xl',
         style: {
@@ -1814,52 +1824,22 @@ function MiniPlayerSettingsPanel({
       };
     }
 
-    const baseBg = `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(op * 100)}%, transparent)`;
-
-    if (blur === 'none') {
+    if (mode === 'none') {
       return {
-        className: 'border border-white/15 shadow-2xl',
+        className: 'border border-white/20 shadow-2xl',
         style: {
-          backgroundColor: baseBg,
+          backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(Math.min(0.35, op * 0.5) * 100)}%, transparent)`,
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
-          backdropFilter: 'none',
-          WebkitBackdropFilter: 'none',
         },
       };
     }
 
-    if (blur === 'subtle') {
-      return {
-        className: 'border border-white/25 shadow-2xl',
-        style: {
-          backgroundColor: baseBg,
-          boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.20), 0 12px 36px rgba(0, 0, 0, 0.55)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-        },
-      };
-    }
-
-    if (blur === 'frosted') {
-      return {
-        className: 'border border-white/35 shadow-2xl',
-        style: {
-          backgroundColor: baseBg,
-          boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.25), 0 16px 44px rgba(0, 0, 0, 0.65)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-        },
-      };
-    }
-
-    // heavy (smoked)
+    // Tinted mode
     return {
-      className: 'border border-white/30 shadow-2xl',
+      className: 'border border-white/25 shadow-2xl',
       style: {
-        backgroundColor: baseBg,
-        boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.35), 0 20px 50px rgba(0, 0, 0, 0.75)',
-        backdropFilter: 'blur(36px)',
-        WebkitBackdropFilter: 'blur(36px)',
+        backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(op * 100)}%, transparent)`,
+        boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.18), 0 16px 44px rgba(0, 0, 0, 0.65)',
       },
     };
   };
@@ -1874,10 +1854,10 @@ function MiniPlayerSettingsPanel({
           <div>
             <div className="text-xs uppercase tracking-wider font-semibold text-sc-orange flex items-center gap-1.5">
               <Eye className="w-3.5 h-3.5" />
-              Podgląd na żywo (Live Preview)
+              Live Preview
             </div>
             <p className="text-[11.5px] text-sc-muted mt-0.5">
-              Tak będzie prezentować się okno Twojego mini playera na pulpicie. Zmiany są widoczne w czasie rzeczywistym.
+              Real-time preview of your desktop floating player. Adjustments reflect immediately.
             </p>
           </div>
           <span className="text-[10px] px-2 py-0.5 rounded-full bg-sc-orange/15 text-sc-orange font-bold uppercase tracking-wider">
@@ -1889,7 +1869,7 @@ function MiniPlayerSettingsPanel({
         <div className="relative rounded-2xl overflow-hidden p-8 flex items-center justify-center border border-sc-line bg-gradient-to-br from-[#0a0c16] via-[#101426] to-[#180d22] min-h-[300px]">
           {/* Real desktop scene elements positioned behind and around the player */}
           <div className="absolute inset-0 pointer-events-none select-none overflow-hidden">
-            {/* Vivid colorful wallpaper artwork with SHARP shapes (NO pre-blur!) */}
+            {/* Vivid colorful wallpaper artwork with SHARP shapes */}
             <div className="absolute -top-12 -left-12 w-96 h-96 rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-indigo-600 opacity-40 mix-blend-screen" />
             <div className="absolute -bottom-16 -right-16 w-96 h-96 rounded-full bg-gradient-to-tl from-orange-500 via-rose-500 to-fuchsia-600 opacity-45 mix-blend-screen" />
             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-72 rounded-full bg-amber-400/25 mix-blend-screen" />
@@ -1897,14 +1877,14 @@ function MiniPlayerSettingsPanel({
             {/* High-contrast geometric grid pattern */}
             <div className="absolute inset-0 opacity-20 bg-[linear-gradient(to_right,#ffffff_1px,transparent_1px),linear-gradient(to_bottom,#ffffff_1px,transparent_1px)] bg-[size:28px_28px]" />
 
-            {/* Sharp Desktop Icons positioned directly behind the player's glass window */}
+            {/* Desktop Icons positioned directly behind the player's glass window */}
             <div className="absolute top-6 left-8 flex flex-col gap-4 text-white/90">
               <div className="flex items-center gap-2.5">
                 <div className="w-8 h-8 rounded-lg bg-blue-500/80 border border-white/30 flex items-center justify-center shadow-lg text-white">
                   <Folder className="w-4 h-4 fill-current" />
                 </div>
                 <div>
-                  <div className="text-[11px] font-bold tracking-tight">Dokumenty</div>
+                  <div className="text-[11px] font-bold tracking-tight">Documents</div>
                   <div className="text-[9px] text-white/60 font-mono">1.24 GB • Folder</div>
                 </div>
               </div>
@@ -1913,13 +1893,13 @@ function MiniPlayerSettingsPanel({
                   <Globe className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="text-[11px] font-bold tracking-tight">Przeglądarka Web</div>
+                  <div className="text-[11px] font-bold tracking-tight">Web Browser</div>
                   <div className="text-[9px] text-white/60 font-mono">soundcloud.com</div>
                 </div>
               </div>
             </div>
 
-            {/* Sharp Terminal window snippet positioned right through the center behind the player */}
+            {/* Terminal window snippet positioned right through the center behind the player */}
             <div className="absolute bottom-6 right-8 w-80 rounded-xl border border-white/20 bg-black/60 p-3 shadow-2xl">
               <div className="flex items-center gap-1.5 pb-2 border-b border-white/10 text-[10px] font-mono text-white/50">
                 <span className="w-2 h-2 rounded-full bg-red-400" />
@@ -1928,8 +1908,8 @@ function MiniPlayerSettingsPanel({
                 <span className="ml-1 text-white/70 font-bold">Terminal: desktop_dwm</span>
               </div>
               <div className="mt-2 space-y-1 font-mono text-[10px] leading-relaxed">
-                <div className="text-emerald-400 font-bold">&gt; win.dwm.status: ACTIVE</div>
-                <div className="text-cyan-300 font-semibold">&gt; rendering: UltraGlass Engine 2026</div>
+                <div className="text-emerald-400 font-bold">&gt; status: ONLINE</div>
+                <div className="text-cyan-300 font-semibold">&gt; player: Abbadon Mini 2026</div>
                 <div className="text-amber-300">&gt; track: Midnight City (Lossless M83)</div>
               </div>
             </div>
@@ -1956,7 +1936,7 @@ function MiniPlayerSettingsPanel({
                       ? 'text-sc-orange bg-sc-orange/15'
                       : 'text-sc-muted'
                   }`}
-                  title="Pineska Always on Top"
+                  title="Always on Top (Pin)"
                 >
                   <Pin className={`w-3.5 h-3.5 ${prefs.miniAlwaysOnTop ? 'rotate-45 fill-current' : ''}`} />
                 </div>
@@ -2054,29 +2034,31 @@ function MiniPlayerSettingsPanel({
         </div>
       </div>
 
-      {/* 1. Blur Type Selection */}
+      {/* 1. Style & Transparency Selection */}
       <div className="space-y-3">
         <label className="text-[12.5px] font-bold text-sc-fg flex items-center gap-2">
-          <span>Typ rozmycia tła (Backdrop Blur)</span>
+          <span>Window Appearance &amp; Style</span>
         </label>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-          {BLUR_OPTIONS.map((opt) => (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+          {STYLE_OPTIONS.map((opt) => (
             <button
               key={opt.id}
               type="button"
-              onClick={() => onPref('miniBlur', opt.id)}
+              onClick={() => onPref('miniBlur', opt.id as any)}
               className={clsx(
-                'text-left rounded-xl border p-3 transition-all relative cursor-pointer',
-                prefs.miniBlur === opt.id
+                'text-left rounded-xl border p-3.5 transition-all relative cursor-pointer',
+                prefs.miniBlur === opt.id || (opt.id === 'tinted' && !['none', 'solid'].includes(prefs.miniBlur))
                   ? 'border-sc-orange/60 bg-sc-orange/10'
                   : 'border-sc-line bg-sc-panel-2/40 hover:border-sc-dim'
               )}
             >
               <div className="flex items-center justify-between gap-1">
                 <span className="text-[12.5px] font-bold text-sc-fg">{opt.label}</span>
-                {prefs.miniBlur === opt.id && <Check className="w-3.5 h-3.5 text-sc-orange shrink-0" />}
+                {(prefs.miniBlur === opt.id || (opt.id === 'tinted' && !['none', 'solid'].includes(prefs.miniBlur))) && (
+                  <Check className="w-3.5 h-3.5 text-sc-orange shrink-0" />
+                )}
               </div>
-              <div className="text-[11px] text-sc-muted mt-0.5 leading-snug">{opt.desc}</div>
+              <div className="text-[11px] text-sc-muted mt-1 leading-snug">{opt.desc}</div>
             </button>
           ))}
         </div>
@@ -2086,23 +2068,23 @@ function MiniPlayerSettingsPanel({
       {prefs.miniBlur !== 'solid' && (
         <div className="p-4 rounded-xl border border-sc-line bg-sc-panel-2/30 space-y-2">
           <div className="flex items-center justify-between text-xs">
-            <span className="font-bold text-sc-fg">Przezroczystość tła (Opacity)</span>
+            <span className="font-bold text-sc-fg">Window Transparency (Opacity)</span>
             <span className="font-mono text-sc-orange font-bold">
-              {Math.round((prefs.miniOpacity ?? 0.92) * 100)}%
+              {Math.round((prefs.miniOpacity ?? 0.65) * 100)}%
             </span>
           </div>
           <input
             type="range"
-            min={0.2}
+            min={0.15}
             max={1.0}
             step={0.02}
-            value={prefs.miniOpacity ?? 0.92}
+            value={prefs.miniOpacity ?? 0.65}
             onChange={(e) => onPref('miniOpacity', parseFloat(e.target.value))}
             className="w-full h-1.5 bg-sc-fill/15 rounded-lg appearance-none cursor-pointer accent-[var(--color-sc-orange)]"
           />
           <div className="flex justify-between text-[10px] text-sc-dim">
-            <span>20% (Bardzo przezroczysty)</span>
-            <span>100% (Kryjący)</span>
+            <span>15% (High Transparency)</span>
+            <span>100% (Solid)</span>
           </div>
         </div>
       )}
@@ -2110,7 +2092,7 @@ function MiniPlayerSettingsPanel({
       {/* 3. Button Visibility Toggles */}
       <div className="space-y-3">
         <label className="text-[12.5px] font-bold text-sc-fg">
-          Wyświetlane elementy i przyciski
+          Visible Buttons &amp; Controls
         </label>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           {BUTTON_TOGGLES.map((t) => {
@@ -2640,6 +2622,17 @@ export function SettingsView({
             <CustomThemeEditor onSave={onSaveCustomTheme} />
           </Disclosure>
 
+          <Disclosure
+            id="settings-mini-player"
+            title="Mini Player & Floating Window"
+            subtitle="Draggable desktop widget, transparency modes, and pinned controls"
+            icon={<Maximize2 className="w-[18px] h-[18px] text-sc-orange" />}
+          >
+            <div className="pt-4">
+              <MiniPlayerSettingsPanel prefs={prefs} onPref={onPref} />
+            </div>
+          </Disclosure>
+
           <div className="grid gap-3 sm:grid-cols-2">
             <Toggle
               icon={Palette}
@@ -2677,18 +2670,6 @@ export function SettingsView({
               onChange={(v) => onPref('rememberVolume', v)}
             />
           </div>
-        </div>
-      </div>
-
-      {/* MINI PLAYER & FLOATING WINDOW */}
-      <div className="pt-4">
-        <SectionHeader
-          title="Mini Player & Floating Window"
-          subtitle="Configure draggable floating mini player, buttons, live preview, blur and transparency"
-          icon={<Maximize2 className="w-4 h-4 text-sc-orange" />}
-        />
-        <div className="rounded-2xl border border-sc-line bg-sc-panel p-5">
-          <MiniPlayerSettingsPanel prefs={prefs} onPref={onPref} />
         </div>
       </div>
 

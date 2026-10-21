@@ -151,12 +151,12 @@ export function TrayMiniPlayer() {
 
   const track = state.track;
 
-  // Background blur and transparency styles
+  // Background style calculation: 3 options (none = clear, tinted = translucent tint, solid = opaque)
   const getGlassStyle = () => {
-    const blur = prefs.miniBlur || 'heavy';
-    const op = blur === 'solid' ? 1 : (prefs.miniOpacity ?? 0.65);
+    const mode = prefs.miniBlur || 'tinted';
+    const op = mode === 'solid' ? 1 : (prefs.miniOpacity ?? 0.65);
 
-    if (blur === 'solid') {
+    if (mode === 'solid') {
       return {
         className: 'border border-sc-line/80 shadow-2xl',
         style: {
@@ -165,52 +165,22 @@ export function TrayMiniPlayer() {
       };
     }
 
-    const baseBg = `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(op * 100)}%, transparent)`;
-
-    if (blur === 'none') {
+    if (mode === 'none') {
       return {
-        className: 'border border-white/15 shadow-2xl',
+        className: 'border border-white/20 shadow-2xl',
         style: {
-          backgroundColor: baseBg,
+          backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(Math.min(0.35, op * 0.5) * 100)}%, transparent)`,
           boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
-          backdropFilter: 'none',
-          WebkitBackdropFilter: 'none',
         },
       };
     }
 
-    if (blur === 'subtle') {
-      return {
-        className: 'border border-white/25 shadow-2xl',
-        style: {
-          backgroundColor: baseBg,
-          boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.20), 0 12px 36px rgba(0, 0, 0, 0.55)',
-          backdropFilter: 'blur(8px)',
-          WebkitBackdropFilter: 'blur(8px)',
-        },
-      };
-    }
-
-    if (blur === 'frosted') {
-      return {
-        className: 'border border-white/35 shadow-2xl',
-        style: {
-          backgroundColor: baseBg,
-          boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.25), 0 16px 44px rgba(0, 0, 0, 0.65)',
-          backdropFilter: 'blur(20px)',
-          WebkitBackdropFilter: 'blur(20px)',
-        },
-      };
-    }
-
-    // heavy (smoked)
+    // Tinted Transparency (mode === 'tinted' or legacy values)
     return {
-      className: 'border border-white/30 shadow-2xl',
+      className: 'border border-white/25 shadow-2xl',
       style: {
-        backgroundColor: baseBg,
-        boxShadow: 'inset 0 1px 2px rgba(255, 255, 255, 0.35), 0 20px 50px rgba(0, 0, 0, 0.75)',
-        backdropFilter: 'blur(36px)',
-        WebkitBackdropFilter: 'blur(36px)',
+        backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(op * 100)}%, transparent)`,
+        boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.18), 0 16px 44px rgba(0, 0, 0, 0.65)',
       },
     };
   };

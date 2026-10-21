@@ -450,29 +450,6 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
         }
         sections.push(...because);
 
-        // The platform chart is the one rail that needs no listening history, so
-        // it is what a brand new (or signed-out) account sees.
-        try {
-          const chart = await sc.charts('trending', 'soundcloud:genres:all-music', 24);
-          const trending: Track[] = [];
-          for (const entry of chart.collection) {
-            if (!entry?.track) continue;
-            const t = mapTrack(entry.track);
-            if (t.duration > 0 && !used.has(t.id)) trending.push(t);
-          }
-          trending.forEach((t) => used.add(t.id));
-          if (trending.length >= 4) {
-            sections.push({
-              id: 'trending',
-              title: 'Trending on SoundCloud',
-              subtitle: 'What the whole platform is playing right now',
-              tracks: trending.slice(0, 24),
-            });
-          }
-        } catch {
-          /* the chart is optional; the rest of the feed still stands */
-        }
-
         const genres = topGenres([...hist, ...likes], 2);
         const genreQueries = genres.length ? genres : seeds.length ? [] : ['electronic', 'hip hop'];
         for (const g of genreQueries) {

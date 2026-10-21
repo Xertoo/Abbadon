@@ -193,9 +193,13 @@ export function SoundHeardle({
   resolvePlayable,
   onPlayFullTrack,
 }: SoundHeardleProps) {
-  // Source selection: 'trending' | 'liked' | playlistId | 'artist'
+  // Source selection: 'liked' | playlistId | 'artist'
   const [selectedSource, setSelectedSource] = useState<string>(() =>
-    likedTracks && likedTracks.length >= 2 ? 'liked' : 'trending'
+    likedTracks && likedTracks.length >= 2
+      ? 'liked'
+      : playlists.length > 0
+        ? playlists[0].id
+        : 'liked'
   );
   const [sourceDropdownOpen, setSourceDropdownOpen] = useState(false);
   const [sourceTracks, setSourceTracks] = useState<Track[]>([]);
@@ -432,20 +436,9 @@ export function SoundHeardle({
       let tracks: Track[] = [];
 
       try {
-        if (source === 'trending') {
+        if (source === 'liked') {
           setSelectedArtist(null);
-          const res = await sc.searchTracks('popular electronic pop dance hits', 60);
-          tracks = res.collection.map(mapTrack).filter((t) => t.duration > 15);
-        } else if (source === 'liked') {
-          setSelectedArtist(null);
-          if (likedTracks.length >= 2) {
-            tracks = likedTracks;
-          } else {
-            // Auto fallback for new users with no likes
-            setSelectedSource('trending');
-            const res = await sc.searchTracks('popular electronic pop dance hits', 60);
-            tracks = res.collection.map(mapTrack).filter((t) => t.duration > 15);
-          }
+          tracks = likedTracks;
         } else if (source === 'artist') {
           if (artistUser) {
             setSelectedArtist(artistUser);
@@ -716,13 +709,11 @@ export function SoundHeardle({
   if (!isOpen) return null;
 
   const currentSourceName =
-    selectedSource === 'trending'
-      ? 'Trending Hits'
-      : selectedSource === 'liked'
-        ? 'Liked Tracks'
-        : selectedSource === 'artist'
-          ? selectedArtist?.name || 'Artist'
-          : playlists.find((p) => p.id === selectedSource)?.title || 'Playlist';
+    selectedSource === 'liked'
+      ? 'Liked Tracks'
+      : selectedSource === 'artist'
+        ? selectedArtist?.name || 'Artist'
+        : playlists.find((p) => p.id === selectedSource)?.title || 'Playlist';
 
   return (
     <div className="fixed inset-0 z-[125] bg-black/90 backdrop-blur-2xl flex flex-col items-center justify-center p-4 select-none animate-fade-in text-white">
@@ -765,9 +756,7 @@ export function SoundHeardle({
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-xs font-semibold text-white/90 transition-all cursor-pointer"
                 title="Select source"
               >
-                {selectedSource === 'trending' ? (
-                  <Flame className="w-3.5 h-3.5 text-sc-orange" />
-                ) : selectedSource === 'liked' ? (
+                {selectedSource === 'liked' ? (
                   <Heart className="w-3.5 h-3.5 text-white/70" />
                 ) : selectedSource === 'artist' ? (
                   <Mic2 className="w-3.5 h-3.5 text-white/70" />
@@ -783,18 +772,6 @@ export function SoundHeardle({
                   <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-white/40 border-b border-white/10">
                     Source
                   </div>
-
-                  {/* Trending hits option - works for all users! */}
-                  <button
-                    onClick={() => void changeSource('trending')}
-                    className={clsx(
-                      'w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-left hover:bg-white/10 transition-colors cursor-pointer',
-                      selectedSource === 'trending' ? 'text-white font-bold bg-white/5' : 'text-white/80'
-                    )}
-                  >
-                    <Flame className="w-4 h-4 text-sc-orange" />
-                    <span className="truncate">Trending Hits (Global)</span>
-                  </button>
 
                   {/* Liked tracks option */}
                   <button
@@ -907,17 +884,19 @@ export function SoundHeardle({
                 Not enough tracks in this source (min. 2 required).
               </p>
               <div className="flex justify-center gap-2">
-                <button
-                  onClick={() => void changeSource('liked')}
-                  className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs uppercase cursor-pointer"
-                >
-                  Switch to Liked Tracks
-                </button>
+                {selectedSource !== 'liked' && (
+                  <button
+                    onClick={() => void changeSource('liked')}
+                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs uppercase cursor-pointer"
+                  >
+                    Switch to Liked Tracks
+                  </button>
+                )}
                 <button
                   onClick={() => setArtistModalOpen(true)}
                   className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs uppercase cursor-pointer"
                 >
-                  Choose another artist
+                  Choose an artist
                 </button>
               </div>
             </div>

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Play, Heart, Compass, Sparkles, Flame, Music2, RotateCcw, ListPlus, ListStart, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Play, Heart, Compass, Sparkles, Music2, RotateCcw, ListPlus, ListStart, ChevronLeft, ChevronRight } from 'lucide-react';
 import clsx from 'clsx';
 import { Artwork } from './Artwork';
 import type { Track, DiscoverSection } from '../types';
@@ -24,7 +24,6 @@ interface Props {
 /** Picks a rail icon from the section id, which encodes where it came from. */
 function railIcon(id: string): React.ReactNode {
   if (id === 'foryou') return <Sparkles className="w-[18px] h-[18px] text-sc-orange" />;
-  if (id === 'trending') return <Flame className="w-[18px] h-[18px] text-sc-orange" />;
   if (id.startsWith('seed:')) return <Play className="w-[18px] h-[18px] text-sc-orange" />;
   if (id.startsWith('genre:')) return <Music2 className="w-[18px] h-[18px] text-sc-orange" />;
   return <Compass className="w-[18px] h-[18px] text-sc-orange" />;
@@ -322,6 +321,7 @@ function RailSection({
  */
 export function DiscoverView(p: Props) {
   const liked = new Set(p.likedIds);
+  const visibleSections = p.sections.filter((s) => s.id !== 'trending');
 
   return (
     <div className="p-6 sm:p-8 space-y-8 max-w-[1560px] mx-auto w-full">
@@ -332,8 +332,7 @@ export function DiscoverView(p: Props) {
             Discover
           </h1>
           <p className="text-[13px] text-sc-muted mt-1.5 max-w-lg leading-relaxed">
-            New tracks picked from what you play, what you have saved, and what the whole
-            platform is listening to right now.
+            New tracks picked from what you play and what you have saved.
           </p>
         </div>
         <button
@@ -349,9 +348,9 @@ export function DiscoverView(p: Props) {
         </button>
       </header>
 
-      {p.loading && p.sections.length === 0 && <SkeletonRows count={8} />}
+      {p.loading && visibleSections.length === 0 && <SkeletonRows count={8} />}
 
-      {!p.loading && p.sections.length === 0 && (
+      {!p.loading && visibleSections.length === 0 && (
         <div className="rounded-2xl border border-dashed border-sc-line px-5 py-6 text-center">
           <p className="text-[13px] text-sc-muted">
             Nothing to recommend yet - check your connection and try refreshing.
@@ -367,7 +366,7 @@ export function DiscoverView(p: Props) {
         </div>
       )}
 
-      {p.sections.map((section) => (
+      {visibleSections.map((section) => (
         <RailSection
           key={section.id}
           section={section}

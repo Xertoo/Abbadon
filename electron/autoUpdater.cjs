@@ -2,6 +2,7 @@ const { app, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 
 let mainWindow = null;
+let onBeforeInstall = null;
 
 const updateState = {
   status: 'idle', // 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error'
@@ -22,13 +23,20 @@ function broadcastState() {
   }
 }
 
-function initAutoUpdater(win, isDev) {
+function initAutoUpdater(win, isDev, beforeInstallCb) {
   mainWindow = win;
+  onBeforeInstall = beforeInstallCb;
   updateState.currentVersion = app.getVersion();
 
-  // Configure update behavior - do NOT auto-download without user consent
-  autoUpdater.autoDownload = false;
+  // Configure update behavior - download automatically in background
+  autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('before-quit-for-update', () => {
+    if (typeof onBeforeInstall === 'function') {
+      onBeforeInstall();
+    }
+  });
 
   autoUpdater.on('checking-for-update', () => {
     updateState.status = 'checking';
@@ -117,7 +125,19 @@ ipcMain.handle('updater:download', async () => {
 
 ipcMain.handle('updater:install', () => {
   try {
-    autoUpdater.quitAndInstall(false, true);
+    if (typeof onBeforeInstall === 'function') {
+      onBeforeInstall();
+    }
+    const { BrowserWindow } = require('electron');
+    BrowserWindow.getAllWindows().forEach((w) => {
+      w.removeAllListeners('close');
+      try {
+        w.close();
+      } catch {}
+    });
+    setImmediate(() => {
+      autoUpdater.quitAndInstall(true, true);
+    });
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err.message };

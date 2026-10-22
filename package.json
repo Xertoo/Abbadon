@@ -2,7 +2,7 @@
   "name": "abbadon",
   "productName": "Abbadon",
   "private": true,
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "Desktop SoundCloud player with rate-limit protection",
   "author": "Abbadon",
   "license": "MIT",
@@ -82,8 +82,9 @@
       ]
     },
     "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
+      "oneClick": true,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Abbadon",

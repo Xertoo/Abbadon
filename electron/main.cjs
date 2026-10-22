@@ -2081,7 +2081,9 @@ app.whenReady().then(async () => {
 
   // Initialize Auto-Updater
   try {
-    initAutoUpdater(win, isDev);
+    initAutoUpdater(win, isDev, () => {
+      isQuitting = true;
+    });
   } catch (err) {
     console.log('[AutoUpdater] Initialization failed:', err.message);
   }

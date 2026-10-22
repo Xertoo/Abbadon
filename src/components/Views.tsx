@@ -1826,20 +1826,20 @@ function MiniPlayerSettingsPanel({
 
     if (mode === 'none') {
       return {
-        className: 'border border-white/20 shadow-2xl',
+        className: 'border border-sc-line/75 shadow-2xl ring-1 ring-black/40',
         style: {
           backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(Math.min(0.35, op * 0.5) * 100)}%, transparent)`,
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.55)',
         },
       };
     }
 
     // Tinted mode
     return {
-      className: 'border border-white/25 shadow-2xl',
+      className: 'border border-sc-line/80 shadow-2xl ring-1 ring-black/40',
       style: {
         backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(op * 100)}%, transparent)`,
-        boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.18), 0 16px 44px rgba(0, 0, 0, 0.65)',
+        boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.05), 0 16px 44px rgba(0, 0, 0, 0.7)',
       },
     };
   };
@@ -1983,21 +1983,27 @@ function MiniPlayerSettingsPanel({
             {/* Progress Slider */}
             {prefs.miniShowProgress && (
               <div className="flex items-center gap-2 text-[10px] text-sc-muted tabular-nums py-0.5">
-                <span>1:24</span>
-                <div className="flex-1 h-1 bg-sc-fill/15 rounded-lg overflow-hidden relative">
-                  <div className="h-full bg-sc-orange w-1/3 rounded-lg" />
+                <span className="shrink-0 min-w-[28px] text-right">1:24</span>
+                <div className="relative flex-1 py-1 flex items-center">
+                  <div className="w-full h-1.5 rounded-full bg-black/45 border border-sc-line/80 ring-1 ring-black/50 shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)] relative overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-sc-orange to-sc-orange-soft w-1/3 rounded-full" />
+                  </div>
+                  <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 left-[33.3%] w-3 h-3 rounded-full bg-neutral-200 shadow-md border border-black/35 pointer-events-none scale-75 opacity-90" />
                 </div>
-                <span>4:03</span>
+                <span className="shrink-0 min-w-[28px]">4:03</span>
               </div>
             )}
 
             {/* Bottom Controls */}
             <div className="flex items-center justify-between pt-0.5">
               {prefs.miniShowVolume ? (
-                <div className="flex items-center gap-1.5 w-24 text-sc-muted">
-                  <Volume2 className="w-3.5 h-3.5" />
-                  <div className="w-16 h-1 bg-sc-fill/15 rounded-lg overflow-hidden">
-                    <div className="h-full bg-sc-orange w-3/4 rounded-lg" />
+                <div className="flex items-center gap-1.5 w-28 text-sc-muted">
+                  <Volume2 className="w-3.5 h-3.5 shrink-0" />
+                  <div className="relative w-20 py-1 flex items-center">
+                    <div className="w-full h-1.5 rounded-full bg-black/45 border border-sc-line/80 ring-1 ring-black/50 shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)] relative overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-sc-orange to-sc-orange-soft w-3/4 rounded-full" />
+                    </div>
+                    <div className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 left-[75%] w-3 h-3 rounded-full bg-neutral-200 shadow-md border border-black/35 pointer-events-none scale-75 opacity-90" />
                   </div>
                 </div>
               ) : (

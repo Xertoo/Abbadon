@@ -23,6 +23,11 @@ const { initAutoUpdater } = require('./autoUpdater.cjs');
 // Silence internal Chromium/WebRTC stderr spam (e.g. STUN binding timeouts on inactive interfaces)
 app.commandLine.appendSwitch('log-level', '3');
 
+// Hardware and GPU rendering optimizations
+app.commandLine.appendSwitch('enable-gpu-rasterization');
+app.commandLine.appendSwitch('enable-zero-copy');
+app.commandLine.appendSwitch('ignore-gpu-blocklist');
+
 /* ------------------------------------------------------------------ *
  * Widevine (best effort)
  *
@@ -1840,7 +1845,7 @@ ipcMain.on('sc:player-state', (_e, payload) => {
   }
   updateDiscordRPC(track, isPlaying, currentTime, duration, friendCode, shareDiscordFriendCode, showDiscordButtons);
 
-  if (trayWin && !trayWin.isDestroyed()) {
+  if (trayWin && !trayWin.isDestroyed() && trayWin.isVisible()) {
     trayWin.webContents.send('sc:sync-tray-player', lastPlaybackState);
   }
 

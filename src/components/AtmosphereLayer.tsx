@@ -411,6 +411,18 @@ export const AtmosphereLayer: React.FC<Props> = React.memo(
       };
 
       const loop = (now: number) => {
+        if (document.hidden) {
+          raf = 0;
+          return;
+        }
+
+        // Frame rate limiter: cap at ~60 FPS (min 15ms interval between frames)
+        // Eliminates wasted CPU/GPU burn on 144Hz/240Hz monitors for ambient background canvas
+        if (now - last < 15) {
+          raf = requestAnimationFrame(loop);
+          return;
+        }
+
         raf = requestAnimationFrame(loop);
         const p = prefsRef.current;
         const sig = `${p.bgMode}|${p.bgStarDensity}|${p.bgIntensity}|${p.bgVariation}|${p.bgSpeed}|${p.bgColorSource}|${p.bgShootingStars}|${hueRef.current}`;
@@ -472,10 +484,20 @@ export const AtmosphereLayer: React.FC<Props> = React.memo(
 
       resize();
       window.addEventListener('resize', onWindowResize, { passive: true });
+
+      const onVisibilityChange = () => {
+        if (!document.hidden && !raf) {
+          last = performance.now();
+          raf = requestAnimationFrame(loop);
+        }
+      };
+      document.addEventListener('visibilitychange', onVisibilityChange);
+
       raf = requestAnimationFrame(loop);
       return () => {
         cancelAnimationFrame(raf);
         window.removeEventListener('resize', onWindowResize);
+        document.removeEventListener('visibilitychange', onVisibilityChange);
       };
     }, []);
 

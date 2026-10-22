@@ -87,7 +87,7 @@ export function TrackRow({
       onDoubleClick={() => onPlay(track, queue)}
       onClick={() => onPlay(track, queue)}
       className={clsx(
-        'group grid items-center gap-3.5 px-3.5 sm:px-4.5 rounded-2xl transition-all duration-300 cursor-default select-none animate-row-cascade border border-transparent backdrop-blur-xs',
+        'group grid items-center gap-3.5 px-3.5 sm:px-4.5 rounded-2xl transition-all duration-300 cursor-default select-none animate-row-cascade border border-transparent',
         // Compact drops the vertical padding and the genre, which is what made
         // rows tall enough that only a handful were visible at once.
         compact ? 'py-1.5' : 'py-2.5',
@@ -95,7 +95,12 @@ export function TrackRow({
           ? 'bg-sc-orange/12 border-sc-orange/30 shadow-[0_4px_20px_rgba(var(--sc-accent-rgb,109,94,252),0.15)] translate-x-1.5'
           : 'hover:bg-white/[0.045] hover:border-white/[0.06] hover:translate-x-1 hover:shadow-md'
       )}
-      style={{ gridTemplateColumns: '1.75rem 1fr auto', ['--row-idx' as string]: index }}
+      style={{
+        gridTemplateColumns: '1.75rem 1fr auto',
+        ['--row-idx' as string]: index,
+        contentVisibility: 'auto',
+        containIntrinsicSize: compact ? '0 38px' : '0 52px',
+      }}
     >
       {/* Index / play button */}
       <div className="relative w-7 h-7 flex items-center justify-center">

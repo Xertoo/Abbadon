@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   Play,
   Pause,
@@ -36,6 +36,135 @@ function fmtTime(sec: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+interface MiniSliderProps {
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  onChange: (val: number) => void;
+  onChangeEnd?: (val: number) => void;
+  onDragStart?: () => void;
+  className?: string;
+  label?: string;
+  title?: string;
+}
+
+function MiniSlider({
+  value,
+  min = 0,
+  max = 1,
+  step = 0.01,
+  onChange,
+  onChangeEnd,
+  onDragStart,
+  className = '',
+  label,
+  title,
+}: MiniSliderProps) {
+  const isDraggingRef = useRef(false);
+  const trackRef = useRef<HTMLDivElement>(null);
+
+  const safeMax = max > min ? max : min + 1;
+  const clampedVal = Math.min(safeMax, Math.max(min, value || 0));
+  const pct = Math.min(100, Math.max(0, ((clampedVal - min) / (safeMax - min)) * 100));
+
+  const computeVal = (clientX: number, el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0) return min;
+    const ratio = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
+    let nextVal = min + ratio * (safeMax - min);
+    if (step > 0) {
+      nextVal = Math.round((nextVal - min) / step) * step + min;
+    }
+    return Math.min(safeMax, Math.max(min, nextVal));
+  };
+
+  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    isDraggingRef.current = true;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    onDragStart?.();
+    const nextVal = computeVal(e.clientX, e.currentTarget);
+    onChange(nextVal);
+  };
+
+  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDraggingRef.current || e.currentTarget.hasPointerCapture(e.pointerId)) {
+      const nextVal = computeVal(e.clientX, e.currentTarget);
+      onChange(nextVal);
+    }
+  };
+
+  const handlePointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+      const finalVal = computeVal(e.clientX, e.currentTarget);
+      onChangeEnd?.(finalVal);
+    }
+  };
+
+  const handlePointerCancel = () => {
+    if (isDraggingRef.current) {
+      isDraggingRef.current = false;
+      onChangeEnd?.(clampedVal);
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const delta = (safeMax - min) * (e.shiftKey ? 0.1 : 0.02);
+    const stepSize = step > 0 ? step : delta;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const next = Math.min(safeMax, clampedVal + stepSize);
+      onChange(next);
+      onChangeEnd?.(next);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = Math.max(min, clampedVal - stepSize);
+      onChange(next);
+      onChangeEnd?.(next);
+    }
+  };
+
+  return (
+    <div
+      role="slider"
+      tabIndex={0}
+      aria-label={label}
+      aria-valuenow={Math.round(clampedVal)}
+      aria-valuemin={min}
+      aria-valuemax={safeMax}
+      title={title}
+      className={`group relative py-1 flex items-center cursor-pointer outline-none select-none ${className}`}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      onKeyDown={handleKeyDown}
+    >
+      {/* Background track (Tło) - clearly visible full extent showing min to max range */}
+      <div
+        ref={trackRef}
+        className="w-full h-1.5 group-hover:h-2 rounded-full bg-black/45 group-hover:bg-black/55 border border-sc-line/80 group-hover:border-sc-line ring-1 ring-black/50 shadow-[inset_0_1px_2px_rgba(0,0,0,0.5)] relative overflow-hidden transition-all duration-150"
+      >
+        {/* Active filled range */}
+        <div
+          className="h-full rounded-full bg-gradient-to-r from-sc-orange to-sc-orange-soft transition-all duration-75"
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+
+      {/* Thumb knob */}
+      <div
+        className="absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-3 h-3 rounded-full bg-neutral-200 group-hover:bg-white shadow-md border border-black/35 pointer-events-none transition-all duration-150 scale-75 opacity-80 group-hover:scale-100 group-hover:opacity-100 group-active:scale-110 group-focus-visible:ring-2 group-focus-visible:ring-sc-orange group-focus-visible:opacity-100"
+        style={{ left: `${pct}%` }}
+      />
+    </div>
+  );
+}
+
 export function TrayMiniPlayer() {
   const [state, setState] = useState<PlaybackState>({
     track: null,
@@ -49,6 +178,9 @@ export function TrayMiniPlayer() {
   const [isMuted, setIsMuted] = useState(false);
   const [prefs, setPrefs] = useState<Prefs>(() => loadPrefs());
   const [isPinned, setIsPinned] = useState<boolean>(() => prefs.miniAlwaysOnTop ?? true);
+
+  const isSeekingRef = useRef(false);
+  const isVolDraggingRef = useRef(false);
 
   // Sync active user theme from main window / localStorage
   useEffect(() => {
@@ -102,9 +234,11 @@ export function TrayMiniPlayer() {
         setState((prev) => ({
           ...prev,
           ...synced,
+          currentTime: isSeekingRef.current ? prev.currentTime : (synced.currentTime ?? prev.currentTime),
         }));
-        if (synced.volume !== undefined) {
+        if (synced.volume !== undefined && !isVolDraggingRef.current) {
           setLocalVolume(synced.volume);
+          setIsMuted(synced.volume === 0);
         }
       }
     };
@@ -113,6 +247,19 @@ export function TrayMiniPlayer() {
       return window.desktop.onTrayStateSync(handleSync);
     }
   }, []);
+
+  // Smoothly increment current time once per second while playing without requiring high-frequency IPC
+  useEffect(() => {
+    if (!state.isPlaying) return;
+    const interval = setInterval(() => {
+      setState((prev) => {
+        if (!prev.isPlaying || isSeekingRef.current) return prev;
+        const next = Math.min(prev.duration || Infinity, prev.currentTime + 1);
+        return { ...prev, currentTime: next };
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [state.isPlaying]);
 
   const sendCommand = (action: string, value?: unknown) => {
     if (window.desktop?.sendMiniCommand) {
@@ -126,23 +273,12 @@ export function TrayMiniPlayer() {
     sendCommand('pin', next);
   };
 
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    setState((p) => ({ ...p, currentTime: val }));
-    sendCommand('seek', val);
-  };
-
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    setLocalVolume(val);
-    setIsMuted(val === 0);
-    sendCommand('volume', val);
-  };
-
   const toggleMute = () => {
     if (isMuted) {
       setIsMuted(false);
-      sendCommand('volume', localVolume || 0.5);
+      const restored = localVolume > 0 ? localVolume : 0.5;
+      setLocalVolume(restored);
+      sendCommand('volume', restored);
     } else {
       setIsMuted(true);
       sendCommand('volume', 0);
@@ -167,20 +303,20 @@ export function TrayMiniPlayer() {
 
     if (mode === 'none') {
       return {
-        className: 'border border-white/20 shadow-2xl',
+        className: 'border border-sc-line/75 shadow-2xl ring-1 ring-black/40',
         style: {
           backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(Math.min(0.35, op * 0.5) * 100)}%, transparent)`,
-          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.45)',
+          boxShadow: '0 8px 32px rgba(0, 0, 0, 0.55)',
         },
       };
     }
 
     // Tinted Transparency (mode === 'tinted' or legacy values)
     return {
-      className: 'border border-white/25 shadow-2xl',
+      className: 'border border-sc-line/80 shadow-2xl ring-1 ring-black/40',
       style: {
         backgroundColor: `color-mix(in srgb, var(--sc-bg, #0b0b0f) ${Math.round(op * 100)}%, transparent)`,
-        boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.18), 0 16px 44px rgba(0, 0, 0, 0.65)',
+        boxShadow: 'inset 0 1px 1px rgba(255, 255, 255, 0.05), 0 16px 44px rgba(0, 0, 0, 0.7)',
       },
     };
   };
@@ -303,17 +439,28 @@ export function TrayMiniPlayer() {
       {/* Progress Slider */}
       {prefs.miniShowProgress && (
         <div className="flex items-center gap-2 text-[10px] text-sc-muted tabular-nums py-0.5">
-          <span>{fmtTime(state.currentTime)}</span>
-          <input
-            type="range"
+          <span className="shrink-0 select-none min-w-[28px] text-right">{fmtTime(state.currentTime)}</span>
+          <MiniSlider
+            value={state.currentTime || 0}
             min={0}
             max={state.duration || 100}
-            value={state.currentTime || 0}
-            onChange={handleSeek}
-            aria-label="Seek track"
-            className="flex-1 h-1 bg-sc-fill/15 rounded-lg appearance-none cursor-pointer accent-[var(--color-sc-orange)] focus:outline-none"
+            step={0.5}
+            onChange={(val) => {
+              setState((p) => ({ ...p, currentTime: val }));
+            }}
+            onDragStart={() => {
+              isSeekingRef.current = true;
+            }}
+            onChangeEnd={(val) => {
+              isSeekingRef.current = false;
+              setState((p) => ({ ...p, currentTime: val }));
+              sendCommand('seek', val);
+            }}
+            className="flex-1"
+            label="Seek track"
+            title={`${fmtTime(state.currentTime)} / ${fmtTime(state.duration)}`}
           />
-          <span>{fmtTime(state.duration)}</span>
+          <span className="shrink-0 select-none min-w-[28px]">{fmtTime(state.duration)}</span>
         </div>
       )}
 
@@ -321,11 +468,15 @@ export function TrayMiniPlayer() {
       <div className="flex items-center justify-between pt-0.5">
         {/* Volume */}
         {prefs.miniShowVolume ? (
-          <div className="flex items-center gap-1.5 w-24">
+          <div
+            className="flex items-center gap-1.5 w-28 group/vol"
+            title={`Volume: ${Math.round((isMuted ? 0 : localVolume) * 100)}%`}
+          >
             <button
               onClick={toggleMute}
-              aria-label="Mute / Unmute"
-              className="text-sc-muted hover:text-sc-fg transition-colors cursor-pointer"
+              aria-label={isMuted || localVolume === 0 ? 'Unmute' : 'Mute'}
+              title={isMuted || localVolume === 0 ? 'Unmute' : 'Mute'}
+              className="text-sc-muted hover:text-sc-fg transition-colors cursor-pointer shrink-0"
             >
               {isMuted || localVolume === 0 ? (
                 <VolumeX className="w-3.5 h-3.5 text-red-400" />
@@ -333,15 +484,27 @@ export function TrayMiniPlayer() {
                 <Volume2 className="w-3.5 h-3.5" />
               )}
             </button>
-            <input
-              type="range"
+            <MiniSlider
+              value={isMuted ? 0 : localVolume}
               min={0}
               max={1}
               step={0.01}
-              value={isMuted ? 0 : localVolume}
-              onChange={handleVolumeChange}
-              aria-label="Volume slider"
-              className="w-16 h-1 bg-sc-fill/15 rounded-lg appearance-none cursor-pointer accent-[var(--color-sc-orange)] focus:outline-none"
+              onChange={(val) => {
+                if (isMuted && val > 0) setIsMuted(false);
+                setLocalVolume(val);
+                sendCommand('volume', val);
+              }}
+              onDragStart={() => {
+                isVolDraggingRef.current = true;
+              }}
+              onChangeEnd={(val) => {
+                isVolDraggingRef.current = false;
+                setLocalVolume(val);
+                sendCommand('volume', val);
+              }}
+              className="w-20"
+              label="Volume slider"
+              title={`Volume: ${Math.round((isMuted ? 0 : localVolume) * 100)}%`}
             />
           </div>
         ) : (

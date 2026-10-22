@@ -181,21 +181,39 @@ export function Spectrum({
       else if (mode === 'wave') drawWave(ctx, w, h, v, dpr, color, color2);
     };
 
-    const loop = () => {
+    let lastDraw = 0;
+    const loop = (now: number) => {
+      if (document.hidden) {
+        raf = 0;
+        return;
+      }
+      if (now - lastDraw < 15) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+      lastDraw = now;
       raf = requestAnimationFrame(loop);
       t = performance.now() - started;
       draw();
     };
 
+    const onVisibilityChange = () => {
+      if (!document.hidden && !raf) {
+        raf = requestAnimationFrame(loop);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
     // Every instance animates now. The previews are 44x32 canvases, so six of
     // them running at once costs less than the one full-width player
     // visualiser, and a frozen frame is useless for judging a mode.
-    loop();
+    raf = requestAnimationFrame(loop);
 
     return () => {
       cancelAnimationFrame(raf);
       cancelAnimationFrame(resizeRaf);
       ro.disconnect();
+      document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [getFreq, active, bars, color, color2, mode, demo, threshold, sensitivity, smoothing]);
 
@@ -450,7 +468,17 @@ export function AudioBloom({
     let t = 0;
     const baseHue = color?.hue ?? 232;
 
-    const tick = () => {
+    let lastBloom = 0;
+    const tick = (now: number) => {
+      if (document.hidden) {
+        raf = 0;
+        return;
+      }
+      if (now - lastBloom < 16) {
+        raf = requestAnimationFrame(tick);
+        return;
+      }
+      lastBloom = now;
       raf = requestAnimationFrame(tick);
       t += 0.016;
       const data = active ? getFreq?.() ?? null : null;
@@ -490,9 +518,20 @@ export function AudioBloom({
         el.style.setProperty('--bloom-spin', `${(t * 14) % 360}deg`);
       }
     };
-    tick();
 
-    return () => cancelAnimationFrame(raf);
+    const onVisibilityChange = () => {
+      if (!document.hidden && !raf) {
+        raf = requestAnimationFrame(tick);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibilityChange);
+
+    raf = requestAnimationFrame(tick);
+
+    return () => {
+      cancelAnimationFrame(raf);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
   }, [getFreq, active, color?.hue]);
 
   return (

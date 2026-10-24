@@ -1,6 +1,7 @@
 {
   "name": "abbadon",
   "productName": "Abbadon",
+  "desktopName": "abbadon.desktop",
   "private": true,
   "version": "1.0.11",
   "description": "Desktop SoundCloud player with rate-limit protection",
@@ -159,7 +160,9 @@
         "entry": {
           "StartupWMClass": "abbadon"
         }
-      }
+      },
+      "syncDesktopName": true,
+      "executableName": "abbadon"
     },
     "deb": {
       "priority": "optional",

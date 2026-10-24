@@ -50,16 +50,26 @@ Prebuilt releases are available for Windows and Linux on the [Releases page](htt
 
 ### 🐧 Linux (Arch, Debian / Ubuntu, Fedora, Universal)
 
+#### ⚡ Quick Install (Universal One-Liner):
+Automatically detects your Linux distribution (Arch, Debian, Ubuntu, Fedora), installs system dependencies, downloads the latest release, and sets up desktop shortcuts:
+```bash
+curl -fsSL https://raw.githubusercontent.com/Xertoo/Abbadon/main/scripts/install-linux.sh | bash
+```
+
+---
+
+#### Manual Installation Options:
+
 | Distribution / Format | Package Type | Installation Command |
 | --- | --- | --- |
-| **Universal Linux (Arch, Debian, etc.)** | `.AppImage` | `chmod +x Abbadon-*.AppImage && ./Abbadon-*.AppImage` |
-| **Arch Linux (AUR / PKGBUILD)** | `packaging/arch/PKGBUILD` | `makepkg -si` in `packaging/arch/` |
+| **Arch Linux (AUR)** | AUR helper (`yay` / `paru`) | `yay -S abbadon-bin` *(or `paru -S abbadon-bin`)* |
+| **Arch Linux (PKGBUILD)** | `packaging/arch/PKGBUILD` | `cd packaging/arch && makepkg -si` |
 | **Debian / Ubuntu / Mint** | `.deb` package | `sudo apt install ./abbadon_*.deb` *(or `sudo dpkg -i`)* |
 | **Fedora / RHEL / openSUSE** | `.rpm` package | `sudo dnf install ./abbadon-*.rpm` |
 | **Universal Linux** | `.AppImage` | `chmod +x Abbadon-*.AppImage && ./Abbadon-*.AppImage` |
-| **Tarball** | `.tar.gz` archive | `tar -xzf abbadon-*.tar.gz && ./abbadon` |
+| **Portable Archive** | `.tar.gz` | `tar -xzf abbadon-*.tar.gz && ./abbadon` |
 
-> 📦 **Linux Dependencies:** Abbadon requires standard audio and UI libraries (`alsa-lib` / `libasound2`, `libnotify`, `nss`, `libxtst`). The stream resolver also integrates automatically with `yt-dlp` (bundled or system-installed). You can run `bash scripts/install-linux.sh` to install all recommended dependencies automatically.
+> 📦 **Linux Dependencies:** Abbadon requires standard audio and UI libraries (`alsa-lib` / `libasound2`, `libnotify`, `nss`, `libxtst`). The stream resolver also integrates automatically with `yt-dlp` (bundled or system-installed).
 
 ---
 

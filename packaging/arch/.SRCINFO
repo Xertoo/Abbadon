@@ -1,0 +1,20 @@
+pkgbase = abbadon-bin
+	pkgdesc = Desktop SoundCloud player with rate-limit protection
+	pkgver = 1.0.11
+	pkgrel = 1
+	url = https://github.com/Xertoo/Abbadon
+	arch = x64
+	license = MIT
+	depends = alsa-lib
+	depends = gtk3
+	depends = libnotify
+	depends = nss
+	depends = libxtst
+	optdepends = yt-dlp: For native stream resolver and HLS song downloads
+	optdepends = ffmpeg: Optional media processing
+	provides = abbadon
+	conflicts = abbadon
+	source = https://github.com/Xertoo/Abbadon/releases/download/v1.0.11/abbadon-1.0.11.tar.gz
+	sha256sums = SKIP
+
+pkgname = abbadon-bin

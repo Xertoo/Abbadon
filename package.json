@@ -73,6 +73,12 @@
       "electron/**/*",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
     "asarUnpack": [
       "electron/bin/**/*"
     ],

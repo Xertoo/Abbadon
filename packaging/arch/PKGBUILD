@@ -1,0 +1,48 @@
+# Maintainer: Xertoo <xertoo@users.noreply.github.com>
+pkgname=abbadon-bin
+pkgver=1.0.11
+pkgrel=1
+pkgdesc="Desktop SoundCloud player with rate-limit protection"
+arch=('x64')
+url="https://github.com/Xertoo/abbadon"
+license=('MIT')
+depends=('alsa-lib' 'gtk3' 'libnotify' 'nss' 'libxtst')
+optdepends=(
+    'yt-dlp: For native stream resolver and HLS song downloads'
+    'ffmpeg: Optional media processing'
+)
+provides=('abbadon')
+conflicts=('abbadon')
+source=("https://github.com/Xertoo/abbadon/releases/download/v${pkgver}/abbadon-${pkgver}.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+    install -d "${pkgdir}/opt/abbadon"
+    cp -r "${srcdir}"/* "${pkgdir}/opt/abbadon/"
+    rm -rf "${pkgdir}/opt/abbadon"/*.tar.gz
+
+    # Executable symlink
+    install -d "${pkgdir}/usr/bin"
+    ln -s "/opt/abbadon/abbadon" "${pkgdir}/usr/bin/abbadon"
+
+    # Desktop entry
+    install -d "${pkgdir}/usr/share/applications"
+    cat <<EOF > "${pkgdir}/usr/share/applications/abbadon.desktop"
+[Desktop Entry]
+Name=Abbadon
+Comment=Desktop SoundCloud player with rate-limit protection
+Exec=/usr/bin/abbadon %U
+Icon=abbadon
+Terminal=false
+Type=Application
+Categories=AudioVideo;Audio;Player;Music;
+StartupWMClass=abbadon
+MimeType=x-scheme-handler/abbadon;
+EOF
+
+    # Application Icon
+    install -d "${pkgdir}/usr/share/icons/hicolor/512x512/apps"
+    if [ -f "${pkgdir}/opt/abbadon/resources/icon.png" ]; then
+        install -m 644 "${pkgdir}/opt/abbadon/resources/icon.png" "${pkgdir}/usr/share/icons/hicolor/512x512/apps/abbadon.png"
+    fi
+}

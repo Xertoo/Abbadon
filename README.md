@@ -7,8 +7,10 @@
   *P2P synchronized listening • Live karaoke lyrics • 10-band equalizer • Global media keys*
 
   <p>
-    <img src="https://img.shields.io/badge/Platform-Windows-0078D6?style=flat-square&logo=windows&logoColor=white" alt="Platform: Windows" />
-    <img src="https://img.shields.io/badge/Electron-35-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron" />
+    <img src="https://img.shields.io/badge/Platform-Windows%20%7C%20Linux-0078D6?style=flat-square&logo=linux&logoColor=white" alt="Platform: Windows | Linux" />
+    <img src="https://img.shields.io/badge/Arch%20Linux-Supported-1793D1?style=flat-square&logo=archlinux&logoColor=white" alt="Arch Linux Supported" />
+    <img src="https://img.shields.io/badge/Debian%20%2F%20Ubuntu-Supported-A81D33?style=flat-square&logo=debian&logoColor=white" alt="Debian Supported" />
+    <img src="https://img.shields.io/badge/Electron-44-47848F?style=flat-square&logo=electron&logoColor=white" alt="Electron" />
     <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=black" alt="React 19" />
     <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript" />
     <img src="https://img.shields.io/badge/TailwindCSS-v4-38B2AC?style=flat-square&logo=tailwind-css&logoColor=white" alt="Tailwind CSS" />
@@ -16,7 +18,7 @@
 
   <p>
     <a href="https://github.com/Xertoo/Abbadon/releases/latest">
-      <img src="https://img.shields.io/github/v/release/Xertoo/Abbadon?style=for-the-badge&logo=windows&logoColor=white&color=FF5500&label=Download%20for%20Windows" alt="Download Abbadon for Windows" />
+      <img src="https://img.shields.io/github/v/release/Xertoo/Abbadon?style=for-the-badge&logo=github&logoColor=white&color=FF5500&label=Download%20Abbadon" alt="Download Abbadon" />
     </a>
   </p>
 
@@ -33,14 +35,31 @@
 
 ## 📥 Download
 
-The easiest way to get started is by grabbing the official Windows build:
+Prebuilt releases are available for Windows and Linux on the [Releases page](https://github.com/Xertoo/Abbadon/releases/latest):
 
-| Version | Description | Download |
+### 🪟 Windows
+
+| Package | Description |
+| --- | --- |
+| **Windows Installer (`.exe`)** | Standard setup wizard with desktop/start-menu shortcuts and silent background updates. |
+| **Portable Edition (`.exe`)** | Standalone executable. No installation required. |
+
+> 💡 **First-time launch note:** If Windows SmartScreen displays *"Windows protected your PC"*, simply click **More info** → **Run anyway**.
+
+---
+
+### 🐧 Linux (Arch, Debian / Ubuntu, Fedora, Universal)
+
+| Distribution / Format | Package Type | Installation Command |
 | --- | --- | --- |
-| **Windows Installer (`.exe`)** | Standard setup wizard. Creates Start Menu and Desktop shortcuts, and supports silent auto-updates. | [**Download Latest Installer**](https://github.com/Xertoo/Abbadon/releases/latest) |
-| **Portable Edition (`.exe`)** | Standalone executable. No installation required — download and run directly. | [**Download Latest Portable**](https://github.com/Xertoo/Abbadon/releases/latest/download/Abbadon-portable.exe) |
+| **Arch Linux / Manjaro** | `.pacman` package | `sudo pacman -U abbadon-*.pacman` |
+| **Arch Linux (AUR / PKGBUILD)** | `packaging/arch/PKGBUILD` | `makepkg -si` in `packaging/arch/` |
+| **Debian / Ubuntu / Mint** | `.deb` package | `sudo apt install ./abbadon_*.deb` *(or `sudo dpkg -i`)* |
+| **Fedora / RHEL / openSUSE** | `.rpm` package | `sudo dnf install ./abbadon-*.rpm` |
+| **Universal Linux** | `.AppImage` | `chmod +x Abbadon-*.AppImage && ./Abbadon-*.AppImage` |
+| **Tarball** | `.tar.gz` archive | `tar -xzf abbadon-*.tar.gz && ./abbadon` |
 
-> 💡 **First-time launch note:** If Windows SmartScreen displays *"Windows protected your PC"*, simply click **More info** → **Run anyway**. This is standard for newly published open-source applications.
+> 📦 **Linux Dependencies:** Abbadon requires standard audio and UI libraries (`alsa-lib` / `libasound2`, `libnotify`, `nss`, `libxtst`). The stream resolver also integrates automatically with `yt-dlp` (bundled or system-installed). You can run `bash scripts/install-linux.sh` to install all recommended dependencies automatically.
 
 ---
 
@@ -85,7 +104,7 @@ SoundCloud's browser player is convenient, but it lives inside a browser tab: ac
 
 #### Prerequisites
 - [Node.js](https://nodejs.org/) (v18 or higher)
-- Windows 10 / 11
+- Windows 10 / 11 or Linux (Arch, Debian/Ubuntu, Fedora, openSUSE, etc.)
 
 ```bash
 # 1. Clone the repository
@@ -99,18 +118,25 @@ npm install
 npm run app
 ```
 
-*(Alternatively, you can simply double-click `run.bat` in the project root).*
+*(On Windows, you can also double-click `run.bat` in the project root).*
 
 ---
 
-## Development Scripts
+## Development & Packaging Scripts
 
 | Command | Action |
 | --- | --- |
 | `npm run app` | Builds frontend assets and launches the Electron application |
 | `npm run dev` | Starts Vite dev server (for fast frontend UI iterations) |
 | `npm run build` | Runs TypeScript checks (`tsc`) and bundles production assets with Vite |
-| `npm run dist` | Builds the standalone installer (`.exe`) and portable executable in `release/` |
+| `npm run dist` | Builds distribution packages for the current host operating system |
+| `npm run dist:win` | Builds Windows packages (NSIS installer `.exe` & portable `.exe`) |
+| `npm run dist:linux` | Builds all Linux packages (AppImage, deb, pacman, rpm, tar.gz) |
+| `npm run dist:deb` | Builds Debian/Ubuntu `.deb` package |
+| `npm run dist:pacman` | Builds Arch Linux `.pacman` package |
+| `npm run dist:appimage` | Builds universal Linux `.AppImage` |
+| `npm run dist:rpm` | Builds RedHat/Fedora `.rpm` package |
+| `npm run pack:linux` | Packs unpacked Linux binary directory for testing |
 
 ---
 

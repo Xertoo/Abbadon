@@ -2,21 +2,32 @@
   "name": "abbadon",
   "productName": "Abbadon",
   "private": true,
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "Desktop SoundCloud player with rate-limit protection",
   "author": "Abbadon",
   "license": "MIT",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
+    "test": "node scripts/test-all.cjs",
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "electron": "electron .",
     "app": "npm run build && electron .",
     "pack": "npm run build && electron-builder --dir",
-    "dist": "npm run build && electron-builder --win",
-    "release": "npm run build && electron-builder --win --publish always"
+    "pack:linux": "npm run build && electron-builder --linux --dir",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "dist:deb": "npm run build && electron-builder --linux deb",
+    "dist:pacman": "npm run build && electron-builder --linux pacman",
+    "dist:appimage": "npm run build && electron-builder --linux AppImage",
+    "dist:rpm": "npm run build && electron-builder --linux rpm",
+    "dist:all": "npm run build && electron-builder -mwl",
+    "release": "npm run build && electron-builder --publish always",
+    "release:win": "npm run build && electron-builder --win --publish always",
+    "release:linux": "npm run build && electron-builder --linux --publish always"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
@@ -62,6 +73,17 @@
       "electron/**/*",
       "package.json"
     ],
+    "asarUnpack": [
+      "electron/bin/**/*"
+    ],
+    "protocols": [
+      {
+        "name": "Abbadon Protocol",
+        "schemes": [
+          "abbadon"
+        ]
+      }
+    ],
     "win": {
       "icon": "build/icon.ico",
       "signExecutable": false,
@@ -94,6 +116,70 @@
     },
     "portable": {
       "artifactName": "Abbadon-portable.exe"
+    },
+    "linux": {
+      "icon": "build/icon.png",
+      "category": "AudioVideo",
+      "synopsis": "Desktop SoundCloud player with rate-limit protection",
+      "description": "Desktop SoundCloud player with rate-limit protection, native stream resolver, and rich integrations",
+      "maintainer": "Abbadon <xertoo@users.noreply.github.com>",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "pacman",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "rpm",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "tar.gz",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "desktop": {
+        "entry": {
+          "StartupWMClass": "abbadon"
+        }
+      }
+    },
+    "deb": {
+      "priority": "optional",
+      "packageCategory": "sound",
+      "depends": [
+        "libnotify4",
+        "libxtst6",
+        "libnss3",
+        "libasound2 | libasound2t64"
+      ],
+      "artifactName": "${name}_${version}_${arch}.${ext}"
+    },
+    "pacman": {
+      "artifactName": "${name}-${version}-${arch}.${ext}"
+    },
+    "rpm": {
+      "artifactName": "${name}-${version}.${arch}.${ext}"
+    },
+    "appImage": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     }
   }
 }

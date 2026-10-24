@@ -41,7 +41,24 @@ app.commandLine.appendSwitch('ignore-gpu-blocklist');
   try {
     const candidates = [];
     if (process.env.WIDEVINE_CDM_PATH) candidates.push(process.env.WIDEVINE_CDM_PATH);
-    if (process.resourcesPath) candidates.push(path.join(process.resourcesPath, 'widevine', 'widevinecdm.dll'));
+    const cdmFile =
+      process.platform === 'win32'
+        ? 'widevinecdm.dll'
+        : process.platform === 'darwin'
+        ? 'libwidevinecdm.dylib'
+        : 'libwidevinecdm.so';
+
+    if (process.resourcesPath) {
+      candidates.push(path.join(process.resourcesPath, 'widevine', cdmFile));
+      candidates.push(path.join(process.resourcesPath, cdmFile));
+    }
+    if (process.platform === 'linux') {
+      candidates.push(
+        '/opt/google/chrome/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so',
+        '/usr/lib/chromium/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so',
+        '/usr/lib/chromium-browser/WidevineCdm/_platform_specific/linux_x64/libwidevinecdm.so'
+      );
+    }
     const cdm = candidates.find((p) => {
       try {
         return fs.existsSync(p);
@@ -953,21 +970,151 @@ ipcMain.handle('app-info', () => ({
  * ------------------------------------------------------------------ */
 
 const getYtDlpPath = () => {
+  const isWin = process.platform === 'win32';
+  const binaryName = isWin ? 'yt-dlp.exe' : 'yt-dlp';
+
+  const appPath = typeof app.getAppPath === 'function' ? app.getAppPath() : __dirname;
+  const asarUnpackedDir = __dirname.replace(/app\.asar$/, 'app.asar.unpacked');
+  const appUnpackedDir = appPath.replace(/app\.asar$/, 'app.asar.unpacked');
+  const resourcesPath = process.resourcesPath || '';
+  const resourcesUnpackedDir = path.join(resourcesPath, 'app.asar.unpacked');
+
   const candidates = [
-    path.join(__dirname, 'bin', 'yt-dlp.exe'),
-    path.join(__dirname, '..', 'bin', 'yt-dlp.exe'),
-    path.join(process.resourcesPath || '', 'electron', 'bin', 'yt-dlp.exe'),
-    path.join(process.resourcesPath || '', 'bin', 'yt-dlp.exe'),
-    path.join(app.getAppPath(), 'electron', 'bin', 'yt-dlp.exe'),
-    path.join(app.getAppPath(), 'bin', 'yt-dlp.exe'),
+    path.join(asarUnpackedDir, 'bin', binaryName),
+    path.join(asarUnpackedDir, '..', 'bin', binaryName),
+    path.join(appUnpackedDir, 'electron', 'bin', binaryName),
+    path.join(appUnpackedDir, 'bin', binaryName),
+    path.join(resourcesUnpackedDir, 'electron', 'bin', binaryName),
+    path.join(resourcesUnpackedDir, 'bin', binaryName),
+    path.join(__dirname, 'bin', binaryName),
+    path.join(__dirname, '..', 'bin', binaryName),
+    path.join(resourcesPath, 'electron', 'bin', binaryName),
+    path.join(resourcesPath, 'bin', binaryName),
+    path.join(appPath, 'electron', 'bin', binaryName),
+    path.join(appPath, 'bin', binaryName),
   ];
-  for (const p of candidates) {
+
+  try {
+    const userDataBin = path.join(app.getPath('userData'), 'bin', binaryName);
+    candidates.push(userDataBin);
+  } catch {}
+
+  if (!isWin) {
     try {
-      if (fs.existsSync(p)) return p;
+      const home = app.getPath('home');
+      candidates.push(
+        path.join(home, '.local', 'bin', 'yt-dlp'),
+        path.join(home, 'bin', 'yt-dlp'),
+        '/usr/local/bin/yt-dlp',
+        '/usr/bin/yt-dlp',
+        '/bin/yt-dlp'
+      );
     } catch {}
   }
+
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) {
+        if (!isWin) {
+          try {
+            fs.chmodSync(p, 0o755);
+          } catch {}
+        }
+        return p;
+      }
+    } catch {}
+  }
+
+  // System PATH lookup via which/where
+  try {
+    const cmd = isWin ? 'where.exe yt-dlp' : 'which yt-dlp';
+    const found = require('node:child_process')
+      .execSync(cmd, { stdio: ['ignore', 'pipe', 'ignore'], timeout: 1500 })
+      .toString()
+      .trim()
+      .split(/\r?\n/)[0];
+    if (found && fs.existsSync(found)) {
+      if (!isWin) {
+        try { fs.chmodSync(found, 0o755); } catch {}
+      }
+      return found;
+    }
+  } catch {}
+
   return null;
 };
+
+function downloadBinaryFile(url, dest) {
+  const https = require('node:https');
+  const http = require('node:http');
+  return new Promise((resolve, reject) => {
+    const client = url.startsWith('https:') ? https : http;
+    client.get(url, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return downloadBinaryFile(res.headers.location, dest).then(resolve, reject);
+      }
+      if (res.statusCode !== 200) {
+        return reject(new Error(`Failed to download binary: HTTP ${res.statusCode}`));
+      }
+      const dir = path.dirname(dest);
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      const tmp = `${dest}.download`;
+      const fileStream = fs.createWriteStream(tmp);
+      res.pipe(fileStream);
+      fileStream.on('finish', () => {
+        fileStream.close(() => {
+          try {
+            if (fs.existsSync(dest)) fs.unlinkSync(dest);
+            fs.renameSync(tmp, dest);
+            resolve(dest);
+          } catch (e) {
+            reject(e);
+          }
+        });
+      });
+      fileStream.on('error', (err) => {
+        try { fs.unlinkSync(tmp); } catch {}
+        reject(err);
+      });
+    }).on('error', reject);
+  });
+}
+
+let ytDlpDownloadingPromise = null;
+async function ensureYtDlp() {
+  const existing = getYtDlpPath();
+  if (existing) return existing;
+
+  if (ytDlpDownloadingPromise) return ytDlpDownloadingPromise;
+
+  ytDlpDownloadingPromise = (async () => {
+    try {
+      const isWin = process.platform === 'win32';
+      const binaryName = isWin ? 'yt-dlp.exe' : 'yt-dlp';
+      const targetDir = path.join(app.getPath('userData'), 'bin');
+      const targetPath = path.join(targetDir, binaryName);
+
+      const downloadUrl = isWin
+        ? 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe'
+        : 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux';
+
+      console.log(`[yt-dlp] Downloading standalone binary for ${process.platform}...`);
+      await downloadBinaryFile(downloadUrl, targetPath);
+      if (!isWin) {
+        try { fs.chmodSync(targetPath, 0o755); } catch {}
+      }
+      console.log(`[yt-dlp] Ready at ${targetPath}`);
+      return targetPath;
+    } catch (err) {
+      console.warn('[yt-dlp] Automatic download failed:', err.message);
+      return null;
+    } finally {
+      ytDlpDownloadingPromise = null;
+    }
+  })();
+
+  return ytDlpDownloadingPromise;
+}
 
 const ILLEGAL_FILENAME = /[\\/:*?"<>|]/g;
 
@@ -1145,7 +1292,10 @@ ipcMain.handle('sc:download', async (_e, payload) => {
 
   try {
     if (url.includes('.m3u8')) {
-      const binPath = getYtDlpPath();
+      let binPath = getYtDlpPath();
+      if (!binPath) {
+        binPath = await ensureYtDlp();
+      }
       if (!binPath) {
         return { ok: false, error: 'Cannot download HLS stream without yt-dlp binary' };
       }
@@ -1358,8 +1508,11 @@ function resolveOfficialStream({ artist, title }) {
     return inFlightResolutions.get(cacheKey);
   }
 
-  const promise = new Promise((resolve) => {
-    const binPath = getYtDlpPath();
+  const promise = new Promise(async (resolve) => {
+    let binPath = getYtDlpPath();
+    if (!binPath) {
+      binPath = await ensureYtDlp();
+    }
     if (!binPath) {
       resolve({ ok: false, error: 'yt-dlp binary not found' });
       return;
@@ -1694,21 +1847,29 @@ function toggleTrayWindow() {
     const { screen } = require('electron');
     const trayBounds = tray.getBounds();
     const winBounds = trayWin.getBounds();
-    const display = screen.getDisplayNearestPoint({ x: trayBounds.x, y: trayBounds.y });
 
-    let x = Math.round(trayBounds.x + trayBounds.width / 2 - winBounds.width / 2);
-    let y = Math.round(trayBounds.y - winBounds.height - 12);
-    if (trayBounds.y < display.bounds.y + 200) {
-      y = Math.round(trayBounds.y + trayBounds.height + 12);
-    }
+    if (!trayBounds || !trayBounds.width || !trayBounds.height) {
+      const primary = screen.getPrimaryDisplay();
+      const workArea = primary.workArea;
+      const x = Math.round(workArea.x + workArea.width - winBounds.width - 16);
+      const y = Math.round(workArea.y + workArea.height - winBounds.height - 16);
+      trayWin.setPosition(x, y, false);
+    } else {
+      const display = screen.getDisplayNearestPoint({ x: trayBounds.x, y: trayBounds.y });
+      let x = Math.round(trayBounds.x + trayBounds.width / 2 - winBounds.width / 2);
+      let y = Math.round(trayBounds.y - winBounds.height - 12);
+      if (trayBounds.y < display.bounds.y + 200) {
+        y = Math.round(trayBounds.y + trayBounds.height + 12);
+      }
 
-    if (x + winBounds.width > display.bounds.x + display.bounds.width) {
-      x = display.bounds.x + display.bounds.width - winBounds.width - 12;
+      if (x + winBounds.width > display.bounds.x + display.bounds.width) {
+        x = display.bounds.x + display.bounds.width - winBounds.width - 12;
+      }
+      if (x < display.bounds.x) {
+        x = display.bounds.x + 12;
+      }
+      trayWin.setPosition(x, y, false);
     }
-    if (x < display.bounds.x) {
-      x = display.bounds.x + 12;
-    }
-    trayWin.setPosition(x, y, false);
   }
   trayWin.setAlwaysOnTop(isMiniPinned, 'screen-saver');
   if (lastMiniPrefs) {
@@ -1942,6 +2103,11 @@ app.on('second-instance', (_event, argv) => {
   }
 });
 
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  handleProtocolUrl(url);
+});
+
 let userShortcuts = {
   enabled: true,
   toggle: 'Ctrl+Alt+Space',
@@ -2029,6 +2195,7 @@ app.whenReady().then(async () => {
     console.log('[cookies] Init sync error:', err.message);
   }
 
+  app.setName('Abbadon');
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.abbadon.player');
   }

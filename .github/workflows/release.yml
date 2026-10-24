@@ -8,9 +8,31 @@ on:
 
 jobs:
   release:
-    runs-on: windows-latest
+    name: Build & Release (${{ matrix.platform }})
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            build_cmd: npm run build && npx electron-builder --win --publish never
+            assets: |
+              release/*.exe
+              release/*.blockmap
+              release/latest.yml
+          - os: ubuntu-latest
+            platform: linux
+            build_cmd: npm run build && npx electron-builder --linux --publish never
+            assets: |
+              release/*.AppImage
+              release/*.deb
+              release/*.pacman
+              release/*.rpm
+              release/*.tar.gz
+              release/latest-linux.yml
 
     steps:
       - name: Checkout repository
@@ -22,21 +44,24 @@ jobs:
           node-version: 22
           cache: 'npm'
 
+      - name: Install Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y rpm fakeroot libarchive-tools
+
       - name: Install dependencies
         run: npm ci
 
       - name: Build application
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: npm run build && npx electron-builder --win --publish never
+        run: ${{ matrix.build_cmd }}
 
       - name: Upload Release Assets
         uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
-          files: |
-            release/*.exe
-            release/*.blockmap
-            release/latest.yml
+          files: ${{ matrix.assets }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

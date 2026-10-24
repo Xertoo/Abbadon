@@ -52,7 +52,7 @@ Prebuilt releases are available for Windows and Linux on the [Releases page](htt
 
 | Distribution / Format | Package Type | Installation Command |
 | --- | --- | --- |
-| **Arch Linux / Manjaro** | `.pacman` package | `sudo pacman -U abbadon-*.pacman` |
+| **Universal Linux (Arch, Debian, etc.)** | `.AppImage` | `chmod +x Abbadon-*.AppImage && ./Abbadon-*.AppImage` |
 | **Arch Linux (AUR / PKGBUILD)** | `packaging/arch/PKGBUILD` | `makepkg -si` in `packaging/arch/` |
 | **Debian / Ubuntu / Mint** | `.deb` package | `sudo apt install ./abbadon_*.deb` *(or `sudo dpkg -i`)* |
 | **Fedora / RHEL / openSUSE** | `.rpm` package | `sudo dnf install ./abbadon-*.rpm` |

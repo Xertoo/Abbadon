@@ -50,7 +50,6 @@ assert(pkg.build.asarUnpack && pkg.build.asarUnpack.includes('electron/bin/**/*'
 const linuxTargets = (pkg.build.linux.target || []).map(t => (typeof t === 'string' ? t : t.target));
 assert(linuxTargets.includes('AppImage'), 'Linux AppImage target configured');
 assert(linuxTargets.includes('deb'), 'Linux deb target configured');
-assert(linuxTargets.includes('pacman'), 'Linux pacman (Arch) target configured');
 assert(linuxTargets.includes('rpm'), 'Linux rpm (Fedora/RHEL) target configured');
 assert(linuxTargets.includes('tar.gz'), 'Linux tar.gz portable target configured');
 
@@ -213,7 +212,7 @@ assert(fs.existsSync(path.join(ROOT_DIR, '.github/workflows/release.yml')), 'Rel
 
 const releaseYml = fs.readFileSync(path.join(ROOT_DIR, '.github/workflows/release.yml'), 'utf8');
 assert(releaseYml.includes('windows-latest') && releaseYml.includes('ubuntu-latest'), 'Release workflow matrix has windows and ubuntu runners');
-assert(releaseYml.includes('release/*.AppImage') && releaseYml.includes('release/*.deb') && releaseYml.includes('release/*.pacman'), 'Release workflow uploads all Linux formats');
+assert(releaseYml.includes('release/*.AppImage') && releaseYml.includes('release/*.deb') && releaseYml.includes('release/*.rpm'), 'Release workflow uploads all Linux formats');
 
 // 7. Summary
 console.log('\n========================================');

@@ -35,7 +35,7 @@ case "$DISTRO" in
 esac
 
 echo "Dependencies ready! You can run Abbadon using:"
-echo "  • Arch Linux:   sudo pacman -U release/abbadon-*.pacman"
+echo "  • Arch Linux:   chmod +x release/Abbadon-*.AppImage && ./release/Abbadon-*.AppImage (or makepkg -si in packaging/arch)"
 echo "  • Debian/Ubuntu: sudo apt install ./release/abbadon_*.deb"
 echo "  • Fedora/RHEL:  sudo dnf install ./release/abbadon-*.rpm"
 echo "  • AppImage:     chmod +x release/Abbadon-*.AppImage && ./release/Abbadon-*.AppImage"

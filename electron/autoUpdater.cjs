@@ -32,6 +32,18 @@ function initAutoUpdater(win, isDev, beforeInstallCb) {
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
 
+  // Ensure GitHub feed URL is set even if app-update.yml is absent
+  try {
+    autoUpdater.setFeedURL({
+      provider: 'github',
+      owner: 'Xertoo',
+      repo: 'abbadon',
+      private: false,
+    });
+  } catch (err) {
+    console.log('[AutoUpdater] Fallback feed URL notice:', err.message);
+  }
+
   autoUpdater.on('before-quit-for-update', () => {
     if (typeof onBeforeInstall === 'function') {
       onBeforeInstall();
@@ -136,7 +148,7 @@ ipcMain.handle('updater:install', () => {
       } catch {}
     });
     setImmediate(() => {
-      autoUpdater.quitAndInstall(true, true);
+      autoUpdater.quitAndInstall(false, true);
     });
     return { ok: true };
   } catch (err) {

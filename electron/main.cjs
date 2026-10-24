@@ -79,6 +79,7 @@ app.commandLine.appendSwitch('ignore-gpu-blocklist');
 
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
 const isDev = !app.isPackaged;
+const isLocalBuild = /[\\/]win-unpacked[\\/]/.test(process.execPath);
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -2248,7 +2249,7 @@ app.whenReady().then(async () => {
 
   // Initialize Auto-Updater
   try {
-    initAutoUpdater(win, isDev, () => {
+    initAutoUpdater(win, isDev || isLocalBuild, () => {
       isQuitting = true;
     });
   } catch (err) {

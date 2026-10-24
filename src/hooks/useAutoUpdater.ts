@@ -1,5 +1,7 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import type { UpdateState } from '../vite-env';
+
+const DISMISSED_VERSION_KEY = 'sc_dismissed_update_version';
 
 export function useAutoUpdater() {
   const [updateState, setUpdateState] = useState<UpdateState>({
@@ -14,7 +16,16 @@ export function useAutoUpdater() {
     error: null,
   });
 
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissedVersion, setDismissedVersion] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(DISMISSED_VERSION_KEY);
+    } catch {
+      return null;
+    }
+  });
+  const [sessionDismissed, setSessionDismissed] = useState(false);
+  const dismissedRef = useRef(dismissedVersion);
+  dismissedRef.current = dismissedVersion;
 
   useEffect(() => {
     // Initial status fetch
@@ -28,9 +39,13 @@ export function useAutoUpdater() {
     if (window.desktop?.onUpdateStatus) {
       const unsub = window.desktop.onUpdateStatus((next) => {
         setUpdateState(next);
-        // Reset dismissed flag if a new update arrives
-        if (next.status === 'available' || next.status === 'downloaded') {
-          setDismissed(false);
+        // Only reset dismissal if a brand new, different version is announced
+        if (next.availableVersion && dismissedRef.current && dismissedRef.current !== next.availableVersion) {
+          setDismissedVersion(null);
+          setSessionDismissed(false);
+          try {
+            localStorage.removeItem(DISMISSED_VERSION_KEY);
+          } catch {}
         }
       });
       return unsub;
@@ -88,15 +103,29 @@ export function useAutoUpdater() {
   }, []);
 
   const dismiss = useCallback(() => {
-    setDismissed(true);
-  }, []);
+    setSessionDismissed(true);
+    const ver = updateState.availableVersion || 'dismissed';
+    setDismissedVersion(ver);
+    try {
+      localStorage.setItem(DISMISSED_VERSION_KEY, ver);
+    } catch {}
+  }, [updateState.availableVersion]);
+
+  const isDismissed = Boolean(
+    sessionDismissed ||
+    (dismissedVersion && (
+      !updateState.availableVersion ||
+      dismissedVersion === updateState.availableVersion ||
+      dismissedVersion === 'dismissed'
+    ))
+  );
 
   return {
     updateState,
     checkForUpdates,
     downloadUpdate,
     quitAndInstall,
-    dismissed,
+    dismissed: isDismissed,
     dismiss,
   };
 }

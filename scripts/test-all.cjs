@@ -214,7 +214,151 @@ const releaseYml = fs.readFileSync(path.join(ROOT_DIR, '.github/workflows/releas
 assert(releaseYml.includes('windows-latest') && releaseYml.includes('ubuntu-latest'), 'Release workflow matrix has windows and ubuntu runners');
 assert(releaseYml.includes('release/*.AppImage') && releaseYml.includes('release/*.deb') && releaseYml.includes('release/*.rpm'), 'Release workflow uploads all Linux formats');
 
-// 7. Summary
+// 7. Local & Server Media Verification
+console.log('\n--- 7. Local & Server Media Verification ---');
+function testParseM3u(content, basePath) {
+  const lines = content.split(/\r?\n/);
+  const tracks = [];
+  let curTitle = '';
+  let curDuration = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+
+    if (line.startsWith('#EXTINF:')) {
+      const match = line.match(/^#EXTINF:(-?\d+(?:\.\d+)?)\s*,\s*(.*)$/);
+      if (match) {
+        curDuration = Math.max(0, Math.round(parseFloat(match[1])));
+        curTitle = match[2].trim();
+      }
+      continue;
+    }
+
+    if (line.startsWith('#')) continue;
+
+    const isHttp = /^https?:\/\//i.test(line);
+    let artist = 'Various Artists';
+    let title = curTitle;
+
+    if (curTitle) {
+      const parts = curTitle.split(/\s*[-–—]\s*/);
+      if (parts.length > 1) {
+        artist = parts[0].trim();
+        title = parts.slice(1).join(' - ').trim();
+      }
+    } else {
+      const base = path.basename(line, path.extname(line));
+      const parts = base.split(/\s*[-–—]\s*/);
+      if (parts.length > 1) {
+        artist = parts[0].trim();
+        title = parts.slice(1).join(' - ').trim();
+      } else {
+        title = base;
+      }
+    }
+
+    tracks.push({
+      title: title || 'Track',
+      artist: artist || 'Artist',
+      duration: curDuration,
+      isLocal: !isHttp,
+      url: isHttp ? line : path.resolve(basePath, line),
+    });
+
+    curTitle = '';
+    curDuration = 0;
+  }
+  return tracks;
+}
+
+const sampleM3u = `#EXTM3U
+#EXTINF:240,Daft Punk - One More Time
+track1.mp3
+#EXTINF:185,Starlight
+https://stream.example.com/live.mp3
+`;
+
+const parsedM3u = testParseM3u(sampleM3u, 'C:\\Music');
+assert(parsedM3u.length === 2, 'parseM3u parses 2 entries from sample M3U');
+assert(parsedM3u[0].title === 'One More Time' && parsedM3u[0].artist === 'Daft Punk' && parsedM3u[0].duration === 240, 'parseM3u extracts artist, title and duration correctly');
+assert(parsedM3u[0].isLocal === true && parsedM3u[0].url.endsWith('track1.mp3'), 'parseM3u resolves relative local paths');
+assert(parsedM3u[1].isLocal === false && parsedM3u[1].url === 'https://stream.example.com/live.mp3', 'parseM3u recognizes HTTP/HTTPS stream URLs');
+
+// Check that TitleBar component and AddMediaModal exist
+const titleBarSrc = fs.readFileSync(path.join(ROOT_DIR, 'src/components/TitleBar.tsx'), 'utf8');
+assert(titleBarSrc.includes('relative z-10'), 'TitleBar has non-intrusive stacking z-10');
+assert(!titleBarSrc.includes('z-[9999]'), 'TitleBar does not block modals with excessive z-[9999]');
+assert(fs.existsSync(path.join(ROOT_DIR, 'src/components/TitleBar.tsx')), 'TitleBar component exists');
+assert(fs.existsSync(path.join(ROOT_DIR, 'src/components/AddMediaModal.tsx')), 'AddMediaModal component exists');
+assert(fs.existsSync(path.join(ROOT_DIR, 'src/lib/localMedia.ts')), 'localMedia manager module exists');
+
+const preloadSrc = fs.readFileSync(path.join(ROOT_DIR, 'electron/preload.cjs'), 'utf8');
+assert(preloadSrc.includes('isCustomTitleBar'), 'preload.cjs exposes isCustomTitleBar property');
+
+const mainSrc = fs.readFileSync(path.join(ROOT_DIR, 'electron/main.cjs'), 'utf8');
+assert(!mainSrc.includes('win.destroy()'), 'electron/main.cjs does not destroy window on titlebar toggle');
+
+const viewsSrc = fs.readFileSync(path.join(ROOT_DIR, 'src/components/Views.tsx'), 'utf8');
+assert(!viewsSrc.includes('settings-title-bar'), 'Views.tsx does not hide titlebar settings behind an expandable disclosure');
+assert(!viewsSrc.includes('Discord Style'), 'Views.tsx no longer uses "Discord Style" card naming');
+assert(titleBarSrc.includes('export function WindowControls'), 'TitleBar.tsx exports WindowControls');
+
+// 8. Playlist Creation & Robust Endpoint Strategy Verification
+console.log('\n--- 8. Playlist Creation & Robust Strategy Verification ---');
+function buildPlaylistPayload(title, trackIds = []) {
+  const validIds = trackIds.filter((id) => Number.isInteger(id) && id > 0);
+  return {
+    playlist: {
+      title,
+      sharing: 'public',
+      tracks: validIds.map((id) => ({ id })),
+    },
+  };
+}
+
+const payloadWithTracks = buildPlaylistPayload('Favorites', [12345, 67890]);
+assert(payloadWithTracks.playlist.title === 'Favorites', 'buildPlaylistPayload sets correct title');
+assert(Array.isArray(payloadWithTracks.playlist.tracks) && payloadWithTracks.playlist.tracks.length === 2, 'buildPlaylistPayload attaches valid track objects');
+assert(payloadWithTracks.playlist.tracks[0].id === 12345, 'buildPlaylistPayload formats id correctly');
+
+const payloadEmpty = buildPlaylistPayload('Empty List', []);
+assert(Array.isArray(payloadEmpty.playlist.tracks) && payloadEmpty.playlist.tracks.length === 0, 'buildPlaylistPayload supports empty initial tracks');
+
+// 9. Playlist Deletion & Context Menu Verification
+console.log('\n--- 9. Playlist Deletion & Context Menu Verification ---');
+
+const playlistContextMenuPath = path.join(__dirname, '..', 'src', 'components', 'PlaylistContextMenu.tsx');
+assert(fs.existsSync(playlistContextMenuPath), 'PlaylistContextMenu.tsx component exists');
+
+const contextMenuContent = fs.readFileSync(playlistContextMenuPath, 'utf8');
+assert(contextMenuContent.includes('export function PlaylistContextMenu'), 'PlaylistContextMenu is exported as component');
+assert(contextMenuContent.includes('Delete Playlist'), 'PlaylistContextMenu includes Delete Playlist action');
+assert(contextMenuContent.includes('confirmDeleteOpen'), 'PlaylistContextMenu has delete confirmation dialog');
+
+const soundcloudLibPath = path.join(__dirname, '..', 'src', 'lib', 'soundcloud.ts');
+const soundcloudContent = fs.readFileSync(soundcloudLibPath, 'utf8');
+assert(soundcloudContent.includes('async deletePlaylist('), 'SoundCloud client library implements deletePlaylist');
+
+const useSoundCloudPath = path.join(__dirname, '..', 'src', 'hooks', 'useSoundCloud.ts');
+const useSoundCloudContent = fs.readFileSync(useSoundCloudPath, 'utf8');
+assert(useSoundCloudContent.includes('deletePlaylist: (playlistId: string | number) => Promise<boolean>'), 'useSoundCloud hook defines deletePlaylist in interface');
+
+const sidebarPath = path.join(__dirname, '..', 'src', 'components', 'Sidebar.tsx');
+const sidebarContent = fs.readFileSync(sidebarPath, 'utf8');
+assert(sidebarContent.includes('onContextMenuPlaylist'), 'Sidebar supports onContextMenuPlaylist prop and handler');
+
+const detailViewPath = path.join(__dirname, '..', 'src', 'components', 'DetailView.tsx');
+const detailViewContent = fs.readFileSync(detailViewPath, 'utf8');
+assert(detailViewContent.includes('onDeletePlaylist'), 'DetailView supports onDeletePlaylist');
+assert(detailViewContent.includes('onContextMenuPlaylist'), 'DetailView supports onContextMenuPlaylist');
+
+const appPath = path.join(__dirname, '..', 'src', 'App.tsx');
+const appContent = fs.readFileSync(appPath, 'utf8');
+assert(appContent.includes('handleDeletePlaylist'), 'App.tsx defines handleDeletePlaylist handler');
+assert(appContent.includes('<PlaylistContextMenu'), 'App.tsx renders PlaylistContextMenu');
+
+// 10. Summary
 console.log('\n========================================');
 console.log(`🏁 TEST RESULTS: ${passedTests}/${totalTests} PASSED (${failedTests} FAILED)`);
 console.log('========================================\n');

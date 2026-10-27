@@ -46,6 +46,7 @@ import {
   Radio,
   Download,
   Folder,
+  FolderPlus,
   ArrowUpCircle,
   Waves,
   Headphones,
@@ -61,6 +62,8 @@ import {
   SkipBack,
   SkipForward,
   X,
+  AppWindow,
+  PanelTop,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAutoUpdater } from '../hooks/useAutoUpdater';
@@ -451,17 +454,33 @@ interface LibraryProps {
   renderActions?: (track: Track) => React.ReactNode;
   compact?: boolean;
   showArtwork?: boolean;
+  onOpenAddMedia?: () => void;
+  onContextMenuPlaylist?: (playlist: Playlist, x: number, y: number) => void;
 }
 
 export function LibraryView(p: LibraryProps) {
   const showSignIn = p.showSignIn !== false;
   return (
     <div className="p-6 sm:p-8 max-w-[1560px] mx-auto w-full">
-      <h1 className="text-2xl font-extrabold tracking-tight">{p.title ?? 'Liked Tracks'}</h1>
-      <p className="text-[13px] text-sc-muted mt-1">
-        {p.subtitle ??
-          `${p.tracks.length} saved ${p.tracks.length === 1 ? 'track' : 'tracks'}`}
-      </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-extrabold tracking-tight">{p.title ?? 'Liked Tracks'}</h1>
+          <p className="text-[13px] text-sc-muted mt-1">
+            {p.subtitle ??
+              `${p.tracks.length} saved ${p.tracks.length === 1 ? 'track' : 'tracks'}`}
+          </p>
+        </div>
+        {p.onOpenAddMedia && (
+          <button
+            type="button"
+            onClick={p.onOpenAddMedia}
+            className="inline-flex items-center gap-2 rounded-full border border-sc-line bg-sc-panel hover:bg-sc-panel-2 px-4 py-2 text-[13px] font-bold text-sc-fg hover:border-sc-orange/50 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer shadow-xs group"
+          >
+            <FolderPlus className="w-4 h-4 text-sc-orange group-hover:scale-110 transition-transform" />
+            <span>Add from PC / Server</span>
+          </button>
+        )}
+      </div>
 
       {showSignIn && !p.signedIn && (
         <div className="mt-6 rounded-2xl border border-sc-line bg-sc-panel p-6 flex flex-wrap items-center justify-between gap-4">
@@ -487,6 +506,10 @@ export function LibraryView(p: LibraryProps) {
                 key={pl.id}
                 type="button"
                 onClick={() => p.onOpenPlaylist?.(pl)}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  p.onContextMenuPlaylist?.(pl, e.clientX, e.clientY);
+                }}
                 className="group text-left rounded-xl border border-sc-line bg-sc-panel-2/30 p-3 hover:border-sc-dim hover:bg-sc-fill/5 transition-all"
               >
                 <div className="aspect-square w-full rounded-lg overflow-hidden bg-sc-panel mb-2">
@@ -2730,6 +2753,23 @@ export function SettingsView({
           </Disclosure>
 
           <div className="grid gap-3 sm:grid-cols-2">
+            <Toggle
+              icon={AppWindow}
+              label="Custom Title Bar"
+              hint="Aesthetic top bar with track info, window dragging, and controls."
+              checked={prefs.customTitleBar}
+              onChange={(v) => {
+                onPref('customTitleBar', v);
+                void window.desktop?.setCustomTitleBar?.(v);
+              }}
+            />
+            <Toggle
+              icon={PanelTop}
+              label="Classic Windows buttons"
+              hint="Use classic Windows caption buttons instead of modern compact controls."
+              checked={prefs.titleBarButtons === 'windows'}
+              onChange={(v) => onPref('titleBarButtons', v ? 'windows' : 'discord')}
+            />
             <Toggle
               icon={Palette}
               label="Dynamic Artwork Theme"

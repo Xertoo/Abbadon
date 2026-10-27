@@ -248,7 +248,8 @@ const relay = () => (typeof window !== 'undefined' ? window.desktop : undefined)
 function authHeaders(): Record<string, string> {
   const token = creds.authToken;
   if (!token || token === '__cookie_session__') return {};
-  return { Authorization: `OAuth ${token}` };
+  const formatted = token.startsWith('OAuth ') || token.startsWith('Bearer ') ? token : `OAuth ${token}`;
+  return { Authorization: formatted };
 }
 
 export class TransportError extends Error {
@@ -386,7 +387,8 @@ async function request<T>(path: string, ttl: number, opts: RequestOpts = {}): Pr
     if (query) {
       for (const [k, v] of new URLSearchParams(query)) qs.set(k, v);
     }
-    const url = `${API_BASE}${base}?${qs.toString()}`;
+    const isAbsolute = /^https?:\/\//i.test(base);
+    const url = isAbsolute ? `${base}?${qs.toString()}` : `${API_BASE}${base}?${qs.toString()}`;
 
     let res: RelayResponse;
     try {
@@ -1260,13 +1262,185 @@ export const sc = {
     return result;
   },
 
-  /** Creates an empty playlist owned by the signed-in account. */
-  createPlaylist(title: string, description = '') {
-    return request<ScPlaylist>('/playlists', 0, {
-      method: 'POST',
+  /** Creates a playlist owned by the signed-in account with optional initial tracks. */
+  async createPlaylist(title: string, description = '', initialTracks: Track[] = []) {
+    const validIds = initialTracks
+      .map((t) => Number(String(t.id).replace(/^soundcloud:tracks:/, '').trim()))
+      .filter((id) => Number.isInteger(id) && id > 0);
+
+    const trackObjects = validIds.map((id) => ({ id }));
+    const urns = validIds.map((id) => `soundcloud:tracks:${id}`);
+
+    const variations: Array<{ url: string; body: unknown; label: string }> = [
+      // 1. Official SoundCloud REST endpoint with track objects [{ id }]
+      {
+        url: 'https://api.soundcloud.com/playlists',
+        body: {
+          playlist: {
+            title,
+            description,
+            sharing: 'public',
+            ...(trackObjects.length > 0 ? { tracks: trackObjects } : {}),
+          },
+        },
+        label: 'api.soundcloud.com-objects',
+      },
+      // 2. Official SoundCloud REST endpoint with numeric array [id]
+      {
+        url: 'https://api.soundcloud.com/playlists',
+        body: {
+          playlist: {
+            title,
+            description,
+            sharing: 'public',
+            ...(validIds.length > 0 ? { tracks: validIds } : {}),
+          },
+        },
+        label: 'api.soundcloud.com-numeric',
+      },
+      // 3. api-v2 endpoint with track objects [{ id }]
+      {
+        url: 'https://api-v2.soundcloud.com/playlists',
+        body: {
+          playlist: {
+            title,
+            description,
+            sharing: 'public',
+            ...(trackObjects.length > 0 ? { tracks: trackObjects } : {}),
+          },
+        },
+        label: 'api-v2-objects',
+      },
+      // 4. api-v2 endpoint with numeric IDs [id]
+      {
+        url: 'https://api-v2.soundcloud.com/playlists',
+        body: {
+          playlist: {
+            title,
+            description,
+            sharing: 'public',
+            ...(validIds.length > 0 ? { tracks: validIds } : {}),
+          },
+        },
+        label: 'api-v2-numeric',
+      },
+      // 5. api-v2 endpoint with URNs [soundcloud:tracks:id]
+      {
+        url: 'https://api-v2.soundcloud.com/playlists',
+        body: {
+          playlist: {
+            title,
+            description,
+            sharing: 'public',
+            ...(urns.length > 0 ? { tracks: urns } : {}),
+          },
+        },
+        label: 'api-v2-urns',
+      },
+      // 6. Minimal empty tracks array
+      {
+        url: 'https://api.soundcloud.com/playlists',
+        body: {
+          playlist: {
+            title,
+            description,
+            sharing: 'public',
+            tracks: [],
+          },
+        },
+        label: 'api.soundcloud.com-empty',
+      },
+      {
+        url: 'https://api-v2.soundcloud.com/playlists',
+        body: {
+          playlist: {
+            title,
+            description,
+            sharing: 'public',
+            tracks: [],
+          },
+        },
+        label: 'api-v2-empty',
+      },
+    ];
+
+    let lastError: unknown = null;
+    for (let i = 0; i < variations.length; i++) {
+      const variant = variations[i];
+      try {
+        if (i > 0) {
+          await new Promise((r) => setTimeout(r, 600));
+        }
+        const res = await request<ScPlaylist>(variant.url, 0, {
+          method: 'POST',
+          auth: true,
+          body: variant.body,
+        });
+
+        if (res && res.id) {
+          if (validIds.length > 0 && (!res.tracks || res.tracks.length === 0)) {
+            try {
+              const updated = await updatePlaylistTracks(res.id, validIds);
+              return updated;
+            } catch (err) {
+              console.warn('[createPlaylist] updatePlaylistTracks fallback failed:', err);
+            }
+          }
+          return res;
+        }
+      } catch (err: unknown) {
+        lastError = err;
+        console.warn(`[createPlaylist] Variant ${variant.label} failed:`, err);
+      }
+    }
+
+    throw lastError || new Error('Could not create playlist on SoundCloud');
+  },
+
+  /** Updates playlist metadata (title, description). */
+  async updatePlaylistDetails(playlistId: string | number, details: { title?: string; description?: string }) {
+    const cleanId = String(playlistId).replace(/^soundcloud:playlists:/, '').trim();
+    return request<ScPlaylist>(`/playlists/${cleanId}`, 0, {
+      method: 'PUT',
       auth: true,
-      body: { playlist: { title, description, sharing: 'public' } },
+      body: { playlist: details },
     });
+  },
+
+  /** Reorders tracks inside a playlist. */
+  async reorderPlaylistTracks(playlistId: string | number, trackIds: Array<string | number>) {
+    const cleanPlId = String(playlistId).replace(/^soundcloud:playlists:/, '').trim();
+    const validIds = trackIds
+      .map((id) => Number(String(id).replace(/^soundcloud:tracks:/, '').trim()))
+      .filter((n) => Number.isInteger(n) && n > 0);
+    const result = await updatePlaylistTracks(cleanPlId, validIds);
+    clearPlaylistCache(cleanPlId);
+    return result;
+  },
+
+  /** Deletes a playlist owned by the signed-in account. */
+  async deletePlaylist(playlistId: string | number): Promise<boolean> {
+    const cleanId = String(playlistId).replace(/^soundcloud:playlists:/, '').trim();
+    clearPlaylistCache(cleanId);
+    try {
+      await request<unknown>(`/playlists/${cleanId}`, 0, {
+        method: 'DELETE',
+        auth: true,
+      });
+      return true;
+    } catch (err) {
+      console.warn('[sc:deletePlaylist] Failed on api-v2, trying api.soundcloud.com:', err);
+      try {
+        await request<unknown>(`https://api.soundcloud.com/playlists/${cleanId}`, 0, {
+          method: 'DELETE',
+          auth: true,
+        });
+        return true;
+      } catch (e) {
+        console.error('[sc:deletePlaylist] Failed all endpoints:', e);
+        throw e;
+      }
+    }
   },
 
   /** Reorders the account's own playlists; SoundCloud has no dedicated call

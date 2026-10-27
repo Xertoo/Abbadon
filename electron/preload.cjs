@@ -143,4 +143,29 @@ contextBridge.exposeInMainWorld('desktop', {
   /** Global media shortcuts */
   updateGlobalShortcuts: (shortcuts) => ipcRenderer.invoke('shortcuts:update', shortcuts),
   getGlobalShortcuts: () => ipcRenderer.invoke('shortcuts:get'),
+
+  /** Window Titlebar & Controls */
+  isCustomTitleBar: process.argv.includes('--custom-titlebar')
+    ? true
+    : process.argv.includes('--no-custom-titlebar')
+    ? false
+    : undefined,
+  minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
+  toggleMaximizeWindow: () => ipcRenderer.invoke('window:toggle-maximize'),
+  closeWindow: () => ipcRenderer.invoke('window:close'),
+  isWindowMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+  onMaximizedChange: (cb) => {
+    const handler = (_e, isMax) => cb(isMax);
+    ipcRenderer.on('window:maximized-change', handler);
+    return () => ipcRenderer.removeListener('window:maximized-change', handler);
+  },
+  setCustomTitleBar: (enabled) => ipcRenderer.invoke('window:set-custom-titlebar', enabled),
+
+  /** Local & Server Media Import */
+  pickMediaFiles: () => ipcRenderer.invoke('media:pick-files'),
+  pickMediaFolder: () => ipcRenderer.invoke('media:pick-folder'),
+  parseMediaPaths: (paths) => ipcRenderer.invoke('media:parse-paths', paths),
+  fetchServerPlaylist: (url) => ipcRenderer.invoke('media:fetch-server-playlist', url),
+  saveLocalLibrary: (data) => ipcRenderer.invoke('media:save-local-library', data),
+  loadLocalLibrary: () => ipcRenderer.invoke('media:load-local-library'),
 });

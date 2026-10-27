@@ -14,6 +14,9 @@ import {
   Headphones,
   Users,
   BarChart3,
+  Plus,
+  Trash2,
+  MoreVertical,
 } from 'lucide-react';
 import { Artwork } from './Artwork';
 import clsx from 'clsx';
@@ -50,6 +53,9 @@ interface Props {
   hiddenPlaylistIds?: string[];
   /** Called when user clicks the hide playlist button. */
   onHidePlaylist?: (id: string) => void;
+  onDeleteLocalPlaylist?: (id: string) => void;
+  onOpenAddMedia?: () => void;
+  onContextMenuPlaylist?: (playlist: Playlist, x: number, y: number) => void;
   /** Opens the SoundHeardle song guesser minigame. */
   onOpenHeardle?: () => void;
   proxyEnabled?: boolean;
@@ -80,6 +86,9 @@ export function Sidebar({
   activePlaylistId,
   hiddenPlaylistIds = [],
   onHidePlaylist,
+  onDeleteLocalPlaylist,
+  onOpenAddMedia,
+  onContextMenuPlaylist,
   onOpenHeardle,
   proxyEnabled,
   proxyPreset,
@@ -192,7 +201,18 @@ export function Sidebar({
         <div className="text-[10px] font-bold tracking-[0.14em] uppercase text-sc-dim">
           Your playlists
         </div>
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1.5">
+          {onOpenAddMedia && (
+            <button
+              type="button"
+              onClick={onOpenAddMedia}
+              title="Add songs or playlists from PC or Server"
+              aria-label="Add music from PC or Server"
+              className="w-5 h-5 rounded flex items-center justify-center text-sc-dim hover:text-sc-orange hover:bg-sc-fill/10 transition-all hover:scale-110 cursor-pointer"
+            >
+              <Plus className="w-3.5 h-3.5" />
+            </button>
+          )}
           {playlists.length > 1 && !hint && (
             <span
               title="Drag a playlist to reorder, or focus one and press Alt with the arrow keys"
@@ -261,6 +281,11 @@ export function Sidebar({
                     commit(i, i + 1);
                   }
                 }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  onContextMenuPlaylist?.(p, e.clientX, e.clientY);
+                }}
                 tabIndex={0}
                 role="button"
                 aria-label={`${p.title}, ${p.trackCount} tracks`}
@@ -280,6 +305,11 @@ export function Sidebar({
 
                 <button
                   onClick={() => onPickPlaylist(p)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onContextMenuPlaylist?.(p, e.clientX, e.clientY);
+                  }}
                   className="flex items-center gap-2.5 min-w-0 flex-1 text-left"
                 >
                   <div className="w-9 h-9 rounded-md overflow-hidden bg-sc-panel-2 shrink-0">
@@ -294,17 +324,59 @@ export function Sidebar({
                   <div className="min-w-0">
                     <div
                       className={clsx(
-                        'text-[12.5px] font-medium truncate',
+                        'text-[12.5px] font-medium truncate flex items-center gap-1.5',
                         isActive ? 'text-sc-orange' : 'text-sc-muted group-hover:text-sc-fg'
                       )}
                     >
-                      {p.title}
+                      <span className="truncate">{p.title}</span>
+                      {p.isLocal && (
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-sc-orange/15 text-sc-orange font-bold uppercase tracking-wider shrink-0">
+                          PC
+                        </span>
+                      )}
+                      {p.source === 'server' && (
+                        <span className="text-[9px] px-1 py-0.5 rounded bg-blue-500/15 text-blue-400 font-bold uppercase tracking-wider shrink-0">
+                          Server
+                        </span>
+                      )}
                     </div>
                     <div className="text-[11px] text-sc-dim truncate">{p.trackCount} tracks</div>
                   </div>
                 </button>
 
-                {onHidePlaylist && (
+                {onContextMenuPlaylist ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      onContextMenuPlaylist(p, rect.right + 4, rect.top);
+                    }}
+                    onContextMenu={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      onContextMenuPlaylist(p, e.clientX, e.clientY);
+                    }}
+                    title="Playlist options"
+                    aria-label={`Options for ${p.title}`}
+                    className="p-1 rounded-md text-sc-dim hover:text-sc-fg hover:bg-sc-fill/10 opacity-0 group-hover:opacity-100 transition-all duration-150 hover:scale-110 active:scale-90 shrink-0 cursor-pointer"
+                  >
+                    <MoreVertical className="w-3.5 h-3.5" />
+                  </button>
+                ) : p.isLocal && onDeleteLocalPlaylist ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDeleteLocalPlaylist(p.id);
+                    }}
+                    title={`Delete playlist "${p.title}"`}
+                    aria-label={`Delete ${p.title}`}
+                    className="p-1 rounded-md text-sc-dim hover:text-sc-orange hover:bg-sc-fill/10 opacity-0 group-hover:opacity-100 transition-all duration-150 hover:scale-110 active:scale-90 shrink-0 cursor-pointer"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                ) : onHidePlaylist ? (
                   <button
                     type="button"
                     onClick={(e) => {
@@ -317,7 +389,7 @@ export function Sidebar({
                   >
                     <EyeOff className="w-3.5 h-3.5" />
                   </button>
-                )}
+                ) : null}
               </div>
             );
           })}

@@ -27,7 +27,7 @@ export interface Track {
    * so the player can skip SoundCloud-only affordances (liking, playlists,
    * artist pages) for material that does not live on SoundCloud.
    */
-  source?: 'soundcloud' | 'audius' | 'spotify';
+  source?: 'soundcloud' | 'audius' | 'spotify' | 'local' | 'server';
   /**
    * Spotify only: the `spotify:track:...` URI used to start playback on the Web
    * Playback SDK. Present on every Spotify track; undefined elsewhere.
@@ -82,6 +82,8 @@ export interface Playlist {
   owner?: User;
   tracks: Track[];
   albums?: Playlist[];
+  isLocal?: boolean;
+  source?: 'soundcloud' | 'spotify' | 'local' | 'server';
 }
 
 /**

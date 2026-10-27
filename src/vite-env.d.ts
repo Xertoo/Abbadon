@@ -128,6 +128,21 @@ interface DesktopBridge {
   getUpdateStatus?: () => Promise<UpdateState>;
   setUpdateFeedUrl?: (options: string | { provider: string; owner: string; repo: string } | { provider: string; url: string }) => Promise<{ ok: boolean; error?: string }>;
   onUpdateStatus?: (cb: (state: UpdateState) => void) => () => void;
+  /** Window Titlebar & Controls */
+  isCustomTitleBar?: boolean;
+  minimizeWindow?: () => Promise<void>;
+  toggleMaximizeWindow?: () => Promise<boolean>;
+  closeWindow?: () => Promise<void>;
+  isWindowMaximized?: () => Promise<boolean>;
+  onMaximizedChange?: (cb: (isMax: boolean) => void) => () => void;
+  setCustomTitleBar?: (enabled: boolean) => Promise<{ ok: boolean }>;
+  /** Local & Server Media Import */
+  pickMediaFiles?: () => Promise<{ ok: boolean; canceled?: boolean; items: { songs: any[]; playlists: any[] } }>;
+  pickMediaFolder?: () => Promise<{ ok: boolean; canceled?: boolean; folderName?: string; items: { songs: any[]; playlists: any[] } }>;
+  parseMediaPaths?: (paths: string[]) => Promise<{ ok: boolean; items: { songs: any[]; playlists: any[] } }>;
+  fetchServerPlaylist?: (url: string) => Promise<{ ok: boolean; playlist?: any; error?: string }>;
+  saveLocalLibrary?: (data: any) => Promise<{ ok: boolean; error?: string }>;
+  loadLocalLibrary?: () => Promise<{ ok: boolean; data?: any; error?: string }>;
 }
 
 export interface UpdateState {
@@ -208,6 +223,8 @@ interface DesktopSettings {
    * theme built at launch.
    */
   theme?: unknown;
+  customTitleBar?: unknown;
+  titleBarButtons?: unknown;
 }
 
 declare global {

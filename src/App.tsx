@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Compass, Loader2, Cloud, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Compass, Loader2, Cloud, Users, Upload } from 'lucide-react';
 import clsx from 'clsx';
 import { Sidebar, type View } from './components/Sidebar';
 import { SearchBar } from './components/SearchBar';
@@ -8,6 +8,10 @@ import { PlayerBar } from './components/PlayerBar';
 import { SimilarView } from './components/SimilarView';
 import { DiscoverView } from './components/DiscoverView';
 import { DetailView } from './components/DetailView';
+import { TitleBar, WindowControls } from './components/TitleBar';
+import { AddMediaModal } from './components/AddMediaModal';
+import { PlaylistContextMenu, type PlaylistContextMenuState } from './components/PlaylistContextMenu';
+import { loadLocalMedia, saveLocalMedia, createLocalPlaylist, parseBrowserAudioFiles } from './lib/localMedia';
 import { SearchView, LibraryView, SettingsView } from './components/Views';
 import { AtmosphereLayer } from './components/AtmosphereLayer';
 import { QueueDrawer } from './components/QueueDrawer';
@@ -298,6 +302,22 @@ export default function App() {
   const [statsFriendCode, setStatsFriendCode] = useState<string | null>(null);
   const [heardleOpen, setHeardleOpen] = useState(false);
 
+  // Local & Server Media Library state
+  const [localPlaylists, setLocalPlaylists] = useState<Playlist[]>([]);
+  const [localTracks, setLocalTracks] = useState<Track[]>([]);
+  const [addMediaOpen, setAddMediaOpen] = useState(false);
+  const [addMediaTargetPlaylistId, setAddMediaTargetPlaylistId] = useState<string | null>(null);
+  const [playlistContextMenu, setPlaylistContextMenu] = useState<PlaylistContextMenuState | null>(null);
+  const [isWindowDragging, setIsWindowDragging] = useState(false);
+
+  // Load saved local and server media on boot
+  useEffect(() => {
+    loadLocalMedia().then(({ playlists, tracks }) => {
+      if (playlists?.length) setLocalPlaylists(playlists);
+      if (tracks?.length) setLocalTracks(tracks);
+    });
+  }, []);
+
   // Player state
   const [track, setTrack] = useState<Track | null>(null);
   const [queue, setQueue] = useState<Track[]>([]);
@@ -498,6 +518,13 @@ if (typeof d.theme === 'string') {
         if (typeof p.enabled === 'boolean') setPref('proxyEnabled', p.enabled);
         if (p.mode) setPref('proxyMode', p.mode);
         if (p.preset) setPref('proxyPreset', p.preset);
+      }
+
+      if (typeof d.customTitleBar === 'boolean') {
+        setPref('customTitleBar', d.customTitleBar);
+      }
+      if (d.titleBarButtons === 'discord' || d.titleBarButtons === 'windows') {
+        setPref('titleBarButtons', d.titleBarButtons);
       }
     });
 
@@ -1776,8 +1803,8 @@ if (typeof d.theme === 'string') {
    * on the network.
    */
   const basePlaylists = useMemo(
-    () => api.accountPlaylists.slice(0, 50),
-    [api.accountPlaylists]
+    () => [...localPlaylists, ...api.accountPlaylists.slice(0, 50)],
+    [localPlaylists, api.accountPlaylists]
   );
 
   useEffect(() => {
@@ -1950,6 +1977,368 @@ if (typeof d.theme === 'string') {
     [api, pushNav]
   );
 
+  const handleAddPlaylist = useCallback(
+    async (newPlaylist: Playlist) => {
+      const updatedPlaylists = [newPlaylist, ...localPlaylists.filter((p) => p.id !== newPlaylist.id)];
+      const updatedTracks = [
+        ...localTracks,
+        ...(newPlaylist.tracks || []).filter((t) => !localTracks.some((lt) => lt.id === t.id)),
+      ];
+      setLocalPlaylists(updatedPlaylists);
+      setLocalTracks(updatedTracks);
+      await saveLocalMedia({ playlists: updatedPlaylists, tracks: updatedTracks });
+      notify(`Added playlist "${newPlaylist.title}" (${newPlaylist.trackCount} tracks)`);
+      openPlaylist(newPlaylist);
+    },
+    [localPlaylists, localTracks, notify, openPlaylist]
+  );
+
+  const handleAddTracks = useCallback(
+    async (tracks: Track[], targetPlaylistId?: string | null, newPlaylistName?: string) => {
+      if (!tracks.length) return;
+
+      if (newPlaylistName) {
+        const pl = createLocalPlaylist(newPlaylistName, tracks);
+        await handleAddPlaylist(pl);
+        return;
+      }
+
+      if (targetPlaylistId) {
+        const targetLocal = localPlaylists.find((p) => p.id === targetPlaylistId);
+        if (targetLocal) {
+          const existingIds = new Set((targetLocal.tracks || []).map((t) => t.id));
+          const toAdd = tracks.filter((t) => !existingIds.has(t.id));
+          const mergedTracks = [...(targetLocal.tracks || []), ...toAdd];
+          const updatedPlaylist: Playlist = {
+            ...targetLocal,
+            tracks: mergedTracks,
+            trackCount: mergedTracks.length,
+            artwork: targetLocal.artwork || toAdd[0]?.artwork || '',
+          };
+          const updatedPlaylists = localPlaylists.map((p) => (p.id === targetPlaylistId ? updatedPlaylist : p));
+          const updatedTracks = [
+            ...localTracks,
+            ...tracks.filter((t) => !localTracks.some((lt) => lt.id === t.id)),
+          ];
+          setLocalPlaylists(updatedPlaylists);
+          setLocalTracks(updatedTracks);
+          await saveLocalMedia({ playlists: updatedPlaylists, tracks: updatedTracks });
+          if (api.currentPlaylist?.id === targetPlaylistId) {
+            api.setCurrentPlaylist(updatedPlaylist);
+          }
+          notify(`Added ${toAdd.length} track${toAdd.length === 1 ? '' : 's'} to "${targetLocal.title}"`);
+          return;
+        }
+      }
+
+      // Default library destination: "Local Files" playlist
+      let defaultPl = localPlaylists.find((p) => p.id === 'local:library' || p.title === 'Local Files');
+      if (!defaultPl) {
+        defaultPl = createLocalPlaylist('Local Files', tracks);
+        defaultPl.id = 'local:library';
+        const updatedPlaylists = [defaultPl, ...localPlaylists];
+        const updatedTracks = [
+          ...localTracks,
+          ...tracks.filter((t) => !localTracks.some((lt) => lt.id === t.id)),
+        ];
+        setLocalPlaylists(updatedPlaylists);
+        setLocalTracks(updatedTracks);
+        await saveLocalMedia({ playlists: updatedPlaylists, tracks: updatedTracks });
+        notify(`Added ${tracks.length} track${tracks.length === 1 ? '' : 's'} to "Local Files"`);
+        openPlaylist(defaultPl);
+      } else {
+        const targetPl = defaultPl;
+        const existingIds = new Set((targetPl.tracks || []).map((t) => t.id));
+        const toAdd = tracks.filter((t) => !existingIds.has(t.id));
+        const mergedTracks = [...(targetPl.tracks || []), ...toAdd];
+        const updatedPlaylist: Playlist = {
+          ...targetPl,
+          tracks: mergedTracks,
+          trackCount: mergedTracks.length,
+          artwork: targetPl.artwork || toAdd[0]?.artwork || '',
+        };
+        const updatedPlaylists = localPlaylists.map((p) => (p.id === targetPl.id ? updatedPlaylist : p));
+        const updatedTracks = [
+          ...localTracks,
+          ...tracks.filter((t) => !localTracks.some((lt) => lt.id === t.id)),
+        ];
+        setLocalPlaylists(updatedPlaylists);
+        setLocalTracks(updatedTracks);
+        await saveLocalMedia({ playlists: updatedPlaylists, tracks: updatedTracks });
+        if (api.currentPlaylist?.id === targetPl.id) {
+          api.setCurrentPlaylist(updatedPlaylist);
+        }
+        notify(`Added ${toAdd.length} track${toAdd.length === 1 ? '' : 's'} to "${targetPl.title}"`);
+      }
+    },
+    [localPlaylists, localTracks, handleAddPlaylist, notify, openPlaylist, api]
+  );
+
+  const handleDeleteLocalPlaylist = useCallback(
+    async (playlistId: string) => {
+      const pl = localPlaylists.find((p) => p.id === playlistId);
+      if (!pl) return;
+      const updatedPlaylists = localPlaylists.filter((p) => p.id !== playlistId);
+      setLocalPlaylists(updatedPlaylists);
+      await saveLocalMedia({ playlists: updatedPlaylists, tracks: localTracks });
+      notify(`Deleted playlist "${pl.title}"`);
+      if (api.currentPlaylist?.id === playlistId) {
+        navTo('library');
+      }
+    },
+    [localPlaylists, localTracks, notify, api.currentPlaylist, navTo]
+  );
+
+  const handleDeletePlaylist = useCallback(
+    async (playlist: Playlist) => {
+      const pid = playlist.id;
+      if (playlist.isLocal) {
+        await handleDeleteLocalPlaylist(pid);
+        return;
+      }
+
+      const owns = Boolean(
+        api.me &&
+        (playlist.owner?.id === api.me.id ||
+         api.accountPlaylists.some((p) => p.id === pid))
+      );
+
+      if (owns) {
+        const ok = await api.deletePlaylist(pid);
+        if (ok) {
+          if (api.currentPlaylist?.id === pid) {
+            navTo('library');
+          }
+        }
+      } else {
+        const next = [...(prefs.hiddenPlaylistIds || []), pid];
+        setPref('hiddenPlaylistIds', next);
+        notify(`Removed "${playlist.title}" from sidebar`);
+        if (api.currentPlaylist?.id === pid) {
+          navTo('library');
+        }
+      }
+    },
+    [api, handleDeleteLocalPlaylist, navTo, prefs.hiddenPlaylistIds, setPref, notify]
+  );
+
+  const handleRemoveFromPlaylist = useCallback(
+    async (playlist: Playlist, t: Track) => {
+      if (playlist.isLocal || playlist.source === 'local' || playlist.source === 'server') {
+        const remainingTracks = (playlist.tracks || []).filter((trackItem) => trackItem.id !== t.id);
+        const updatedPlaylist: Playlist = {
+          ...playlist,
+          tracks: remainingTracks,
+          trackCount: remainingTracks.length,
+        };
+        const updatedPlaylists = localPlaylists.map((p) => (p.id === playlist.id ? updatedPlaylist : p));
+        setLocalPlaylists(updatedPlaylists);
+        await saveLocalMedia({ playlists: updatedPlaylists, tracks: localTracks });
+        api.setCurrentPlaylist(updatedPlaylist);
+        notify(`Removed "${t.title}" from "${playlist.title}"`);
+        return;
+      }
+      void api.removeFromPlaylist(playlist, t);
+    },
+    [localPlaylists, localTracks, api, notify]
+  );
+
+  const handleUpdatePlaylistDetails = useCallback(
+    async (id: string, details: { title?: string; description?: string }) => {
+      const isLocal = localPlaylists.some((p) => p.id === id);
+      if (isLocal) {
+        const updatedPlaylists = localPlaylists.map((p) => {
+          if (p.id !== id) return p;
+          return {
+            ...p,
+            title: details.title ?? p.title,
+            description: details.description ?? p.description,
+          };
+        });
+        setLocalPlaylists(updatedPlaylists);
+        await saveLocalMedia({ playlists: updatedPlaylists, tracks: localTracks });
+        const current = updatedPlaylists.find((p) => p.id === id);
+        if (current && api.currentPlaylist?.id === id) {
+          api.setCurrentPlaylist(current);
+        }
+        notify('Playlist details updated');
+        return true;
+      }
+      return api.updatePlaylistDetails(id, details);
+    },
+    [localPlaylists, localTracks, api, notify]
+  );
+
+  const handleReorderPlaylistTracks = useCallback(
+    async (id: string, tracks: Track[]) => {
+      const isLocal = localPlaylists.some((p) => p.id === id);
+      if (isLocal) {
+        const updatedPlaylists = localPlaylists.map((p) => {
+          if (p.id !== id) return p;
+          return {
+            ...p,
+            tracks,
+            trackCount: tracks.length,
+          };
+        });
+        setLocalPlaylists(updatedPlaylists);
+        await saveLocalMedia({ playlists: updatedPlaylists, tracks: localTracks });
+        const current = updatedPlaylists.find((p) => p.id === id);
+        if (current && api.currentPlaylist?.id === id) {
+          api.setCurrentPlaylist(current);
+        }
+        return true;
+      }
+      return api.reorderPlaylistTracks(id, tracks);
+    },
+    [localPlaylists, localTracks, api]
+  );
+
+  const handleAddToPlaylist = useCallback(
+    async (playlist: Playlist, trackToAdd: Track) => {
+      if (playlist.isLocal || playlist.source === 'local' || playlist.source === 'server') {
+        const existingIds = new Set((playlist.tracks || []).map((t) => String(t.id)));
+        if (existingIds.has(String(trackToAdd.id))) return;
+        const mergedTracks = [...(playlist.tracks || []), trackToAdd];
+        const updatedPlaylist: Playlist = {
+          ...playlist,
+          tracks: mergedTracks,
+          trackCount: mergedTracks.length,
+          artwork: playlist.artwork || trackToAdd.artwork || '',
+        };
+        const updatedPlaylists = localPlaylists.map((p) => (p.id === playlist.id ? updatedPlaylist : p));
+        const updatedTracks = localTracks.some((lt) => String(lt.id) === String(trackToAdd.id))
+          ? localTracks
+          : [...localTracks, trackToAdd];
+        setLocalPlaylists(updatedPlaylists);
+        setLocalTracks(updatedTracks);
+        await saveLocalMedia({ playlists: updatedPlaylists, tracks: updatedTracks });
+        if (api.currentPlaylist?.id === playlist.id) {
+          api.setCurrentPlaylist(updatedPlaylist);
+        }
+        notify(`Added "${trackToAdd.title}" to ${playlist.title}`);
+        return;
+      }
+      void api.addToPlaylist(playlist, trackToAdd);
+    },
+    [localPlaylists, localTracks, api, notify]
+  );
+
+  const handleCreatePlaylist = useCallback(
+    async (title: string, initialTrack?: Track): Promise<Playlist | null> => {
+      const isLocalTrack =
+        initialTrack?.source === 'local' ||
+        initialTrack?.source === 'server' ||
+        (initialTrack ? !isSoundCloudTrack(initialTrack) : false);
+
+      // If it's a local track or user is not signed in to SoundCloud, create local playlist
+      if (isLocalTrack || !api.me) {
+        const initial = initialTrack ? [initialTrack] : [];
+        const pl = createLocalPlaylist(title, initial);
+        await handleAddPlaylist(pl);
+        return pl;
+      }
+
+      // Try creating on SoundCloud account
+      try {
+        const initial = initialTrack ? [initialTrack] : [];
+        const made = await api.createPlaylist(title, initial);
+        if (made) {
+          return made;
+        }
+      } catch (err) {
+        console.warn('[App] SoundCloud createPlaylist failed, falling back to local playlist:', err);
+      }
+
+      // If SoundCloud creation failed (e.g. 404 or network issue), create locally so the user is never blocked!
+      const initial = initialTrack ? [initialTrack] : [];
+      const fallbackPl = createLocalPlaylist(title, initial);
+      await handleAddPlaylist(fallbackPl);
+      notify(`Created "${title}" locally (SoundCloud sync unavailable)`);
+      return fallbackPl;
+    },
+    [api, handleAddPlaylist, notify]
+  );
+
+  // Global drag-and-drop support for local audio files and playlists
+  useEffect(() => {
+    const onDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'copy';
+        if (e.dataTransfer.types.includes('Files')) {
+          setIsWindowDragging(true);
+        }
+      }
+    };
+
+    const onDragLeave = (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!e.relatedTarget || (e.relatedTarget as HTMLElement).nodeName === 'HTML') {
+        setIsWindowDragging(false);
+      }
+    };
+
+    const onDrop = async (e: DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsWindowDragging(false);
+
+      const files = e.dataTransfer?.files;
+      if (!files || files.length === 0) return;
+
+      const filePaths: string[] = [];
+      const webFiles: File[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const f = files[i];
+        const p = (f as unknown as { path?: string }).path;
+        if (p) {
+          filePaths.push(p);
+        } else {
+          webFiles.push(f);
+        }
+      }
+
+      if (window.desktop?.parseMediaPaths && filePaths.length > 0) {
+        try {
+          const res = await window.desktop.parseMediaPaths(filePaths);
+          if (res.ok && res.items) {
+            if (res.items.playlists?.length) {
+              for (const pl of res.items.playlists) {
+                await handleAddPlaylist(pl);
+              }
+            }
+            if (res.items.songs?.length) {
+              await handleAddTracks(res.items.songs, api.currentPlaylist?.id);
+            }
+            return;
+          }
+        } catch (err) {
+          console.error('Failed to parse dropped media paths:', err);
+        }
+      }
+
+      if (webFiles.length > 0) {
+        const tracks = await parseBrowserAudioFiles(webFiles);
+        if (tracks.length > 0) {
+          await handleAddTracks(tracks, api.currentPlaylist?.id);
+        }
+      }
+    };
+
+    window.addEventListener('dragover', onDragOver);
+    window.addEventListener('dragleave', onDragLeave);
+    window.addEventListener('drop', onDrop);
+
+    return () => {
+      window.removeEventListener('dragover', onDragOver);
+      window.removeEventListener('dragleave', onDragLeave);
+      window.removeEventListener('drop', onDrop);
+    };
+  }, [handleAddTracks, handleAddPlaylist, api.currentPlaylist]);
+
   /**
    * Opens an artist page.
    *
@@ -2093,25 +2482,24 @@ if (typeof d.theme === 'string') {
    */
   const playlistAction = useCallback(
     (t: Track, alwaysVisible = false) => {
-      // Likes and playlist edits are SoundCloud-account operations; an Audius
-      // track has no such home, so the affordance simply does not appear.
-      if (!isSoundCloudTrack(t)) return null;
+      // Allow for SoundCloud tracks as well as local/server tracks
+      if (!isSoundCloudTrack(t) && t.source !== 'local' && t.source !== 'server') return null;
       return (
         <div className="flex items-center gap-0.5">
           <PlaylistAddButton
             track={t}
-            playlists={api.accountPlaylists}
+            playlists={basePlaylists}
             busy={api.playlistBusy}
-            signedIn={Boolean(api.me)}
+            signedIn={Boolean(api.me) || basePlaylists.length > 0}
             onLogin={signIn}
-            onAdd={(playlist, track) => void api.addToPlaylist(playlist, track)}
-            onCreate={(title) => api.createPlaylist(title)}
+            onAdd={handleAddToPlaylist}
+            onCreate={(title) => handleCreatePlaylist(title, t)}
             alwaysVisible={alwaysVisible}
           />
         </div>
       );
     },
-    [api, signIn]
+    [basePlaylists, api.playlistBusy, api.me, signIn, handleAddToPlaylist, handleCreatePlaylist]
   );
 
   /** Like requests are SoundCloud-only too; hide them is not enough everywhere. */
@@ -2152,13 +2540,23 @@ if (typeof d.theme === 'string') {
   /* ------------------------------- render ------------------------------- */
 
   const playingId = playing ? track?.id ?? null : null;
+  const isCustomTitleBar = Boolean(window.desktop && prefs.customTitleBar);
 
   return (
-    <div
-      className="relative h-full flex bg-sc-bg text-sc-fg overflow-hidden"
-      style={{ isolation: 'isolate' }}
-    >
-      <AtmosphereLayer
+    <div className="h-full flex flex-col bg-sc-bg text-sc-fg overflow-hidden">
+      {isCustomTitleBar && (
+        <TitleBar
+          buttonStyle={prefs.titleBarButtons}
+          currentTrack={track}
+          isPlaying={playing}
+        />
+      )}
+
+      <div
+        className="relative z-20 flex-1 flex min-h-0 bg-sc-bg text-sc-fg overflow-hidden"
+        style={{ isolation: 'isolate' }}
+      >
+        <AtmosphereLayer
         track={track}
         isPlaying={playing}
         prefs={prefs}
@@ -2181,6 +2579,12 @@ if (typeof d.theme === 'string') {
           const next = [...(prefs.hiddenPlaylistIds || []), id];
           setPref('hiddenPlaylistIds', next);
           notify('Playlist hidden');
+        }}
+        onDeleteLocalPlaylist={handleDeleteLocalPlaylist}
+        onContextMenuPlaylist={(pl, x, y) => setPlaylistContextMenu({ playlist: pl, x, y })}
+        onOpenAddMedia={() => {
+          setAddMediaTargetPlaylistId(null);
+          setAddMediaOpen(true);
         }}
         onOpenHeardle={() => {
           if (playing) {
@@ -2209,9 +2613,15 @@ if (typeof d.theme === 'string') {
           window. Equal `flex-1` columns also mean the field is squeezed only
           after both sides have given ground equally.
         */}
-        <header className="relative z-50 h-16 shrink-0 flex items-center justify-between px-4 sm:px-6 border-b border-white/[0.06] backdrop-blur-xl bg-sc-panel/20">
+        <header
+          onDoubleClick={!isCustomTitleBar && Boolean(window.desktop) ? () => void window.desktop?.toggleMaximizeWindow?.() : undefined}
+          className={clsx(
+            "relative z-50 h-16 shrink-0 flex items-center justify-between px-4 sm:px-6 border-b border-white/[0.06] backdrop-blur-xl bg-sc-panel/20 select-none",
+            !isCustomTitleBar && Boolean(window.desktop) && "app-drag-region"
+          )}
+        >
           {/* Left: Navigation history */}
-          <div className="flex items-center gap-1 z-10 shrink-0">
+          <div className="app-no-drag flex items-center gap-1 z-10 shrink-0">
             <button
               onClick={goBack}
               disabled={histIndex === 0}
@@ -2234,7 +2644,7 @@ if (typeof d.theme === 'string') {
 
           {/* Center: SearchBar (precisely centered in window with top-layer z-index) */}
           <div className="absolute left-1/2 -translate-x-1/2 w-full max-w-[540px] px-4 pointer-events-none z-50">
-            <div className="pointer-events-auto w-full">
+            <div className="app-no-drag pointer-events-auto w-full">
               <SearchBar
                 query={query}
                 onQueryChange={setQuery}
@@ -2269,7 +2679,7 @@ if (typeof d.theme === 'string') {
           </div>
 
           {/* Right: Friends button & own profile */}
-          <div className="flex items-center gap-2 z-10 shrink-0">
+          <div className="app-no-drag flex items-center gap-2 z-10 shrink-0">
             {/* Friends popover trigger button - bare icon with subtle online outline glow, no distracting blinking */}
             <button
               onClick={() => setFriendsDrawerOpen((prev) => !prev)}
@@ -2326,6 +2736,13 @@ if (typeof d.theme === 'string') {
               >
                 Sign in
               </button>
+            )}
+
+            {/* Window controls embedded in header when custom top bar is disabled */}
+            {!isCustomTitleBar && Boolean(window.desktop) && (
+              <div className="flex items-center ml-1 border-l border-white/[0.08] pl-2 h-7">
+                <WindowControls buttonStyle={prefs.titleBarButtons} />
+              </div>
             )}
           </div>
         </header>
@@ -2475,6 +2892,11 @@ if (typeof d.theme === 'string') {
               renderActions={playlistAction}
               compact={prefs.compactRows}
               showArtwork={prefs.showArtwork}
+              onOpenAddMedia={() => {
+                setAddMediaTargetPlaylistId(null);
+                setAddMediaOpen(true);
+              }}
+              onContextMenuPlaylist={(pl, x, y) => setPlaylistContextMenu({ playlist: pl, x, y })}
             />
           )}
 
@@ -2492,13 +2914,28 @@ if (typeof d.theme === 'string') {
               onPlayAll={(tracks) => tracks[0] && playTrack(tracks[0], tracks)}
               onPlayNext={playNext}
               onAddToQueue={addToQueue}
-              signedIn={Boolean(api.me)}
-              accountPlaylists={api.accountPlaylists}
+              signedIn={Boolean(api.me) || Boolean(api.currentPlaylist?.isLocal)}
+              accountPlaylists={basePlaylists}
               playlistTrackIds={(api.currentPlaylist?.tracks ?? []).map((t) => t.id)}
               playlistBusy={api.playlistBusy}
-              onAddToPlaylist={(playlist, t) => void api.addToPlaylist(playlist, t)}
-              onRemoveFromPlaylist={(playlist, t) => void api.removeFromPlaylist(playlist, t)}
-              onCreatePlaylist={(title) => api.createPlaylist(title)}
+              onAddToPlaylist={handleAddToPlaylist}
+              onRemoveFromPlaylist={handleRemoveFromPlaylist}
+              onCreatePlaylist={(title) => handleCreatePlaylist(title)}
+              onCopyPlaylist={async (p, title) => {
+                const copied = await api.copyPlaylist(p, title);
+                if (copied) {
+                  openPlaylist(copied);
+                }
+                return copied;
+              }}
+              onUpdatePlaylistDetails={handleUpdatePlaylistDetails}
+              onReorderPlaylistTracks={handleReorderPlaylistTracks}
+              onDeletePlaylist={handleDeletePlaylist}
+              onContextMenuPlaylist={(pl, x, y) => setPlaylistContextMenu({ playlist: pl, x, y })}
+              onOpenAddMedia={() => {
+                setAddMediaTargetPlaylistId(api.currentPlaylist?.id ?? null);
+                setAddMediaOpen(true);
+              }}
               onDownload={(t) => void api.downloadTrack(t)}
               downloadingIds={api.downloadingIds}
               onLogin={signIn}
@@ -2713,7 +3150,9 @@ if (typeof d.theme === 'string') {
 
       {/* Floating Incoming Co-Listening Request Notification */}
       {listenTogether.incomingSessionRequests.length > 0 && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[100] max-w-md w-[calc(100vw-32px)] flex flex-col gap-2 pointer-events-auto animate-in slide-in-from-top-4 duration-200">
+        <div
+          className={`fixed ${isCustomTitleBar ? 'top-11' : 'top-6'} left-1/2 -translate-x-1/2 z-[100] max-w-md w-[calc(100vw-32px)] flex flex-col gap-2 pointer-events-auto animate-in slide-in-from-top-4 duration-200`}
+        >
           {listenTogether.incomingSessionRequests.map((req) => (
             <div
               key={req.senderCode}
@@ -2856,10 +3295,86 @@ if (typeof d.theme === 'string') {
           onDownload={autoUpdater.downloadUpdate}
           onInstall={autoUpdater.quitAndInstall}
           onDismiss={autoUpdater.dismiss}
+          hasCustomTitleBar={isCustomTitleBar}
         />
       )}
 
+      {addMediaOpen && (
+        <AddMediaModal
+          isOpen={addMediaOpen}
+          onClose={() => {
+            setAddMediaOpen(false);
+            setAddMediaTargetPlaylistId(null);
+          }}
+          playlists={localPlaylists}
+          defaultPlaylistId={addMediaTargetPlaylistId}
+          onAddTracks={handleAddTracks}
+          onAddPlaylist={handleAddPlaylist}
+          notify={notify}
+        />
+      )}
+
+      {isWindowDragging && (
+        <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center bg-black/70 backdrop-blur-sm border-2 border-dashed border-orange-500 m-3 rounded-2xl animate-in fade-in duration-150">
+          <div className="flex flex-col items-center gap-3 p-8 rounded-2xl bg-zinc-900/90 border border-white/10 shadow-2xl text-center">
+            <div className="w-16 h-16 rounded-2xl bg-orange-500/20 text-orange-400 flex items-center justify-center">
+              <Upload className="w-8 h-8 animate-bounce" />
+            </div>
+            <div>
+              <h3 className="text-xl font-bold text-white">Drop music files here</h3>
+              <p className="text-sm text-zinc-400 mt-1 max-w-sm">
+                Add audio files (.mp3, .flac, .wav, .m4a) or playlists (.m3u, .pls) to your library
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <PlaylistContextMenu
+        state={playlistContextMenu}
+        onClose={() => setPlaylistContextMenu(null)}
+        onPlay={(pl) => {
+          if (pl.tracks && pl.tracks[0]) {
+            playTrack(pl.tracks[0], pl.tracks);
+          } else {
+            openPlaylist(pl);
+          }
+        }}
+        onPlayNext={(tracks) => {
+          if (!tracks.length) return;
+          [...tracks].reverse().forEach((t) => playNext(t));
+          notify(`Added ${tracks.length} track${tracks.length === 1 ? '' : 's'} to play next`);
+        }}
+        onAddToQueue={(tracks) => {
+          if (!tracks.length) return;
+          tracks.forEach(addToQueue);
+          notify(`Added ${tracks.length} track${tracks.length === 1 ? '' : 's'} to queue`);
+        }}
+        onCopyPlaylist={async (pl) => {
+          const copied = await api.copyPlaylist(pl, pl.title);
+          if (copied) openPlaylist(copied);
+        }}
+        onHidePlaylist={(id) => {
+          const next = [...(prefs.hiddenPlaylistIds || []), id];
+          setPref('hiddenPlaylistIds', next);
+          notify('Playlist hidden from sidebar');
+        }}
+        onDeletePlaylist={handleDeletePlaylist}
+        onOpenAddMedia={(id) => {
+          setAddMediaTargetPlaylistId(id);
+          setAddMediaOpen(true);
+        }}
+        ownsPlaylist={Boolean(
+          playlistContextMenu &&
+            (playlistContextMenu.playlist.isLocal ||
+              playlistContextMenu.playlist.source === 'server' ||
+              (api.me && playlistContextMenu.playlist.owner?.id === api.me.id) ||
+              api.accountPlaylists.some((p) => p.id === playlistContextMenu.playlist.id))
+        )}
+      />
+
       <Toasts toasts={toasts} />
+      </div>
     </div>
   );
 }

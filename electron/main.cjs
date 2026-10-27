@@ -11,14 +11,31 @@ const {
   Notification,
   net,
   dialog,
+  protocol,
 } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
+const { pathToFileURL } = require('node:url');
 const NodeID3 = require('node-id3');
 const { proxyManager, PRESETS } = require('./proxyManager.cjs');
 const { initAutoUpdater } = require('./autoUpdater.cjs');
+
+// Register privileged schemes for local audio streaming (must run before app ready)
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'local-audio',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true,
+      stream: true,
+      bypassCSP: true,
+    },
+  },
+]);
 
 // Silence internal Chromium/WebRTC stderr spam (e.g. STUN binding timeouts on inactive interfaces)
 app.commandLine.appendSwitch('log-level', '3');
@@ -173,20 +190,35 @@ function killMenu(target) {
   }
 }
 
+function getCustomTitleBarPref() {
+  const file = path.join(app.getPath('userData'), 'settings.json');
+  try {
+    const raw = fs.readFileSync(file, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (typeof parsed.customTitleBar === 'boolean') {
+      return parsed.customTitleBar;
+    }
+  } catch {}
+  return true;
+}
+
 /** @returns {BrowserWindow} */
 function createWindow() {
+  const useCustomTitleBar = getCustomTitleBarPref();
   win = new BrowserWindow({
     width: 1440,
     height: 900,
     minWidth: 800,
     minHeight: 560,
     show: false,
+    frame: false,
     backgroundColor: '#0b0b0d',
     autoHideMenuBar: true,
     title: 'Abbadon',
     icon: path.join(__dirname, process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
+      additionalArguments: [useCustomTitleBar ? '--custom-titlebar' : '--no-custom-titlebar'],
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -197,6 +229,13 @@ function createWindow() {
       // switch is inert and playback simply falls back to the SDK's own error.
       plugins: true,
     },
+  });
+
+  win.on('maximize', () => {
+    if (win && !win.isDestroyed()) win.webContents.send('window:maximized-change', true);
+  });
+  win.on('unmaximize', () => {
+    if (win && !win.isDestroyed()) win.webContents.send('window:maximized-change', false);
   });
 
   win.setMenu(null);
@@ -1428,6 +1467,366 @@ ipcMain.handle('sc:settings', () => {
 ipcMain.handle('sc:settings-path', () => path.join(app.getPath('userData'), 'settings.json'));
 
 /* ------------------------------------------------------------------ *
+ * Window controls & Titlebar IPC
+ * ------------------------------------------------------------------ */
+ipcMain.handle('window:minimize', () => {
+  if (win && !win.isDestroyed()) win.minimize();
+  return true;
+});
+
+ipcMain.handle('window:toggle-maximize', () => {
+  if (win && !win.isDestroyed()) {
+    if (win.isMaximized()) {
+      win.unmaximize();
+      return false;
+    } else {
+      win.maximize();
+      return true;
+    }
+  }
+  return false;
+});
+
+ipcMain.handle('window:close', () => {
+  if (win && !win.isDestroyed()) win.close();
+  return true;
+});
+
+ipcMain.handle('window:is-maximized', () => {
+  return win && !win.isDestroyed() ? win.isMaximized() : false;
+});
+
+ipcMain.handle('window:set-custom-titlebar', (_e, enabled) => {
+  const file = path.join(app.getPath('userData'), 'settings.json');
+  let data = {};
+  try {
+    data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {}
+  data.customTitleBar = Boolean(enabled);
+  try {
+    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+  } catch (err) {
+    console.error('Failed to save settings.json customTitleBar:', err);
+  }
+
+  return { ok: true };
+});
+
+/* ------------------------------------------------------------------ *
+ * Local & Server Media Import IPC
+ * ------------------------------------------------------------------ */
+
+const AUDIO_EXTS = new Set([
+  '.mp3', '.flac', '.wav', '.m4a', '.aac', '.ogg', '.oga', '.opus', '.weba', '.wma'
+]);
+const PLAYLIST_EXTS = new Set(['.m3u', '.m3u8', '.pls']);
+
+function formatDurationSec(sec) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function parseAudioFileMetadata(filePath) {
+  let title = '';
+  let artist = '';
+  let album = '';
+  let artwork = '';
+  let duration = 0;
+
+  try {
+    const tags = NodeID3.read(filePath);
+    if (tags) {
+      title = (tags.title || '').trim();
+      artist = (tags.artist || '').trim();
+      album = (tags.album || '').trim();
+      if (tags.length) {
+        duration = Math.round(Number(tags.length) / 1000) || 0;
+      }
+      if (tags.image && tags.image.imageBuffer) {
+        artwork = `data:${tags.image.mime || 'image/jpeg'};base64,${tags.image.imageBuffer.toString('base64')}`;
+      }
+    }
+  } catch (err) {
+    console.warn('[parseAudioFileMetadata] ID3 tag read error:', err.message);
+  }
+
+  if (!title || !artist) {
+    const base = path.basename(filePath, path.extname(filePath));
+    const parts = base.split(/\s*[-–—]\s*/);
+    if (!artist) {
+      artist = parts.length > 1 ? parts[0].trim() : 'Local Artist';
+    }
+    if (!title) {
+      title = parts.length > 1 ? parts.slice(1).join(' - ').trim() : base.trim();
+    }
+  }
+
+  const hash = crypto.createHash('md5').update(filePath).digest('hex').slice(0, 12);
+  const streamUrl = `local-audio://file/${encodeURIComponent(filePath)}`;
+
+  return {
+    id: `local:${hash}`,
+    title,
+    artist,
+    album,
+    artwork,
+    duration,
+    durationFormatted: formatDurationSec(duration),
+    genre: 'Local',
+    permalinkUrl: filePath,
+    streamUrl,
+    source: 'local',
+  };
+}
+
+function parseM3uText(content, basePathOrUrl) {
+  const lines = content.split(/\r?\n/);
+  const tracks = [];
+  let curTitle = '';
+  let curDuration = 0;
+
+  const isRemote = typeof basePathOrUrl === 'string' && /^https?:\/\//i.test(basePathOrUrl);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    if (trimmed.startsWith('#EXTINF:')) {
+      const match = trimmed.match(/#EXTINF:(-?\d+),(.*)/);
+      if (match) {
+        curDuration = Math.max(0, parseInt(match[1], 10) || 0);
+        curTitle = match[2].trim();
+      }
+    } else if (!trimmed.startsWith('#')) {
+      let trackStreamUrl = '';
+      let trackPermalink = trimmed;
+      let isLocal = false;
+
+      if (/^https?:\/\//i.test(trimmed)) {
+        trackStreamUrl = trimmed;
+      } else if (isRemote) {
+        try {
+          trackStreamUrl = new URL(trimmed, basePathOrUrl).toString();
+          trackPermalink = trackStreamUrl;
+        } catch {
+          trackStreamUrl = trimmed;
+        }
+      } else {
+        const resolved = path.isAbsolute(trimmed)
+          ? trimmed
+          : path.resolve(basePathOrUrl || '.', trimmed);
+        trackStreamUrl = `local-audio://file/${encodeURIComponent(resolved)}`;
+        trackPermalink = resolved;
+        isLocal = true;
+      }
+
+      let artist = 'Various Artists';
+      let title = curTitle;
+
+      if (curTitle) {
+        const parts = curTitle.split(/\s*[-–—]\s*/);
+        if (parts.length > 1) {
+          artist = parts[0].trim();
+          title = parts.slice(1).join(' - ').trim();
+        }
+      } else {
+        const base = path.basename(trimmed, path.extname(trimmed));
+        const parts = base.split(/\s*[-–—]\s*/);
+        if (parts.length > 1) {
+          artist = parts[0].trim();
+          title = parts.slice(1).join(' - ').trim();
+        } else {
+          title = base;
+        }
+      }
+
+      const hash = crypto.createHash('md5').update(trackStreamUrl).digest('hex').slice(0, 12);
+      tracks.push({
+        id: `${isLocal ? 'local' : 'server'}:${hash}`,
+        title: title || 'Track',
+        artist: artist || 'Artist',
+        duration: curDuration,
+        durationFormatted: formatDurationSec(curDuration),
+        artwork: '',
+        genre: isLocal ? 'Local' : 'Server',
+        permalinkUrl: trackPermalink,
+        streamUrl: trackStreamUrl,
+        source: isLocal ? 'local' : 'server',
+      });
+
+      curTitle = '';
+      curDuration = 0;
+    }
+  }
+
+  return tracks;
+}
+
+function scanAudioFolder(folderPath, maxFiles = 1000) {
+  const results = [];
+  function walk(current) {
+    if (results.length >= maxFiles) return;
+    try {
+      const entries = fs.readdirSync(current, { withFileTypes: true });
+      for (const entry of entries) {
+        if (results.length >= maxFiles) break;
+        const full = path.join(current, entry.name);
+        if (entry.isDirectory()) {
+          walk(full);
+        } else if (entry.isFile()) {
+          const ext = path.extname(entry.name).toLowerCase();
+          if (AUDIO_EXTS.has(ext) || PLAYLIST_EXTS.has(ext)) {
+            results.push(full);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[scanAudioFolder] error reading dir:', err.message);
+    }
+  }
+  walk(folderPath);
+  return results;
+}
+
+async function parseMediaPaths(filePaths) {
+  const songs = [];
+  const playlists = [];
+
+  for (const fp of filePaths) {
+    try {
+      const ext = path.extname(fp).toLowerCase();
+      if (PLAYLIST_EXTS.has(ext)) {
+        const content = fs.readFileSync(fp, 'utf8');
+        const playlistTracks = parseM3uText(content, path.dirname(fp));
+        const plTitle = path.basename(fp, ext);
+        const plHash = crypto.createHash('md5').update(fp).digest('hex').slice(0, 10);
+        playlists.push({
+          id: `local:pl:${plHash}`,
+          title: plTitle,
+          description: `Imported from ${fp}`,
+          artwork: playlistTracks[0]?.artwork || '',
+          trackCount: playlistTracks.length,
+          tracks: playlistTracks,
+          isLocal: true,
+          source: 'local',
+        });
+      } else if (AUDIO_EXTS.has(ext)) {
+        const meta = parseAudioFileMetadata(fp);
+        songs.push(meta);
+      }
+    } catch (err) {
+      console.warn('[parseMediaPaths] Failed to parse:', fp, err.message);
+    }
+  }
+
+  return { songs, playlists };
+}
+
+ipcMain.handle('media:pick-files', async () => {
+  if (!win || win.isDestroyed()) return { ok: false, canceled: true, items: { songs: [], playlists: [] } };
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Add Songs or Playlists from PC',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      {
+        name: 'All Supported Media',
+        extensions: ['mp3', 'flac', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'weba', 'm3u', 'm3u8', 'pls'],
+      },
+      {
+        name: 'Audio Files (*.mp3, *.flac, *.wav, etc.)',
+        extensions: ['mp3', 'flac', 'wav', 'm4a', 'aac', 'ogg', 'oga', 'opus', 'weba'],
+      },
+      {
+        name: 'Playlist Files (*.m3u, *.m3u8, *.pls)',
+        extensions: ['m3u', 'm3u8', 'pls'],
+      },
+      { name: 'All Files', extensions: ['*'] },
+    ],
+  });
+  if (res.canceled || !res.filePaths.length) return { ok: false, canceled: true, items: { songs: [], playlists: [] } };
+  const items = await parseMediaPaths(res.filePaths);
+  return { ok: true, items };
+});
+
+ipcMain.handle('media:pick-folder', async () => {
+  if (!win || win.isDestroyed()) return { ok: false, canceled: true, items: { songs: [], playlists: [] } };
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Add Music Folder from PC',
+    properties: ['openDirectory'],
+  });
+  if (res.canceled || !res.filePaths.length) return { ok: false, canceled: true, items: { songs: [], playlists: [] } };
+  const folder = res.filePaths[0];
+  const folderName = path.basename(folder);
+  const filePaths = scanAudioFolder(folder);
+  const items = await parseMediaPaths(filePaths);
+  return { ok: true, folderName, items };
+});
+
+ipcMain.handle('media:parse-paths', async (_e, filePaths) => {
+  if (!Array.isArray(filePaths) || !filePaths.length) {
+    return { ok: false, items: { songs: [], playlists: [] } };
+  }
+  const items = await parseMediaPaths(filePaths);
+  return { ok: true, items };
+});
+
+ipcMain.handle('media:fetch-server-playlist', async (_e, url) => {
+  try {
+    const res = await net.fetch(url);
+    if (!res.ok) {
+      return { ok: false, error: `Server returned HTTP ${res.status}` };
+    }
+    const text = await res.text();
+    const tracks = parseM3uText(text, url);
+    let title = '';
+    try {
+      const parsedUrl = new URL(url);
+      title = path.basename(parsedUrl.pathname, path.extname(parsedUrl.pathname)) || parsedUrl.hostname;
+    } catch {
+      title = 'Server Playlist';
+    }
+    const hash = crypto.createHash('md5').update(url).digest('hex').slice(0, 10);
+    return {
+      ok: true,
+      playlist: {
+        id: `server:pl:${hash}`,
+        title: title || 'Server Playlist',
+        description: `Streamed from ${url}`,
+        artwork: tracks[0]?.artwork || '',
+        trackCount: tracks.length,
+        tracks,
+        isLocal: false,
+        source: 'server',
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('media:save-local-library', (_e, data) => {
+  const file = path.join(app.getPath('userData'), 'local_library.json');
+  try {
+    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('media:load-local-library', () => {
+  const file = path.join(app.getPath('userData'), 'local_library.json');
+  try {
+    if (!fs.existsSync(file)) return { ok: true, data: null };
+    const raw = fs.readFileSync(file, 'utf8');
+    return { ok: true, data: JSON.parse(raw) };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+/* ------------------------------------------------------------------ *
  * Proxy & Regional Bypass IPC
  * ------------------------------------------------------------------ */
 
@@ -2181,6 +2580,21 @@ ipcMain.handle('shortcuts:get', () => {
 app.whenReady().then(async () => {
   // quit() above is asynchronous; bail out before creating a second window.
   if (!gotLock) return;
+
+  // Handle local audio file streaming with full byte range & seeking support
+  protocol.handle('local-audio', (request) => {
+    try {
+      let filePath = request.url.replace(/^local-audio:\/\/(?:file\/)?/, '');
+      filePath = decodeURIComponent(filePath);
+      if (process.platform === 'win32' && /^\/[a-zA-Z]:/.test(filePath)) {
+        filePath = filePath.slice(1);
+      }
+      return net.fetch(pathToFileURL(filePath).toString());
+    } catch (err) {
+      console.error('[local-audio] protocol error:', err);
+      return new Response('File not found', { status: 404 });
+    }
+  });
 
   // Initialize Proxy Manager & Regional Bypass routing
   try {

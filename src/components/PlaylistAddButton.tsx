@@ -13,7 +13,7 @@ interface Props {
   onLogin: () => void;
   onAdd: (playlist: Playlist, track: Track) => void;
   /** Returns the new playlist, so the track can go straight into it. */
-  onCreate: (title: string) => Playlist | null | Promise<Playlist | null>;
+  onCreate: (title: string, track?: Track) => Playlist | null | Promise<Playlist | null>;
   /** Removes the row's own remove action when the track is already in it. */
   onRemove?: (playlist: Playlist, track: Track) => void;
   inPlaylists?: string[];
@@ -107,9 +107,11 @@ export function PlaylistAddButton({
     if (!name || creating) return;
     setCreating(true);
     try {
-      const made = await onCreate(name);
+      const made = await onCreate(name, track);
       if (made) {
-        onAdd(made, track);
+        if (!made.tracks?.some((t) => String(t.id) === String(track.id))) {
+          onAdd(made, track);
+        }
         setOpen(false);
       }
     } finally {

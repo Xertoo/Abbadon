@@ -4,6 +4,7 @@ import {
   mapTrack,
   mapUser,
   mapPlaylistMeta,
+  clearPlaylistCache,
   resolveStreamUrls,
   resolveStreamUrl,
   invalidateStreamResolveCache,
@@ -170,6 +171,7 @@ export interface AppState {
   loadPlaylist: (p: Playlist) => Promise<void>;
   loadUserTracks: (u: User) => Promise<void>;
   currentPlaylist: Playlist | null;
+  setCurrentPlaylist: React.Dispatch<React.SetStateAction<Playlist | null>>;
 
   likedIds: string[];
   likedTracks: Track[];
@@ -180,7 +182,11 @@ export interface AppState {
 
   addToPlaylist: (playlist: Playlist, track: Track) => Promise<boolean>;
   removeFromPlaylist: (playlist: Playlist, track: Track) => Promise<boolean>;
-  createPlaylist: (title: string) => Promise<Playlist | null>;
+  createPlaylist: (title: string, initialTracks?: Track[]) => Promise<Playlist | null>;
+  copyPlaylist: (playlist: Playlist, title?: string) => Promise<Playlist | null>;
+  updatePlaylistDetails: (playlistId: string, details: { title?: string; description?: string }) => Promise<boolean>;
+  reorderPlaylistTracks: (playlistId: string, newTracks: Track[]) => Promise<boolean>;
+  deletePlaylist: (playlistId: string | number) => Promise<boolean>;
   playlistBusy: string | null;
 
   /**
@@ -484,6 +490,16 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
 
   const loadPlaylist = useCallback(
     async (p: Playlist) => {
+      if (
+        p.isLocal ||
+        p.source === 'local' ||
+        p.source === 'server' ||
+        String(p.id).startsWith('local:') ||
+        String(p.id).startsWith('server:')
+      ) {
+        setCurrentPlaylist({ ...p, tracks: p.tracks || [] });
+        return;
+      }
       const initialTracks = mergeLocalPlaylistTracks(p.id, p.tracks || []);
       setCurrentPlaylist({ ...p, tracks: initialTracks });
       const tracks = await guard(
@@ -743,21 +759,130 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
   );
 
   const createPlaylist = useCallback(
-    async (title: string) => {
+    async (title: string, initialTracks?: Track[]) => {
       if (!meRef.current) {
         notify('Connect SoundCloud to create playlists');
         return null;
       }
       try {
-        const made = await sc.createPlaylist(title);
+        const tracksToPass = initialTracks && initialTracks.length > 0 ? initialTracks : [];
+        const made = await sc.createPlaylist(title, '', tracksToPass);
         const meta = mapPlaylistMeta(made);
+        if (tracksToPass.length > 0) {
+          meta.tracks = [...tracksToPass];
+          meta.trackCount = Math.max(meta.trackCount, tracksToPass.length);
+          for (const t of tracksToPass) {
+            addTrackLocally(meta.id, t);
+          }
+        }
         setAccountPlaylists((prev) => [meta, ...prev]);
-        notify(`Created ${meta.title}`);
+        notify(`Created playlist "${meta.title}"`);
         return meta;
       } catch (err) {
         if (err instanceof AuthExpiredError || err instanceof NotSignedInError) setMe(null);
         notify(describeFailure(err, 'Could not create that playlist'));
         return null;
+      }
+    },
+    [notify]
+  );
+
+  const copyPlaylist = useCallback(
+    async (sourcePlaylist: Playlist, customTitle?: string) => {
+      if (!meRef.current) {
+        notify('Connect SoundCloud to copy playlists to your account');
+        return null;
+      }
+      const title = (customTitle?.trim() || `${sourcePlaylist.title} (Copy)`).trim();
+      try {
+        const tracksToCopy = sourcePlaylist.tracks ?? [];
+        const made = await sc.createPlaylist(
+          title,
+          sourcePlaylist.description || `Copied from ${sourcePlaylist.owner?.fullName || 'SoundCloud'}`,
+          tracksToCopy
+        );
+        const meta: Playlist = {
+          ...mapPlaylistMeta(made),
+          tracks: [...tracksToCopy],
+          trackCount: tracksToCopy.length,
+        };
+
+        // Also add tracks locally in playlistSync so they are available immediately
+        for (const t of tracksToCopy) {
+          addTrackLocally(meta.id, t);
+        }
+        clearPlaylistCache(meta.id);
+
+        setAccountPlaylists((prev) => [meta, ...prev]);
+        notify(`Copied "${sourcePlaylist.title}" to your account!`);
+        return meta;
+      } catch (err) {
+        if (err instanceof AuthExpiredError || err instanceof NotSignedInError) setMe(null);
+        notify(describeFailure(err, 'Could not copy playlist'));
+        return null;
+      }
+    },
+    [notify]
+  );
+
+  const updatePlaylistDetails = useCallback(
+    async (playlistId: string, details: { title?: string; description?: string }) => {
+      if (!meRef.current) {
+        notify('Connect SoundCloud to edit playlists');
+        return false;
+      }
+      try {
+        await sc.updatePlaylistDetails(playlistId, details);
+        setAccountPlaylists((prev) =>
+          prev.map((p) => (p.id === playlistId ? { ...p, ...details } : p))
+        );
+        setCurrentPlaylist((prev) => (prev && prev.id === playlistId ? { ...prev, ...details } : prev));
+        clearPlaylistCache(playlistId);
+        notify('Playlist updated');
+        return true;
+      } catch (err) {
+        notify(describeFailure(err, 'Could not update playlist'));
+        return false;
+      }
+    },
+    [notify]
+  );
+
+  const reorderPlaylistTracks = useCallback(
+    async (playlistId: string, newTracks: Track[]) => {
+      if (!meRef.current) return false;
+      try {
+        setCurrentPlaylist((prev) => (prev && prev.id === playlistId ? { ...prev, tracks: newTracks } : prev));
+        await sc.reorderPlaylistTracks(playlistId, newTracks.map((t) => t.id));
+        return true;
+      } catch (err) {
+        console.warn('Could not reorder playlist tracks on server:', err);
+        return false;
+      }
+    },
+    []
+  );
+
+  const deletePlaylist = useCallback(
+    async (playlistId: string | number): Promise<boolean> => {
+      if (!meRef.current) {
+        notify('Connect SoundCloud to manage playlists');
+        return false;
+      }
+      const idStr = String(playlistId);
+      setPlaylistBusy(idStr);
+      try {
+        await sc.deletePlaylist(idStr);
+        setAccountPlaylists((prev) => prev.filter((p) => String(p.id) !== idStr));
+        setCurrentPlaylist((prev) => (prev && String(prev.id) === idStr ? null : prev));
+        clearPlaylistCache(idStr);
+        notify('Playlist deleted');
+        return true;
+      } catch (err) {
+        notify(describeFailure(err, 'Could not delete playlist'));
+        return false;
+      } finally {
+        setPlaylistBusy(null);
       }
     },
     [notify]
@@ -1063,6 +1188,7 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
     loadPlaylist,
     loadUserTracks,
     currentPlaylist,
+    setCurrentPlaylist,
     likedIds,
     likedTracks,
     toggleLike,
@@ -1071,6 +1197,10 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
     addToPlaylist,
     removeFromPlaylist,
     createPlaylist,
+    copyPlaylist,
+    updatePlaylistDetails,
+    reorderPlaylistTracks,
+    deletePlaylist,
     playlistBusy,
     history,
     pushHistory,

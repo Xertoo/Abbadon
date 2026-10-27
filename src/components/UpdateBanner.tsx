@@ -6,9 +6,16 @@ interface Props {
   onDownload: () => void;
   onInstall: () => void;
   onDismiss: () => void;
+  hasCustomTitleBar?: boolean;
 }
 
-export function UpdateBanner({ updateState, onDownload, onInstall, onDismiss }: Props) {
+export function UpdateBanner({
+  updateState,
+  onDownload,
+  onInstall,
+  onDismiss,
+  hasCustomTitleBar = false,
+}: Props) {
   if (updateState.status !== 'available' && updateState.status !== 'downloading' && updateState.status !== 'downloaded') {
     return null;
   }
@@ -20,7 +27,9 @@ export function UpdateBanner({ updateState, onDownload, onInstall, onDismiss }: 
   };
 
   return (
-    <div className="fixed top-4 right-4 z-50 max-w-md w-full animate-slide-in-down select-none pointer-events-auto">
+    <div
+      className={`fixed ${hasCustomTitleBar ? 'top-11' : 'top-4'} right-4 z-50 max-w-md w-full animate-slide-in-down select-none pointer-events-auto`}
+    >
       <div className="p-4 rounded-2xl bg-sc-panel/95 backdrop-blur-2xl border border-sc-orange/40 shadow-2xl shadow-sc-orange/15 flex flex-col gap-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3">

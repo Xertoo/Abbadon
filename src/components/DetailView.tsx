@@ -17,6 +17,13 @@ import {
   Trash2,
   LayoutGrid,
   ListMusic,
+  Plus,
+  CopyPlus,
+  Pencil,
+  Check,
+  X,
+  ChevronUp,
+  ChevronDown,
 } from 'lucide-react';
 import type { Playlist, Track, User } from '../types';
 import { TrackList, SectionHeader, SkeletonRows } from './TrackList';
@@ -54,6 +61,12 @@ interface Props {
   onAddToPlaylist: (playlist: Playlist, track: Track) => void;
   onRemoveFromPlaylist: (playlist: Playlist, track: Track) => void;
   onCreatePlaylist: (title: string) => Promise<Playlist | null>;
+  onCopyPlaylist?: (playlist: Playlist, title?: string) => Promise<Playlist | null>;
+  onUpdatePlaylistDetails?: (playlistId: string, details: { title?: string; description?: string }) => Promise<boolean>;
+  onReorderPlaylistTracks?: (playlistId: string, tracks: Track[]) => Promise<boolean>;
+  onDeletePlaylist?: (playlist: Playlist) => void;
+  onContextMenuPlaylist?: (playlist: Playlist, x: number, y: number) => void;
+  onOpenAddMedia?: () => void;
   onDownload: (track: Track) => void;
   onPlayNext?: (track: Track) => void;
   onAddToQueue?: (track: Track) => void;
@@ -234,25 +247,75 @@ function detectAlbumsAndEps(tracks: Track[]): AlbumGroup[] {
   });
 }
 
+function getSavedPlaylistSort(listId?: string): SortId {
+  try {
+    if (listId) {
+      const perList = localStorage.getItem(`sc9000:playlist_sort:${listId}`);
+      if (perList === 'default' || perList === 'newest') return perList;
+    }
+    const globalSort = localStorage.getItem('sc9000:playlist_sort');
+    if (globalSort === 'default' || globalSort === 'newest') return globalSort;
+  } catch {}
+  return 'default';
+}
+
+function savePlaylistSort(sortId: SortId, listId?: string) {
+  try {
+    localStorage.setItem('sc9000:playlist_sort', sortId);
+    if (listId) {
+      localStorage.setItem(`sc9000:playlist_sort:${listId}`, sortId);
+    }
+  } catch {}
+}
+
 export function DetailView(p: Props) {
-  const [sort, setSort] = useState<SortId>('default');
+  const pl = p.playlist;
+  const isArtist = pl?.id.startsWith('user-') ?? false;
+  const listId = pl?.id ?? '';
+
+  const [sort, setSort] = useState<SortId>(() => (isArtist ? 'default' : getSavedPlaylistSort(listId)));
   const [showFullBio, setShowFullBio] = useState(false);
   const [artistViewMode, setArtistViewMode] = useState<'tracks' | 'albums'>('tracks');
   const [selectedAlbum, setSelectedAlbum] = useState<AlbumGroup | null>(null);
-  const pl = p.playlist;
-  const isArtist = pl?.id.startsWith('user-') ?? false;
+
+  // Copy Playlist Modal state
+  const [copyModalOpen, setCopyModalOpen] = useState(false);
+  const [copyTitle, setCopyTitle] = useState('');
+  const [isCopying, setIsCopying] = useState(false);
+
+  // Delete Playlist Modal state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // Editable Playlist Title state
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [editTitleValue, setEditTitleValue] = useState('');
+  const [isSavingTitle, setIsSavingTitle] = useState(false);
 
   /**
-   * Reset the ordering when a *different* list is opened, not when the same one
-   * changes shape.
+   * Reset or restore ordering when a different list is opened.
+   * Remembers the sorting choice (Order vs Newest/recent).
    */
-  const listId = pl?.id ?? '';
   useEffect(() => {
-    setSort('default');
+    if (isArtist) {
+      setSort('default');
+    } else {
+      setSort(getSavedPlaylistSort(listId));
+    }
     setShowFullBio(false);
     setArtistViewMode('tracks');
     setSelectedAlbum(null);
-  }, [listId]);
+    setIsEditingTitle(false);
+    setCopyModalOpen(false);
+    setDeleteModalOpen(false);
+  }, [listId, isArtist]);
+
+  const handleSortChange = (newSort: SortId) => {
+    setSort(newSort);
+    if (!isArtist) {
+      savePlaylistSort(newSort, listId);
+    }
+  };
 
   const tracks = pl?.tracks ?? EMPTY_TRACKS;
 
@@ -350,12 +413,63 @@ export function DetailView(p: Props) {
    * other people's, and every click came back as a 403.
    */
   const ownsPlaylist =
-    !isArtist && p.accountPlaylists.some((ap) => ap.id === pl.id);
+    (!isArtist && p.accountPlaylists.some((ap) => ap.id === pl.id)) || Boolean(pl?.isLocal);
+
+  const handleCopyPlaylist = async () => {
+    if (!pl || !p.onCopyPlaylist) return;
+    setIsCopying(true);
+    try {
+      await p.onCopyPlaylist(pl, copyTitle);
+      setCopyModalOpen(false);
+    } finally {
+      setIsCopying(false);
+    }
+  };
+
+  const handleDeletePlaylist = async () => {
+    if (!pl || !p.onDeletePlaylist) return;
+    setIsDeleting(true);
+    try {
+      await p.onDeletePlaylist(pl);
+      setDeleteModalOpen(false);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleSaveTitle = async () => {
+    if (!pl || !editTitleValue.trim() || !p.onUpdatePlaylistDetails) return;
+    setIsSavingTitle(true);
+    try {
+      const ok = await p.onUpdatePlaylistDetails(pl.id, { title: editTitleValue.trim() });
+      if (ok) setIsEditingTitle(false);
+    } finally {
+      setIsSavingTitle(false);
+    }
+  };
+
+  const handleMoveTrack = async (index: number, direction: 'up' | 'down') => {
+    if (!pl || !p.onReorderPlaylistTracks) return;
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= tracks.length) return;
+    const reordered = [...tracks];
+    const [moved] = reordered.splice(index, 1);
+    reordered.splice(targetIndex, 0, moved);
+    await p.onReorderPlaylistTracks(pl.id, reordered);
+  };
 
   return (
     <div className="w-full max-w-[1560px] mx-auto">
       {/* Banner */}
-      <div className="relative px-6 sm:px-8 pt-6 pb-8">
+      <div
+        onContextMenu={(e) => {
+          if (!isArtist && pl && p.onContextMenuPlaylist) {
+            e.preventDefault();
+            p.onContextMenuPlaylist(pl, e.clientX, e.clientY);
+          }
+        }}
+        className="relative px-6 sm:px-8 pt-6 pb-8"
+      >
         <div className="absolute inset-x-0 top-0 h-64 -z-10 bg-gradient-to-b from-sc-orange/10 to-transparent" />
         <button
           onClick={p.onBack}
@@ -375,9 +489,58 @@ export function DetailView(p: Props) {
               {isArtist ? <Users className="w-3 h-3" /> : <Disc3 className="w-3 h-3" />}
               {isArtist ? 'Artist' : 'Playlist'}
             </span>
-            <h1 className="mt-2 text-3xl sm:text-5xl font-extrabold tracking-tight leading-none break-words">
-              {pl.title}
-            </h1>
+            {isEditingTitle ? (
+              <div className="mt-2 flex items-center gap-2 max-w-xl animate-fade-in">
+                <input
+                  type="text"
+                  value={editTitleValue}
+                  onChange={(e) => setEditTitleValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void handleSaveTitle();
+                    if (e.key === 'Escape') setIsEditingTitle(false);
+                  }}
+                  autoFocus
+                  className="flex-1 bg-sc-panel border border-sc-orange/60 rounded-xl px-3 py-1.5 text-2xl sm:text-3xl font-extrabold text-sc-fg outline-none focus:ring-2 focus:ring-sc-orange/30 shadow-inner"
+                />
+                <button
+                  type="button"
+                  onClick={handleSaveTitle}
+                  disabled={isSavingTitle || !editTitleValue.trim()}
+                  title="Save title"
+                  className="p-2 rounded-xl bg-sc-orange text-white hover:bg-sc-orange-soft transition-all duration-150 disabled:opacity-50 cursor-pointer shadow-sm shrink-0"
+                >
+                  {isSavingTitle ? <Loader2 className="w-5 h-5 animate-spin" /> : <Check className="w-5 h-5" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsEditingTitle(false)}
+                  title="Cancel"
+                  className="p-2 rounded-xl bg-sc-panel border border-sc-line text-sc-muted hover:text-sc-fg transition-all duration-150 cursor-pointer shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            ) : (
+              <div className="mt-2 flex items-center gap-3 flex-wrap">
+                <h1 className="text-3xl sm:text-5xl font-extrabold tracking-tight leading-none break-words">
+                  {pl.title}
+                </h1>
+                {ownsPlaylist && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditTitleValue(pl.title);
+                      setIsEditingTitle(true);
+                    }}
+                    title="Rename playlist"
+                    aria-label="Rename playlist"
+                    className="p-1.5 rounded-lg border border-transparent hover:border-sc-line hover:bg-sc-panel/80 text-sc-dim hover:text-sc-fg transition-all duration-150 cursor-pointer"
+                  >
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            )}
             {owner && !isArtist && (
               <button
                 onClick={() => p.onOpenArtist(owner)}
@@ -494,6 +657,52 @@ export function DetailView(p: Props) {
                 Play
               </button>
 
+              {/* Copy playlist button */}
+              {!isArtist && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!p.signedIn && !pl.isLocal) {
+                      p.onLogin();
+                      return;
+                    }
+                    setCopyTitle(pl.title);
+                    setCopyModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-full border border-sc-line bg-sc-panel hover:bg-sc-panel-2 px-4 py-2.5 text-[13px] font-bold text-sc-fg hover:border-sc-orange/50 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer shadow-xs group"
+                  title="Copy this playlist to your account to edit and customize it"
+                >
+                  <CopyPlus className="w-4 h-4 text-sc-orange group-hover:scale-110 transition-transform" />
+                  <span>{ownsPlaylist ? 'Duplicate Playlist' : 'Copy to My Account'}</span>
+                </button>
+              )}
+
+              {/* Add Songs from PC or Server button */}
+              {!isArtist && ownsPlaylist && p.onOpenAddMedia && (
+                <button
+                  type="button"
+                  onClick={p.onOpenAddMedia}
+                  className="inline-flex items-center gap-2 rounded-full border border-sc-line bg-sc-panel hover:bg-sc-panel-2 px-4 py-2.5 text-[13px] font-bold text-sc-fg hover:border-sc-orange/50 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer shadow-xs group"
+                  title="Add songs from PC or Server to this playlist"
+                >
+                  <Plus className="w-4 h-4 text-sc-orange group-hover:scale-110 transition-transform" />
+                  <span>Add Songs</span>
+                </button>
+              )}
+
+              {/* Delete Playlist button */}
+              {!isArtist && p.onDeletePlaylist && (
+                <button
+                  type="button"
+                  onClick={() => setDeleteModalOpen(true)}
+                  className="inline-flex items-center gap-2 rounded-full border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 px-4 py-2.5 text-[13px] font-bold text-red-400 hover:text-red-300 hover:border-red-500/50 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer shadow-xs group"
+                  title="Delete this playlist"
+                >
+                  <Trash2 className="w-4 h-4 text-red-400 group-hover:scale-110 transition-transform" />
+                  <span>Delete Playlist</span>
+                </button>
+              )}
+
               {/* Track order */}
               <div
                 className="flex items-center gap-1 rounded-full border border-sc-line bg-sc-panel p-0.5"
@@ -504,7 +713,7 @@ export function DetailView(p: Props) {
                   <button
                     key={id}
                     type="button"
-                    onClick={() => setSort(id)}
+                    onClick={() => handleSortChange(id)}
                     aria-pressed={sort === id}
                     title={title}
                     className={clsx(
@@ -724,13 +933,44 @@ export function DetailView(p: Props) {
                     </button>
                     {!isArtist && ownsPlaylist && (
                       <>
+                        {sort === 'default' && visible.length > 1 && (
+                          <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const idx = visible.indexOf(t);
+                                if (idx > 0) void handleMoveTrack(idx, 'up');
+                              }}
+                              disabled={visible.indexOf(t) === 0}
+                              title="Move track up"
+                              className="w-7 h-7 rounded-full flex items-center justify-center text-sc-dim hover:text-sc-fg disabled:opacity-20 transition-all shrink-0 cursor-pointer"
+                            >
+                              <ChevronUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const idx = visible.indexOf(t);
+                                if (idx < visible.length - 1) void handleMoveTrack(idx, 'down');
+                              }}
+                              disabled={visible.indexOf(t) === visible.length - 1}
+                              title="Move track down"
+                              className="w-7 h-7 rounded-full flex items-center justify-center text-sc-dim hover:text-sc-fg disabled:opacity-20 transition-all shrink-0 cursor-pointer"
+                            >
+                              <ChevronDown className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                         <button
+                          type="button"
                           onClick={(e) => {
                             e.stopPropagation();
                             p.onRemoveFromPlaylist(pl, t);
                           }}
                           title="Remove from playlist"
-                          className="w-8 h-8 rounded-full flex items-center justify-center text-sc-dim opacity-0 group-hover:opacity-100 hover:text-sc-orange transition-all shrink-0"
+                          className="w-8 h-8 rounded-full flex items-center justify-center text-sc-dim opacity-0 group-hover:opacity-100 hover:text-sc-orange transition-all shrink-0 cursor-pointer"
                         >
                           <Trash2 className="w-[15px] h-[15px]" />
                         </button>
@@ -755,6 +995,123 @@ export function DetailView(p: Props) {
         )}
 
       </div>
+
+      {/* Copy Playlist Modal Dialog */}
+      {copyModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md animate-fade-in p-4">
+          <div className="w-full max-w-md rounded-2xl border border-sc-line bg-sc-panel p-6 shadow-2xl animate-scale-in">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-sc-orange/15 flex items-center justify-center text-sc-orange shrink-0">
+                <CopyPlus className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-sc-fg">Copy Playlist to Your Account</h3>
+                <p className="text-[12px] text-sc-muted">
+                  Create a fully editable copy with {pl.tracks.length} {pl.tracks.length === 1 ? 'track' : 'tracks'}.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <div>
+                <label className="text-[11.5px] font-semibold text-sc-dim uppercase tracking-wider block mb-1.5">
+                  Playlist Title
+                </label>
+                <input
+                  type="text"
+                  value={copyTitle}
+                  onChange={(e) => setCopyTitle(e.target.value)}
+                  placeholder="My Playlist"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && copyTitle.trim()) void handleCopyPlaylist();
+                    if (e.key === 'Escape') setCopyModalOpen(false);
+                  }}
+                  className="w-full rounded-xl border border-sc-line bg-sc-panel-2 px-3.5 py-2.5 text-[13px] font-medium text-sc-fg placeholder-sc-dim outline-none focus:border-sc-orange focus:ring-1 focus:ring-sc-orange transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setCopyModalOpen(false)}
+                disabled={isCopying}
+                className="px-4 py-2 rounded-xl text-[12.5px] font-semibold text-sc-muted hover:text-sc-fg hover:bg-sc-fill/5 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleCopyPlaylist}
+                disabled={isCopying || !copyTitle.trim()}
+                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-sc-orange text-[12.5px] font-bold text-white hover:bg-sc-orange-soft transition-all duration-150 hover:scale-105 active:scale-95 disabled:opacity-50 cursor-pointer shadow-sm glow-orange"
+              >
+                {isCopying ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Copying...</span>
+                  </>
+                ) : (
+                  <span>Copy to Account</span>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Playlist Confirmation Modal */}
+      {deleteModalOpen && pl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md animate-fade-in p-4 select-none">
+          <div className="w-full max-w-sm rounded-2xl border border-red-500/30 bg-[#121218]/95 backdrop-blur-2xl p-6 shadow-2xl animate-scale-in">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="text-base font-bold text-sc-fg">Delete Playlist?</h3>
+                <p className="text-[12px] text-sc-muted truncate mt-0.5">
+                  <span className="font-semibold text-sc-fg">"{pl.title}"</span>
+                </p>
+              </div>
+            </div>
+
+            <p className="mt-4 text-[12.5px] text-sc-muted leading-relaxed">
+              Are you sure you want to permanently delete this playlist? This action cannot be undone.
+            </p>
+
+            <div className="mt-6 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setDeleteModalOpen(false)}
+                disabled={isDeleting}
+                className="px-4 py-2 rounded-xl text-[12.5px] font-semibold text-sc-muted hover:text-sc-fg hover:bg-white/[0.06] transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleDeletePlaylist}
+                disabled={isDeleting}
+                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl bg-red-500 hover:bg-red-600 active:scale-95 text-[12.5px] font-bold text-white transition-all shadow-lg shadow-red-500/20 cursor-pointer disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Deleting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

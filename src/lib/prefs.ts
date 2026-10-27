@@ -158,6 +158,12 @@ export interface Prefs {
   shortcutVolumeUp: string;
   shortcutVolumeDown: string;
   shortcutMiniPlayer: string;
+  /** Custom window title bar (aesthetic top bar like Discord). */
+  customTitleBar: boolean;
+  /** Custom window button style: Discord vs Windows. */
+  titleBarButtons: 'discord' | 'windows';
+  /** Preferred playlist sorting mode ('default' = order, 'newest' = recent). */
+  playlistSort: 'default' | 'newest';
 }
 
 const KEY = 'sc9000:prefs';
@@ -237,6 +243,9 @@ export function defaultPrefs(): Prefs {
     shortcutVolumeUp: 'Ctrl+Alt+Up',
     shortcutVolumeDown: 'Ctrl+Alt+Down',
     shortcutMiniPlayer: 'Ctrl+Alt+M',
+    customTitleBar: true,
+    titleBarButtons: 'discord',
+    playlistSort: 'default',
   };
 }
 
@@ -370,6 +379,12 @@ export function loadPrefs(): Prefs {
         typeof saved.shortcutVolumeDown === 'string' && saved.shortcutVolumeDown ? saved.shortcutVolumeDown : base.shortcutVolumeDown,
       shortcutMiniPlayer:
         typeof saved.shortcutMiniPlayer === 'string' && saved.shortcutMiniPlayer ? saved.shortcutMiniPlayer : base.shortcutMiniPlayer,
+      customTitleBar:
+        typeof saved.customTitleBar === 'boolean' ? saved.customTitleBar : base.customTitleBar,
+      titleBarButtons:
+        saved.titleBarButtons === 'windows' ? 'windows' : 'discord',
+      playlistSort:
+        saved.playlistSort === 'newest' ? 'newest' : 'default',
     };
   } catch {
     return base;

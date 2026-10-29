@@ -18,6 +18,7 @@ interface Props {
   onRefresh: () => void;
   onPlayNext?: (track: Track) => void;
   onAddToQueue?: (track: Track) => void;
+  onContextMenuTrack?: (track: Track, x: number, y: number, queue?: Track[]) => void;
   renderActions?: (track: Track) => React.ReactNode;
 }
 
@@ -46,6 +47,7 @@ function RailCard({
   onFindSimilar,
   onPlayNext,
   onAddToQueue,
+  onContextMenuTrack,
   renderActions,
 }: {
   track: Track;
@@ -57,10 +59,19 @@ function RailCard({
   onFindSimilar: () => void;
   onPlayNext?: () => void;
   onAddToQueue?: () => void;
+  onContextMenuTrack?: (track: Track, x: number, y: number) => void;
   renderActions?: (track: Track) => React.ReactNode;
 }) {
   return (
-    <div className="group flex flex-col text-left select-none">
+    <div
+      onContextMenu={(e) => {
+        if (onContextMenuTrack) {
+          e.preventDefault();
+          onContextMenuTrack(track, e.clientX, e.clientY);
+        }
+      }}
+      className="group flex flex-col text-left select-none"
+    >
       <div className="relative aspect-square rounded-xl overflow-hidden bg-sc-panel-2 shadow-inner">
         <Artwork
           src={track.artwork}
@@ -173,6 +184,7 @@ function RailSection({
   onFindSimilar,
   onPlayNext,
   onAddToQueue,
+  onContextMenuTrack,
   renderActions,
 }: {
   section: DiscoverSection;
@@ -185,6 +197,7 @@ function RailSection({
   onFindSimilar: (seed: Track) => void;
   onPlayNext?: (track: Track) => void;
   onAddToQueue?: (track: Track) => void;
+  onContextMenuTrack?: (track: Track, x: number, y: number, queue?: Track[]) => void;
   renderActions?: (track: Track) => React.ReactNode;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -303,6 +316,7 @@ function RailSection({
               onFindSimilar={() => onFindSimilar(t)}
               onPlayNext={onPlayNext ? () => onPlayNext(t) : undefined}
               onAddToQueue={onAddToQueue ? () => onAddToQueue(t) : undefined}
+              onContextMenuTrack={onContextMenuTrack}
               renderActions={renderActions}
             />
           </div>
@@ -379,6 +393,7 @@ export function DiscoverView(p: Props) {
           onFindSimilar={p.onFindSimilar}
           onPlayNext={p.onPlayNext}
           onAddToQueue={p.onAddToQueue}
+          onContextMenuTrack={p.onContextMenuTrack}
           renderActions={p.renderActions}
         />
       ))}

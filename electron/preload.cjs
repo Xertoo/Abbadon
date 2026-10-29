@@ -168,4 +168,5 @@ contextBridge.exposeInMainWorld('desktop', {
   fetchServerPlaylist: (url) => ipcRenderer.invoke('media:fetch-server-playlist', url),
   saveLocalLibrary: (data) => ipcRenderer.invoke('media:save-local-library', data),
   loadLocalLibrary: () => ipcRenderer.invoke('media:load-local-library'),
+  savePicture: (data) => ipcRenderer.invoke('media:save-picture', data),
 });

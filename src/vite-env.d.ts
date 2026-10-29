@@ -143,6 +143,12 @@ interface DesktopBridge {
   fetchServerPlaylist?: (url: string) => Promise<{ ok: boolean; playlist?: any; error?: string }>;
   saveLocalLibrary?: (data: any) => Promise<{ ok: boolean; error?: string }>;
   loadLocalLibrary?: () => Promise<{ ok: boolean; data?: any; error?: string }>;
+  savePicture?: (payload: { url: string; filename?: string; title?: string }) => Promise<{
+    ok: boolean;
+    path?: string;
+    filename?: string;
+    error?: string;
+  }>;
 }
 
 export interface UpdateState {

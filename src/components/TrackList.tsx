@@ -23,6 +23,7 @@ interface Props {
   onPlayNext?: (track: Track) => void;
   /** Adds this track to the playback queue. */
   onAddToQueue?: (track: Track) => void;
+  onContextMenuTrack?: (track: Track, x: number, y: number, queue?: Track[]) => void;
   numbered?: boolean;
   showArtwork?: boolean;
   /** Tighter rows, from Settings. Fits roughly a third more tracks per screen. */
@@ -59,6 +60,7 @@ export function TrackRow({
   onStartRadio,
   onPlayNext,
   onAddToQueue,
+  onContextMenu,
   showArtwork = true,
   compact,
   actions,
@@ -75,6 +77,7 @@ export function TrackRow({
   onStartRadio?: (track: Track) => void;
   onPlayNext?: (track: Track) => void;
   onAddToQueue?: (track: Track) => void;
+  onContextMenu?: (track: Track, x: number, y: number, queue?: Track[]) => void;
   showArtwork?: boolean;
   compact?: boolean;
   actions?: React.ReactNode;
@@ -86,6 +89,12 @@ export function TrackRow({
     <div
       onDoubleClick={() => onPlay(track, queue)}
       onClick={() => onPlay(track, queue)}
+      onContextMenu={(e) => {
+        if (onContextMenu) {
+          e.preventDefault();
+          onContextMenu(track, e.clientX, e.clientY, queue);
+        }
+      }}
       className={clsx(
         'group grid items-center gap-3.5 px-3.5 sm:px-4.5 rounded-2xl transition-all duration-300 cursor-default select-none animate-row-cascade border border-transparent',
         // Compact drops the vertical padding and the genre, which is what made
@@ -345,6 +354,7 @@ export function TrackList(props: Props) {
           onStartRadio={props.onStartRadio}
           onPlayNext={props.onPlayNext}
           onAddToQueue={props.onAddToQueue}
+          onContextMenu={props.onContextMenuTrack}
           showArtwork={props.showArtwork}
           compact={props.compact}
           actions={props.renderActions?.(t)}

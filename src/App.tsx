@@ -11,6 +11,11 @@ import { DetailView } from './components/DetailView';
 import { TitleBar, WindowControls } from './components/TitleBar';
 import { AddMediaModal } from './components/AddMediaModal';
 import { PlaylistContextMenu, type PlaylistContextMenuState } from './components/PlaylistContextMenu';
+import { TrackContextMenu, type TrackContextMenuState } from './components/TrackContextMenu';
+import { ArtistContextMenu, type ArtistContextMenuState } from './components/ArtistContextMenu';
+import { savePictureToDisk } from './lib/pictureSave';
+import { EditPlaylistArtworkModal } from './components/EditPlaylistArtworkModal';
+import { getPlaylistArtworkOverride, setPlaylistArtworkOverride } from './lib/playlistArtwork';
 import { loadLocalMedia, saveLocalMedia, createLocalPlaylist, parseBrowserAudioFiles } from './lib/localMedia';
 import { SearchView, LibraryView, SettingsView } from './components/Views';
 import { AtmosphereLayer } from './components/AtmosphereLayer';
@@ -308,12 +313,21 @@ export default function App() {
   const [addMediaOpen, setAddMediaOpen] = useState(false);
   const [addMediaTargetPlaylistId, setAddMediaTargetPlaylistId] = useState<string | null>(null);
   const [playlistContextMenu, setPlaylistContextMenu] = useState<PlaylistContextMenuState | null>(null);
+  const [trackContextMenu, setTrackContextMenu] = useState<TrackContextMenuState | null>(null);
+  const [artistContextMenu, setArtistContextMenu] = useState<ArtistContextMenuState | null>(null);
+  const [editingArtworkPlaylist, setEditingArtworkPlaylist] = useState<Playlist | null>(null);
   const [isWindowDragging, setIsWindowDragging] = useState(false);
 
   // Load saved local and server media on boot
   useEffect(() => {
     loadLocalMedia().then(({ playlists, tracks }) => {
-      if (playlists?.length) setLocalPlaylists(playlists);
+      if (playlists?.length) {
+        const withOverrides = playlists.map((pl) => {
+          const override = getPlaylistArtworkOverride(pl.id);
+          return override ? { ...pl, artwork: override } : pl;
+        });
+        setLocalPlaylists(withOverrides);
+      }
       if (tracks?.length) setLocalTracks(tracks);
     });
   }, []);
@@ -2143,16 +2157,27 @@ if (typeof d.theme === 'string') {
     [localPlaylists, localTracks, api, notify]
   );
 
+  const handleSavePicture = useCallback(
+    (url: string, title: string) => {
+      void savePictureToDisk(url, title, notify);
+    },
+    [notify]
+  );
+
   const handleUpdatePlaylistDetails = useCallback(
-    async (id: string, details: { title?: string; description?: string }) => {
+    async (id: string, details: { title?: string; description?: string; artwork?: string }) => {
       const isLocal = localPlaylists.some((p) => p.id === id);
       if (isLocal) {
+        if (details.artwork !== undefined) {
+          setPlaylistArtworkOverride(id, details.artwork);
+        }
         const updatedPlaylists = localPlaylists.map((p) => {
           if (p.id !== id) return p;
           return {
             ...p,
             title: details.title ?? p.title,
             description: details.description ?? p.description,
+            artwork: details.artwork !== undefined ? details.artwork : p.artwork,
           };
         });
         setLocalPlaylists(updatedPlaylists);
@@ -2161,7 +2186,7 @@ if (typeof d.theme === 'string') {
         if (current && api.currentPlaylist?.id === id) {
           api.setCurrentPlaylist(current);
         }
-        notify('Playlist details updated');
+        notify('Playlist updated');
         return true;
       }
       return api.updatePlaylistDetails(id, details);
@@ -2773,6 +2798,7 @@ if (typeof d.theme === 'string') {
               onFindSimilar={openSimilar}
               onPlayNext={playNext}
               onAddToQueue={addToQueue}
+              onContextMenuTrack={(t, x, y) => setTrackContextMenu({ track: t, x, y })}
               onRefresh={() => void api.loadDiscover({ force: true })}
               renderActions={playlistAction}
             />
@@ -2813,6 +2839,8 @@ if (typeof d.theme === 'string') {
               onFindSimilar={openSimilar}
               onPlayNext={playNext}
               onAddToQueue={addToQueue}
+              onContextMenuTrack={(t, x, y, q) => setTrackContextMenu({ track: t, x, y, queue: q })}
+              onContextMenuArtist={(a, x, y) => setArtistContextMenu({ artist: a, x, y })}
               renderActions={playlistAction}
               compact={prefs.compactRows}
               showArtwork={prefs.showArtwork}
@@ -2897,6 +2925,7 @@ if (typeof d.theme === 'string') {
                 setAddMediaOpen(true);
               }}
               onContextMenuPlaylist={(pl, x, y) => setPlaylistContextMenu({ playlist: pl, x, y })}
+              onContextMenuTrack={(t, x, y, q) => setTrackContextMenu({ track: t, x, y, queue: q })}
             />
           )}
 
@@ -2929,9 +2958,12 @@ if (typeof d.theme === 'string') {
                 return copied;
               }}
               onUpdatePlaylistDetails={handleUpdatePlaylistDetails}
+              onEditArtwork={(pl) => setEditingArtworkPlaylist(pl)}
               onReorderPlaylistTracks={handleReorderPlaylistTracks}
               onDeletePlaylist={handleDeletePlaylist}
               onContextMenuPlaylist={(pl, x, y) => setPlaylistContextMenu({ playlist: pl, x, y })}
+              onContextMenuTrack={(t, x, y, q) => setTrackContextMenu({ track: t, x, y, queue: q })}
+              onContextMenuArtist={(a, x, y) => setArtistContextMenu({ artist: a, x, y })}
               onOpenAddMedia={() => {
                 setAddMediaTargetPlaylistId(api.currentPlaylist?.id ?? null);
                 setAddMediaOpen(true);
@@ -3089,6 +3121,7 @@ if (typeof d.theme === 'string') {
         <PlayerBar
           track={track}
           isPlaying={playing}
+          onContextMenuTrack={(t, x, y) => setTrackContextMenu({ track: t, x, y })}
           onStartRadio={startTrackRadio}
           isBuffering={buffering}
           currentTime={time}
@@ -3364,6 +3397,8 @@ if (typeof d.theme === 'string') {
           setAddMediaTargetPlaylistId(id);
           setAddMediaOpen(true);
         }}
+        onEditArtwork={(pl) => setEditingArtworkPlaylist(pl)}
+        onSaveCover={handleSavePicture}
         ownsPlaylist={Boolean(
           playlistContextMenu &&
             (playlistContextMenu.playlist.isLocal ||
@@ -3372,6 +3407,37 @@ if (typeof d.theme === 'string') {
               api.accountPlaylists.some((p) => p.id === playlistContextMenu.playlist.id))
         )}
       />
+
+      <TrackContextMenu
+        state={trackContextMenu}
+        onClose={() => setTrackContextMenu(null)}
+        onPlay={(t, q) => playTrack(t, q || [t])}
+        onPlayNext={playNext}
+        onAddToQueue={addToQueue}
+        onToggleLike={toggleLike}
+        isLiked={Boolean(trackContextMenu && api.likedIds.includes(trackContextMenu.track.id))}
+        onOpenArtist={openArtist}
+        onSaveArtwork={handleSavePicture}
+      />
+
+      <ArtistContextMenu
+        state={artistContextMenu}
+        onClose={() => setArtistContextMenu(null)}
+        onOpenArtist={openArtist}
+        onSaveAvatar={handleSavePicture}
+      />
+
+      {editingArtworkPlaylist && (
+        <EditPlaylistArtworkModal
+          isOpen={Boolean(editingArtworkPlaylist)}
+          playlist={editingArtworkPlaylist}
+          onClose={() => setEditingArtworkPlaylist(null)}
+          onSave={async (newArtwork) => {
+            await handleUpdatePlaylistDetails(editingArtworkPlaylist.id, { artwork: newArtwork });
+          }}
+          notify={notify}
+        />
+      )}
 
       <Toasts toasts={toasts} />
       </div>

@@ -73,6 +73,12 @@ export function useListenTogether({
 
   const peerRef = useRef<Peer | null>(null);
   const connectionsRef = useRef<Map<string, DataConnection>>(new Map());
+  const pendingConnectionsRef = useRef<
+    Map<string, { conn: DataConnection; timeoutId: ReturnType<typeof setTimeout> }>
+  >(new Map());
+  const lastAttemptTimeRef = useRef<Map<string, number>>(new Map());
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastFriendScanTimeRef = useRef(0);
   const isRemoteApplyingRef = useRef(false);
   const remoteExecutingTrackIdRef = useRef<string | null>(null);
   const processedCommandIdsRef = useRef<Set<string>>(new Set());
@@ -249,6 +255,18 @@ export function useListenTogether({
         return;
       }
 
+      // Prevent concurrent duplicate attempts to the same code
+      if (pendingConnectionsRef.current.has(code)) {
+        return;
+      }
+
+      // Rate-limit connection attempts to avoid NAT table exhaustion (at least 30s between retries)
+      const lastAttempt = lastAttemptTimeRef.current.get(code) || 0;
+      if (!isInitiator && Date.now() - lastAttempt < 30_000) {
+        return;
+      }
+      lastAttemptTimeRef.current.set(code, Date.now());
+
       const targetPeerId = peerIdForCode(code);
       try {
         const conn = peerRef.current.connect(targetPeerId, {
@@ -258,7 +276,32 @@ export function useListenTogether({
           },
         });
 
+        // 12-second connection timeout: if handshake doesn't complete, clean up
+        // to prevent leaking hanging RTCPeerConnection and flooding router NAT table.
+        const timeoutId = setTimeout(() => {
+          const pending = pendingConnectionsRef.current.get(code);
+          if (pending && pending.conn === conn) {
+            pendingConnectionsRef.current.delete(code);
+            try {
+              conn.close();
+            } catch {
+              // ignore
+            }
+          }
+        }, 12000);
+
+        pendingConnectionsRef.current.set(code, { conn, timeoutId });
+
+        const cleanupPending = () => {
+          const pending = pendingConnectionsRef.current.get(code);
+          if (pending && pending.conn === conn) {
+            clearTimeout(pending.timeoutId);
+            pendingConnectionsRef.current.delete(code);
+          }
+        };
+
         conn.on('open', () => {
+          cleanupPending();
           connectionsRef.current.set(code, conn);
 
           // 1. Send FRIEND_HELLO so the other person automatically adds us reciprocally!
@@ -315,7 +358,13 @@ export function useListenTogether({
         });
 
         conn.on('close', () => {
+          cleanupPending();
           connectionsRef.current.delete(code);
+          try {
+            conn.close();
+          } catch {
+            // ignore
+          }
           setPresences((prev) => {
             if (!prev[code]) return prev;
             return {
@@ -334,7 +383,13 @@ export function useListenTogether({
         });
 
         conn.on('error', () => {
+          cleanupPending();
           connectionsRef.current.delete(code);
+          try {
+            conn.close();
+          } catch {
+            // ignore
+          }
           setPresences((prev) => {
             if (!prev[code]) return prev;
             return {
@@ -352,7 +407,11 @@ export function useListenTogether({
           }
         });
       } catch {
-        // ignore connection attempt failure
+        const pending = pendingConnectionsRef.current.get(code);
+        if (pending) {
+          clearTimeout(pending.timeoutId);
+          pendingConnectionsRef.current.delete(code);
+        }
       }
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -405,8 +464,22 @@ export function useListenTogether({
       // Disconnect
       const conn = connectionsRef.current.get(code);
       if (conn) {
-        conn.close();
+        try {
+          conn.close();
+        } catch {
+          // ignore
+        }
         connectionsRef.current.delete(code);
+      }
+      const pending = pendingConnectionsRef.current.get(code);
+      if (pending) {
+        clearTimeout(pending.timeoutId);
+        try {
+          pending.conn.close();
+        } catch {
+          // ignore
+        }
+        pendingConnectionsRef.current.delete(code);
       }
       setPresences((prev) => {
         const copy = { ...prev };
@@ -1120,6 +1193,19 @@ export function useListenTogether({
     peer.on('error', (err) => {
       if (!active) return;
       if (err.type === 'peer-unavailable') {
+        // Clean up pending connection attempt for the unavailable peer so sockets don't linger
+        const errMessage = String(err.message || '');
+        pendingConnectionsRef.current.forEach(({ conn, timeoutId }, code) => {
+          if (errMessage.includes(code) || errMessage.includes(peerIdForCode(code))) {
+            clearTimeout(timeoutId);
+            try {
+              conn.close();
+            } catch {
+              // ignore
+            }
+            pendingConnectionsRef.current.delete(code);
+          }
+        });
         return;
       }
       if (err.type === 'unavailable-id') {
@@ -1137,15 +1223,38 @@ export function useListenTogether({
     peer.on('disconnected', () => {
       if (!active) return;
       setConnectionStatus('disconnected');
-      try {
-        peer.reconnect();
-      } catch {
-        // ignore
-      }
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = setTimeout(() => {
+        if (active && peerRef.current && !peerRef.current.destroyed && peerRef.current.disconnected) {
+          try {
+            peerRef.current.reconnect();
+          } catch {
+            // ignore
+          }
+        }
+      }, 5000);
     });
 
     return () => {
       active = false;
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      pendingConnectionsRef.current.forEach(({ conn, timeoutId }) => {
+        clearTimeout(timeoutId);
+        try {
+          conn.close();
+        } catch {
+          // ignore
+        }
+      });
+      pendingConnectionsRef.current.clear();
+      connectionsRef.current.forEach((conn) => {
+        try {
+          conn.close();
+        } catch {
+          // ignore
+        }
+      });
+      connectionsRef.current.clear();
       try {
         peer.destroy();
       } catch {
@@ -1180,14 +1289,18 @@ export function useListenTogether({
         roomId: syncSessionRef.current.roomId || null,
       });
 
-      // 2. Try to reconnect to friends that are disconnected
-      friendsRef.current.forEach((f) => {
-        const conn = connectionsRef.current.get(f.code);
-        if (!conn || !conn.open) {
-          connectToFriend(f.code);
-        }
-      });
-    }, 4000);
+      // 2. Scan and reconnect to disconnected friends at most once every 45s (preventing NAT flood)
+      const now = Date.now();
+      if (now - lastFriendScanTimeRef.current >= 45_000) {
+        lastFriendScanTimeRef.current = now;
+        friendsRef.current.forEach((f) => {
+          const conn = connectionsRef.current.get(f.code);
+          if (!conn || !conn.open) {
+            connectToFriend(f.code);
+          }
+        });
+      }
+    }, 6000);
 
     return () => clearInterval(interval);
   }, [broadcast, connectToFriend]);

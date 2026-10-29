@@ -20,6 +20,7 @@ import {
   Plus,
   CopyPlus,
   Pencil,
+  Camera,
   Check,
   X,
   ChevronUp,
@@ -62,10 +63,13 @@ interface Props {
   onRemoveFromPlaylist: (playlist: Playlist, track: Track) => void;
   onCreatePlaylist: (title: string) => Promise<Playlist | null>;
   onCopyPlaylist?: (playlist: Playlist, title?: string) => Promise<Playlist | null>;
-  onUpdatePlaylistDetails?: (playlistId: string, details: { title?: string; description?: string }) => Promise<boolean>;
+  onUpdatePlaylistDetails?: (playlistId: string, details: { title?: string; description?: string; artwork?: string }) => Promise<boolean>;
+  onEditArtwork?: (playlist: Playlist) => void;
   onReorderPlaylistTracks?: (playlistId: string, tracks: Track[]) => Promise<boolean>;
   onDeletePlaylist?: (playlist: Playlist) => void;
   onContextMenuPlaylist?: (playlist: Playlist, x: number, y: number) => void;
+  onContextMenuTrack?: (track: Track, x: number, y: number, queue?: Track[]) => void;
+  onContextMenuArtist?: (artist: { id?: string; username: string; fullName?: string; avatarUrl?: string; permalinkUrl?: string }, x: number, y: number) => void;
   onOpenAddMedia?: () => void;
   onDownload: (track: Track) => void;
   onPlayNext?: (track: Track) => void;
@@ -466,6 +470,13 @@ export function DetailView(p: Props) {
           if (!isArtist && pl && p.onContextMenuPlaylist) {
             e.preventDefault();
             p.onContextMenuPlaylist(pl, e.clientX, e.clientY);
+          } else if (isArtist && pl && p.onContextMenuArtist) {
+            e.preventDefault();
+            p.onContextMenuArtist(
+              { id: pl.id, username: pl.title, fullName: pl.title, avatarUrl: pl.artwork, permalinkUrl: pl.permalinkUrl },
+              e.clientX,
+              e.clientY
+            );
           }
         }}
         className="relative px-6 sm:px-8 pt-6 pb-8"
@@ -480,8 +491,35 @@ export function DetailView(p: Props) {
         </button>
 
         <div className="flex flex-col sm:flex-row gap-6 items-start">
-          <div className="w-40 h-40 sm:w-48 sm:h-48 rounded-2xl overflow-hidden bg-sc-panel-2 shrink-0 shadow-2xl ring-1 ring-sc-fill/5 transition-transform duration-300 hover:scale-[1.02]">
-            <Artwork src={pl.artwork} seed={pl.id} size={500} rounded="rounded-2xl" className="w-full h-full" />
+          <div
+            onContextMenu={(e) => {
+              if (isArtist && pl && p.onContextMenuArtist) {
+                e.preventDefault();
+                e.stopPropagation();
+                p.onContextMenuArtist(
+                  { id: pl.id, username: pl.title, fullName: pl.title, avatarUrl: pl.artwork, permalinkUrl: pl.permalinkUrl },
+                  e.clientX,
+                  e.clientY
+                );
+              }
+            }}
+            className="relative group w-40 h-40 sm:w-48 sm:h-48 rounded-2xl overflow-hidden bg-sc-panel-2 shrink-0 shadow-2xl ring-1 ring-sc-fill/5 transition-transform duration-300 hover:scale-[1.02]"
+          >
+            <Artwork src={pl.artwork} seed={pl.id} size={500} rounded="rounded-2xl" className="w-full h-full object-cover" />
+            {ownsPlaylist && p.onEditArtwork && (
+              <button
+                type="button"
+                onClick={() => p.onEditArtwork?.(pl)}
+                title="Change playlist cover"
+                aria-label="Change playlist cover"
+                className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex flex-col items-center justify-center gap-1.5 text-white cursor-pointer backdrop-blur-[2px]"
+              >
+                <div className="p-2.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md transition-transform duration-150 group-hover:scale-110">
+                  <Camera className="w-6 h-6" />
+                </div>
+                <span className="text-[11.5px] font-bold tracking-wide">Change Cover</span>
+              </button>
+            )}
           </div>
 
           <div className="min-w-0 flex-1">
@@ -526,24 +564,44 @@ export function DetailView(p: Props) {
                   {pl.title}
                 </h1>
                 {ownsPlaylist && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditTitleValue(pl.title);
-                      setIsEditingTitle(true);
-                    }}
-                    title="Rename playlist"
-                    aria-label="Rename playlist"
-                    className="p-1.5 rounded-lg border border-transparent hover:border-sc-line hover:bg-sc-panel/80 text-sc-dim hover:text-sc-fg transition-all duration-150 cursor-pointer"
-                  >
-                    <Pencil className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditTitleValue(pl.title);
+                        setIsEditingTitle(true);
+                      }}
+                      title="Rename playlist"
+                      aria-label="Rename playlist"
+                      className="p-1.5 rounded-lg border border-transparent hover:border-sc-line hover:bg-sc-panel/80 text-sc-dim hover:text-sc-fg transition-all duration-150 cursor-pointer"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    {p.onEditArtwork && (
+                      <button
+                        type="button"
+                        onClick={() => p.onEditArtwork?.(pl)}
+                        title="Change playlist cover"
+                        aria-label="Change playlist cover"
+                        className="p-1.5 rounded-lg border border-transparent hover:border-sc-line hover:bg-sc-panel/80 text-sc-dim hover:text-sc-fg transition-all duration-150 cursor-pointer"
+                      >
+                        <Camera className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 )}
               </div>
             )}
             {owner && !isArtist && (
               <button
                 onClick={() => p.onOpenArtist(owner)}
+                onContextMenu={(e) => {
+                  if (owner && p.onContextMenuArtist) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    p.onContextMenuArtist(owner, e.clientX, e.clientY);
+                  }
+                }}
                 className="mt-3 inline-flex items-center gap-2 text-[13px] font-semibold hover:underline cursor-pointer"
               >
                 <div className="w-6 h-6 rounded-full overflow-hidden bg-sc-panel-2 shrink-0">
@@ -826,6 +884,7 @@ export function DetailView(p: Props) {
                 onOpenArtist={p.onOpenArtist}
                 onPlayNext={p.onPlayNext}
                 onAddToQueue={p.onAddToQueue}
+                onContextMenuTrack={p.onContextMenuTrack}
               />
             </div>
           ) : (
@@ -905,6 +964,7 @@ export function DetailView(p: Props) {
               onOpenArtist={p.onOpenArtist}
               onPlayNext={p.onPlayNext}
               onAddToQueue={p.onAddToQueue}
+              onContextMenuTrack={p.onContextMenuTrack}
               renderActions={(t) => {
                 const isDownloading = p.downloadingIds.includes(t.id);
                 return (

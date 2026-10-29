@@ -101,6 +101,8 @@ interface SearchProps {
   onFindSimilar: (seed: Track) => void;
   onPlayNext?: (track: Track) => void;
   onAddToQueue?: (track: Track) => void;
+  onContextMenuTrack?: (track: Track, x: number, y: number, queue?: Track[]) => void;
+  onContextMenuArtist?: (artist: { id?: string; username: string; fullName?: string; avatarUrl?: string; permalinkUrl?: string }, x: number, y: number) => void;
   renderActions?: (track: Track) => React.ReactNode;
   compact?: boolean;
   showArtwork?: boolean;
@@ -196,6 +198,12 @@ export function SearchView(p: SearchProps) {
                     <button
                       key={a.id}
                       onClick={() => p.onOpenArtist(a)}
+                      onContextMenu={(e) => {
+                        if (p.onContextMenuArtist) {
+                          e.preventDefault();
+                          p.onContextMenuArtist(a, e.clientX, e.clientY);
+                        }
+                      }}
                       className="group flex items-center gap-3.5 rounded-2xl border border-white/[0.07] bg-white/[0.032] backdrop-blur-md p-3.5 hover:border-sc-orange/50 hover:bg-white/[0.07] hover:-translate-y-0.5 active:scale-[0.98] hover:shadow-xl transition-all duration-300 text-left cursor-pointer"
                     >
                       <div className="w-12 h-12 rounded-full overflow-hidden bg-sc-panel-2 shrink-0 ring-1 ring-white/10 shadow-sm">
@@ -250,6 +258,7 @@ export function SearchView(p: SearchProps) {
                   onFindSimilar={p.onFindSimilar}
                   onPlayNext={p.onPlayNext}
                   onAddToQueue={p.onAddToQueue}
+                  onContextMenuTrack={p.onContextMenuTrack}
                   compact={p.compact}
                   showArtwork={p.showArtwork}
                   renderActions={p.renderActions}
@@ -320,6 +329,7 @@ export function SearchView(p: SearchProps) {
             onFindSimilar={p.onFindSimilar}
             onPlayNext={p.onPlayNext}
             onAddToQueue={p.onAddToQueue}
+            onContextMenuTrack={p.onContextMenuTrack}
             compact={p.compact}
             showArtwork={p.showArtwork}
             renderActions={p.renderActions}
@@ -366,6 +376,12 @@ export function SearchView(p: SearchProps) {
                 <button
                   key={a.id}
                   onClick={() => p.onOpenArtist(a)}
+                  onContextMenu={(e) => {
+                    if (p.onContextMenuArtist) {
+                      e.preventDefault();
+                      p.onContextMenuArtist(a, e.clientX, e.clientY);
+                    }
+                  }}
                   className="group flex items-center gap-3.5 rounded-2xl border border-white/[0.07] bg-white/[0.032] backdrop-blur-md p-3.5 hover:border-sc-orange/50 hover:bg-white/[0.07] hover:-translate-y-0.5 active:scale-[0.98] hover:shadow-xl transition-all duration-300 text-left cursor-pointer animate-scale-in"
                 >
                   <div className="w-12 h-12 rounded-full overflow-hidden bg-sc-panel-2 shrink-0 ring-1 ring-white/10 shadow-sm">
@@ -456,6 +472,7 @@ interface LibraryProps {
   showArtwork?: boolean;
   onOpenAddMedia?: () => void;
   onContextMenuPlaylist?: (playlist: Playlist, x: number, y: number) => void;
+  onContextMenuTrack?: (track: Track, x: number, y: number, queue?: Track[]) => void;
 }
 
 export function LibraryView(p: LibraryProps) {
@@ -540,6 +557,7 @@ export function LibraryView(p: LibraryProps) {
             onFindSimilar={p.onFindSimilar}
             onPlayNext={p.onPlayNext}
             onAddToQueue={p.onAddToQueue}
+            onContextMenuTrack={p.onContextMenuTrack}
             compact={p.compact}
             showArtwork={p.showArtwork}
             renderActions={p.renderActions}

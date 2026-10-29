@@ -358,7 +358,18 @@ const appContent = fs.readFileSync(appPath, 'utf8');
 assert(appContent.includes('handleDeletePlaylist'), 'App.tsx defines handleDeletePlaylist handler');
 assert(appContent.includes('<PlaylistContextMenu'), 'App.tsx renders PlaylistContextMenu');
 
-// 10. Summary
+// 10. WebRTC & NAT Flood Protection Verification
+console.log('\n--- 10. WebRTC & NAT Flood Protection Verification ---');
+const listenTogetherHookPath = path.join(ROOT_DIR, 'src/hooks/useListenTogether.ts');
+const listenTogetherSrc = fs.readFileSync(listenTogetherHookPath, 'utf8');
+assert(listenTogetherSrc.includes('pendingConnectionsRef'), 'useListenTogether tracks pending connection attempts');
+assert(listenTogetherSrc.includes('lastAttemptTimeRef'), 'useListenTogether tracks per-friend connection rate-limiting');
+assert(listenTogetherSrc.includes('lastFriendScanTimeRef'), 'useListenTogether throttles offline friend scans');
+assert(listenTogetherSrc.includes('12000'), 'useListenTogether enforces connection timeout to clean up hanging sockets');
+assert(listenTogetherSrc.includes('30_000'), 'useListenTogether throttles friend connection retries by at least 30s');
+assert(listenTogetherSrc.includes('45_000'), 'useListenTogether throttles friend background scan interval by at least 45s');
+
+// 11. Summary
 console.log('\n========================================');
 console.log(`🏁 TEST RESULTS: ${passedTests}/${totalTests} PASSED (${failedTests} FAILED)`);
 console.log('========================================\n');

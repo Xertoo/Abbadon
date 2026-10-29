@@ -102,6 +102,7 @@ interface Props {
   renderPlaylistAction?: (track: Track, alwaysVisible?: boolean) => React.ReactNode;
   /** Appends the track to the end of the queue without interrupting playback. */
   onAddToQueue?: (track: Track) => void;
+  onContextMenuTrack?: (track: Track, x: number, y: number) => void;
   /** Autodiscovery runs on its own; this opens the "Find similar" category. */
   
   /** Jumps to Settings, where the advanced response curve lives. */
@@ -697,7 +698,15 @@ function NowPlaying({
           {/* Left: Album cover, track info and player controls */}
           <div className="flex flex-col justify-between min-h-0 py-2">
             <div className="space-y-4">
-              <div className="max-w-[320px] aspect-square rounded-3xl overflow-hidden shadow-2xl ring-1 ring-white/10 mx-auto md:mx-0">
+              <div
+                onContextMenu={(e) => {
+                  if (p.track && p.onContextMenuTrack) {
+                    e.preventDefault();
+                    p.onContextMenuTrack(p.track, e.clientX, e.clientY);
+                  }
+                }}
+                className="max-w-[320px] aspect-square rounded-3xl overflow-hidden shadow-2xl ring-1 ring-white/10 mx-auto md:mx-0"
+              >
                 <Artwork
                   src={p.track?.artwork}
                   seed={p.track?.id}
@@ -954,7 +963,15 @@ function NowPlaying({
                   className="relative w-full transition-all duration-300"
                 >
                   <div className="relative aspect-square w-full">
-                    <div className="relative z-10 w-full h-full rounded-3xl overflow-hidden shadow-2xl ring-1 ring-sc-fill/10">
+                    <div
+                      onContextMenu={(e) => {
+                        if (p.track && p.onContextMenuTrack) {
+                          e.preventDefault();
+                          p.onContextMenuTrack(p.track, e.clientX, e.clientY);
+                        }
+                      }}
+                      className="relative z-10 w-full h-full rounded-3xl overflow-hidden shadow-2xl ring-1 ring-sc-fill/10"
+                    >
                       {p.track ? (
                         <Artwork
                           src={p.track.artwork}
@@ -1679,6 +1696,12 @@ export function PlayerBar(p: Props) {
               <>
                 <button
                   onClick={() => setFullscreen(true)}
+                  onContextMenu={(e) => {
+                    if (p.track && p.onContextMenuTrack) {
+                      e.preventDefault();
+                      p.onContextMenuTrack(p.track, e.clientX, e.clientY);
+                    }
+                  }}
                   className={clsx(
                     'relative rounded-xl overflow-hidden bg-sc-panel-2 shrink-0 group transition-all duration-300 hover:scale-105 active:scale-95 shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:shadow-[0_8px_24px_rgba(var(--sc-accent-rgb,109,94,252),0.3)] cursor-pointer ring-1 ring-white/10',
                     isCompact ? 'w-11 h-11' : 'w-14 h-14'
@@ -1691,7 +1714,15 @@ export function PlayerBar(p: Props) {
                     <Maximize2 className="w-4 h-4 text-white" />
                   </div>
                 </button>
-                <div className="min-w-0 flex-1 overflow-hidden">
+                <div
+                  onContextMenu={(e) => {
+                    if (p.track && p.onContextMenuTrack) {
+                      e.preventDefault();
+                      p.onContextMenuTrack(p.track, e.clientX, e.clientY);
+                    }
+                  }}
+                  className="min-w-0 flex-1 overflow-hidden"
+                >
                   <div className="flex items-center gap-1.5 min-w-0">
                     <span
                       className={clsx(

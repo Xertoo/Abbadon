@@ -1826,6 +1826,62 @@ ipcMain.handle('media:load-local-library', () => {
   }
 });
 
+ipcMain.handle('media:save-picture', async (_e, payload) => {
+  const { url, filename, title } = payload || {};
+  if (!url) return { ok: false, error: 'No image URL provided' };
+
+  try {
+    const picturesDir = app.getPath('pictures');
+    if (!fs.existsSync(picturesDir)) {
+      fs.mkdirSync(picturesDir, { recursive: true });
+    }
+
+    // High resolution upgrade for SoundCloud artwork/avatars if available
+    let fetchUrl = String(url).trim();
+    if (fetchUrl.includes('sndcdn.com')) {
+      fetchUrl = fetchUrl.replace('-large.jpg', '-t500x500.jpg');
+    }
+
+    const cleanBase = safeFileName(title || filename || 'picture', 'picture');
+    let ext = '.jpg';
+    let buffer;
+
+    if (fetchUrl.startsWith('data:')) {
+      const match = fetchUrl.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+      if (match) {
+        ext = `.${match[1] === 'jpeg' ? 'jpg' : match[1]}`;
+        buffer = Buffer.from(match[2], 'base64');
+      } else {
+        const parts = fetchUrl.split(',');
+        buffer = Buffer.from(parts[1] || '', 'base64');
+      }
+    } else {
+      const resp = await net.fetch(fetchUrl);
+      if (!resp.ok) {
+        throw new Error(`Failed to download image (HTTP ${resp.status})`);
+      }
+      const contentType = resp.headers.get('content-type') || '';
+      if (contentType.includes('png')) ext = '.png';
+      else if (contentType.includes('webp')) ext = '.webp';
+      else if (contentType.includes('gif')) ext = '.gif';
+      else if (contentType.includes('svg')) ext = '.svg';
+      else ext = '.jpg';
+
+      const arrayBuffer = await resp.arrayBuffer();
+      buffer = Buffer.from(arrayBuffer);
+    }
+
+    const finalName = `${cleanBase}${ext}`;
+    const targetPath = getUniqueFilePath(picturesDir, finalName);
+    fs.writeFileSync(targetPath, buffer);
+
+    return { ok: true, path: targetPath, filename: path.basename(targetPath) };
+  } catch (err) {
+    console.warn('[main:save-picture] Failed to save picture:', err);
+    return { ok: false, error: err.message };
+  }
+});
+
 /* ------------------------------------------------------------------ *
  * Proxy & Regional Bypass IPC
  * ------------------------------------------------------------------ */

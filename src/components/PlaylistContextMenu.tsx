@@ -8,6 +8,8 @@ import {
   EyeOff,
   Trash2,
   FolderPlus,
+  Camera,
+  ImageDown,
   AlertTriangle,
   Check,
 } from 'lucide-react';
@@ -31,6 +33,8 @@ interface Props {
   onHidePlaylist?: (id: string) => void;
   onDeletePlaylist?: (playlist: Playlist) => void;
   onOpenAddMedia?: (playlistId: string) => void;
+  onEditArtwork?: (playlist: Playlist) => void;
+  onSaveCover?: (url: string, title: string) => void;
   ownsPlaylist?: boolean;
 }
 
@@ -44,6 +48,8 @@ export function PlaylistContextMenu({
   onHidePlaylist,
   onDeletePlaylist,
   onOpenAddMedia,
+  onEditArtwork,
+  onSaveCover,
   ownsPlaylist = false,
 }: Props) {
   const menuRef = useRef<HTMLDivElement>(null);
@@ -222,6 +228,36 @@ export function PlaylistContextMenu({
               >
                 <FolderPlus className="w-3.5 h-3.5 text-sc-dim shrink-0" />
                 <span className="truncate">Add Songs</span>
+              </button>
+            )}
+
+            {/* Change Playlist Cover */}
+            {isOwner && onEditArtwork && (
+              <button
+                type="button"
+                onClick={() => {
+                  onEditArtwork(playlist);
+                  onClose();
+                }}
+                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.08] transition-colors cursor-pointer"
+              >
+                <Camera className="w-3.5 h-3.5 text-sc-dim shrink-0" />
+                <span className="truncate">Change Cover</span>
+              </button>
+            )}
+
+            {/* Save Cover to Pictures */}
+            {playlist.artwork && onSaveCover && (
+              <button
+                type="button"
+                onClick={() => {
+                  onSaveCover(playlist.artwork, `${playlist.title} - Cover`);
+                  onClose();
+                }}
+                className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg text-left hover:bg-white/[0.08] transition-colors cursor-pointer"
+              >
+                <ImageDown className="w-3.5 h-3.5 text-sc-dim shrink-0" />
+                <span className="truncate">Save Cover to Pictures</span>
               </button>
             )}
 

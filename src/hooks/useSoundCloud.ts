@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
+  getPlaylistArtworkOverride,
+  setPlaylistArtworkOverride,
+  removePlaylistArtworkOverride,
+} from '../lib/playlistArtwork';
+import {
   sc,
   mapTrack,
   mapUser,
@@ -142,6 +147,7 @@ export interface AppState {
   error: string | null;
   loadFailed: boolean;
   accountPlaylists: Playlist[];
+  setAccountPlaylists: React.Dispatch<React.SetStateAction<Playlist[]>>;
   notify: (msg: string) => void;
 
   searchResults: Track[];
@@ -184,7 +190,7 @@ export interface AppState {
   removeFromPlaylist: (playlist: Playlist, track: Track) => Promise<boolean>;
   createPlaylist: (title: string, initialTracks?: Track[]) => Promise<Playlist | null>;
   copyPlaylist: (playlist: Playlist, title?: string) => Promise<Playlist | null>;
-  updatePlaylistDetails: (playlistId: string, details: { title?: string; description?: string }) => Promise<boolean>;
+  updatePlaylistDetails: (playlistId: string, details: { title?: string; description?: string; artwork?: string }) => Promise<boolean>;
   reorderPlaylistTracks: (playlistId: string, newTracks: Track[]) => Promise<boolean>;
   deletePlaylist: (playlistId: string | number) => Promise<boolean>;
   playlistBusy: string | null;
@@ -490,6 +496,8 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
 
   const loadPlaylist = useCallback(
     async (p: Playlist) => {
+      const artworkOverride = getPlaylistArtworkOverride(p.id);
+      const playlistWithOverride = artworkOverride ? { ...p, artwork: artworkOverride } : p;
       if (
         p.isLocal ||
         p.source === 'local' ||
@@ -497,17 +505,17 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
         String(p.id).startsWith('local:') ||
         String(p.id).startsWith('server:')
       ) {
-        setCurrentPlaylist({ ...p, tracks: p.tracks || [] });
+        setCurrentPlaylist({ ...playlistWithOverride, tracks: p.tracks || [] });
         return;
       }
       const initialTracks = mergeLocalPlaylistTracks(p.id, p.tracks || []);
-      setCurrentPlaylist({ ...p, tracks: initialTracks });
+      setCurrentPlaylist({ ...playlistWithOverride, tracks: initialTracks });
       const tracks = await guard(
         async () => (await sc.playlistTracks(p.id)).collection.map(mapTrack),
         [] as Track[]
       );
       const mergedTracks = mergeLocalPlaylistTracks(p.id, tracks);
-      setCurrentPlaylist({ ...p, tracks: mergedTracks });
+      setCurrentPlaylist({ ...playlistWithOverride, tracks: mergedTracks });
       if (mergedTracks.length === 0 && p.owner) {
         notify(`${p.title} has no playable tracks on SoundCloud`);
       }
@@ -826,13 +834,25 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
   );
 
   const updatePlaylistDetails = useCallback(
-    async (playlistId: string, details: { title?: string; description?: string }) => {
-      if (!meRef.current) {
-        notify('Connect SoundCloud to edit playlists');
-        return false;
-      }
+    async (playlistId: string, details: { title?: string; description?: string; artwork?: string }) => {
       try {
-        await sc.updatePlaylistDetails(playlistId, details);
+        if (details.title !== undefined || details.description !== undefined) {
+          if (!meRef.current) {
+            notify('Connect SoundCloud to edit playlists');
+            return false;
+          }
+          await sc.updatePlaylistDetails(playlistId, {
+            title: details.title,
+            description: details.description,
+          });
+        }
+        if (details.artwork !== undefined) {
+          if (details.artwork) {
+            setPlaylistArtworkOverride(playlistId, details.artwork);
+          } else {
+            removePlaylistArtworkOverride(playlistId);
+          }
+        }
         setAccountPlaylists((prev) =>
           prev.map((p) => (p.id === playlistId ? { ...p, ...details } : p))
         );
@@ -1053,8 +1073,10 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
         const meta = mapPlaylistMeta(p);
         const added = getLocalPlaylistAdded(meta.id).length;
         const removed = getLocalPlaylistRemoved(meta.id).length;
+        const override = getPlaylistArtworkOverride(meta.id);
         return {
           ...meta,
+          artwork: override || meta.artwork,
           trackCount: Math.max(0, meta.trackCount + added - removed),
         };
       });
@@ -1172,6 +1194,7 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
     error,
     loadFailed,
     accountPlaylists,
+    setAccountPlaylists,
     notify,
     searchResults,
     searchArtists,

@@ -1,6 +1,6 @@
 # Maintainer: Xertoo <xertoo@users.noreply.github.com>
 pkgname=abbadon-bin
-pkgver=1.0.14
+pkgver=1.0.15
 pkgrel=1
 pkgdesc="Desktop SoundCloud player with rate-limit protection"
 arch=('x64')

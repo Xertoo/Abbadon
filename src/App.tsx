@@ -312,6 +312,7 @@ export default function App() {
   const [localTracks, setLocalTracks] = useState<Track[]>([]);
   const [addMediaOpen, setAddMediaOpen] = useState(false);
   const [addMediaTargetPlaylistId, setAddMediaTargetPlaylistId] = useState<string | null>(null);
+  const [addMediaInitialTab, setAddMediaInitialTab] = useState<'pc' | 'server' | 'spotify'>('pc');
   const [playlistContextMenu, setPlaylistContextMenu] = useState<PlaylistContextMenuState | null>(null);
   const [trackContextMenu, setTrackContextMenu] = useState<TrackContextMenuState | null>(null);
   const [artistContextMenu, setArtistContextMenu] = useState<ArtistContextMenuState | null>(null);
@@ -2607,8 +2608,9 @@ if (typeof d.theme === 'string') {
         }}
         onDeleteLocalPlaylist={handleDeleteLocalPlaylist}
         onContextMenuPlaylist={(pl, x, y) => setPlaylistContextMenu({ playlist: pl, x, y })}
-        onOpenAddMedia={() => {
+        onOpenAddMedia={(tab = 'pc') => {
           setAddMediaTargetPlaylistId(null);
+          setAddMediaInitialTab(tab);
           setAddMediaOpen(true);
         }}
         onOpenHeardle={() => {
@@ -3341,8 +3343,30 @@ if (typeof d.theme === 'string') {
           }}
           playlists={localPlaylists}
           defaultPlaylistId={addMediaTargetPlaylistId}
+          initialTab={addMediaInitialTab}
           onAddTracks={handleAddTracks}
           onAddPlaylist={handleAddPlaylist}
+          onPlayTrack={(t, q) => void playTrack(t, q || [t])}
+          onAddToQueue={(tracks) => {
+            setQueue((prev) => {
+              const existing = new Set(prev.map((x) => x.id));
+              const fresh = tracks.filter((x) => !existing.has(x.id));
+              return [...prev, ...fresh];
+            });
+            notify(`Added ${tracks.length} ${tracks.length === 1 ? 'track' : 'tracks'} to queue`);
+          }}
+          onPlayNext={(t) => playNext(t)}
+          onTogglePlayPause={() => {
+            if (playing) {
+              engine.pause();
+              setPlaying(false);
+            } else {
+              void engine.play();
+              setPlaying(true);
+            }
+          }}
+          playingId={playingId}
+          isPlaying={playing}
           notify={notify}
         />
       )}

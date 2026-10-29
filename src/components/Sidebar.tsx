@@ -54,7 +54,7 @@ interface Props {
   /** Called when user clicks the hide playlist button. */
   onHidePlaylist?: (id: string) => void;
   onDeleteLocalPlaylist?: (id: string) => void;
-  onOpenAddMedia?: () => void;
+  onOpenAddMedia?: (initialTab?: 'pc' | 'server' | 'spotify') => void;
   onContextMenuPlaylist?: (playlist: Playlist, x: number, y: number) => void;
   /** Opens the SoundHeardle song guesser minigame. */
   onOpenHeardle?: () => void;
@@ -203,15 +203,28 @@ export function Sidebar({
         </div>
         <div className="flex items-center gap-1.5">
           {onOpenAddMedia && (
-            <button
-              type="button"
-              onClick={onOpenAddMedia}
-              title="Add songs or playlists from PC or Server"
-              aria-label="Add music from PC or Server"
-              className="w-5 h-5 rounded flex items-center justify-center text-sc-dim hover:text-sc-orange hover:bg-sc-fill/10 transition-all hover:scale-110 cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" />
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => onOpenAddMedia('spotify')}
+                title="Import playlist, album or tracks from Spotify"
+                aria-label="Import from Spotify"
+                className="w-5 h-5 rounded flex items-center justify-center text-sc-dim hover:text-emerald-400 hover:bg-emerald-500/10 transition-all hover:scale-110 cursor-pointer"
+              >
+                <svg className="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24">
+                  <path d="M12 2C6.477 2 2 6.477 2 12c0 5.524 4.477 10 10 10s10-4.476 10-10c0-5.523-4.477-10-10-10zm4.586 14.424a.627.627 0 0 1-.86.208c-2.358-1.442-5.327-1.767-8.824-.968a.627.627 0 1 1-.28-1.222c3.83-.876 7.114-.504 9.756 1.121.298.183.391.57.184.861zm1.226-2.723a.784.784 0 0 1-1.077.26c-2.7-1.66-6.816-2.139-10.01-1.168a.786.786 0 0 1-.462-1.501c3.654-1.11 8.2-0.58 11.288 1.332.368.227.487.712.261 1.077zm.106-2.836C14.685 8.922 9.356 8.745 6.262 9.684a.942.942 0 1 1-.55-1.804c3.553-1.078 9.444-.871 13.23 1.378a.942.942 0 0 1-.952 1.635z"/>
+                </svg>
+              </button>
+              <button
+                type="button"
+                onClick={() => onOpenAddMedia('pc')}
+                title="Add songs or playlists from PC, Server or Spotify"
+                aria-label="Add music from PC or Server"
+                className="w-5 h-5 rounded flex items-center justify-center text-sc-dim hover:text-sc-orange hover:bg-sc-fill/10 transition-all hover:scale-110 cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+              </button>
+            </>
           )}
           {playlists.length > 1 && !hint && (
             <span

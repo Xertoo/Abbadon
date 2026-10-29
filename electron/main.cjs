@@ -309,6 +309,8 @@ function isAllowedHost(hostname) {
     h.endsWith('.soundcloud.cf') ||
     h === 'spotify.com' ||
     h.endsWith('.spotify.com') ||
+    h === 'spotify.link' ||
+    h.endsWith('.spotify.link') ||
     h === 'scdn.co' ||
     h.endsWith('.scdn.co')
   );
@@ -400,6 +402,14 @@ ipcMain.handle('sc:fetch', async (_e, { url, method = 'GET', headers = {}, body 
   }
 
   const isCdn = parsed.hostname.endsWith('sndcdn.com');
+  const isSpotify =
+    parsed.hostname === 'spotify.com' ||
+    parsed.hostname.endsWith('.spotify.com') ||
+    parsed.hostname === 'spotify.link' ||
+    parsed.hostname.endsWith('.spotify.link') ||
+    parsed.hostname === 'scdn.co' ||
+    parsed.hostname.endsWith('.scdn.co');
+
   if (!isAllowedHost(parsed.hostname)) {
     return { ok: false, status: 0, text: '', error: `host not allowed: ${parsed.hostname}` };
   }
@@ -410,24 +420,31 @@ ipcMain.handle('sc:fetch', async (_e, { url, method = 'GET', headers = {}, body 
   }
 
   const chromeVer = (process.versions.chrome || '124').split('.')[0];
-  const requestHeaders = {
-    'User-Agent': UA,
-    Accept: isCdn ? '*/*' : 'application/json, text/javascript, */*; q=0.01',
-    'Accept-Language': 'en-US,en;q=0.9',
-    ...(isCdn
-      ? {}
-      : {
-          Origin: 'https://soundcloud.com',
-          'Sec-Ch-Ua': `"Chromium";v="${chromeVer}", "Not-A.Brand";v="99"`,
-          'Sec-Ch-Ua-Mobile': '?0',
-          'Sec-Ch-Ua-Platform': '"Windows"',
-          'Sec-Fetch-Dest': 'empty',
-          'Sec-Fetch-Mode': 'cors',
-          'Sec-Fetch-Site': 'same-site',
-        }),
-    Referer: 'https://soundcloud.com/',
-    ...headers,
-  };
+  const requestHeaders = isSpotify
+    ? {
+        'User-Agent': UA,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/json,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        ...headers,
+      }
+    : {
+        'User-Agent': UA,
+        Accept: isCdn ? '*/*' : 'application/json, text/javascript, */*; q=0.01',
+        'Accept-Language': 'en-US,en;q=0.9',
+        ...(isCdn
+          ? {}
+          : {
+              Origin: 'https://soundcloud.com',
+              'Sec-Ch-Ua': `"Chromium";v="${chromeVer}", "Not-A.Brand";v="99"`,
+              'Sec-Ch-Ua-Mobile': '?0',
+              'Sec-Ch-Ua-Platform': '"Windows"',
+              'Sec-Fetch-Dest': 'empty',
+              'Sec-Fetch-Mode': 'cors',
+              'Sec-Fetch-Site': 'same-site',
+            }),
+        Referer: 'https://soundcloud.com/',
+        ...headers,
+      };
 
   const doFetch = async () => {
     const res = await session.defaultSession.fetch(url, {
@@ -435,7 +452,7 @@ ipcMain.handle('sc:fetch', async (_e, { url, method = 'GET', headers = {}, body 
       headers: requestHeaders,
       body: body ?? undefined,
       redirect: 'follow',
-      credentials: isCdn ? 'omit' : 'include',
+      credentials: isCdn || isSpotify ? 'omit' : 'include',
     });
     const text = await res.text();
     return {

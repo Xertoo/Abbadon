@@ -107,6 +107,7 @@ let tray = null;
 let trayWin = null;
 let updateTrayFn = null;
 let isQuitting = false;
+let isUpdating = false;
 let rpcClient = null;
 let rpcConnected = false;
 let lastNotifiedTrackId = null;
@@ -447,10 +448,22 @@ ipcMain.handle('sc:fetch', async (_e, { url, method = 'GET', headers = {}, body 
       };
 
   const doFetch = async () => {
+    let requestBody = body ?? undefined;
+    if (requestBody && typeof requestBody === 'object') {
+      if (Buffer.isBuffer(requestBody)) {
+        // already Node Buffer
+      } else if (requestBody instanceof Uint8Array || ArrayBuffer.isView(requestBody)) {
+        requestBody = Buffer.from(requestBody.buffer, requestBody.byteOffset, requestBody.byteLength);
+      } else if (Array.isArray(requestBody) || (requestBody.type === 'Buffer' && Array.isArray(requestBody.data))) {
+        requestBody = Buffer.from(requestBody.data || requestBody);
+      } else {
+        requestBody = JSON.stringify(requestBody);
+      }
+    }
     const res = await session.defaultSession.fetch(url, {
       method,
       headers: requestHeaders,
-      body: body ?? undefined,
+      body: requestBody,
       redirect: 'follow',
       credentials: isCdn || isSpotify ? 'omit' : 'include',
     });
@@ -1484,6 +1497,130 @@ ipcMain.handle('sc:settings', () => {
 ipcMain.handle('sc:settings-path', () => path.join(app.getPath('userData'), 'settings.json'));
 
 /* ------------------------------------------------------------------ *
+ * Custom CSS (Vencord style quickCss)
+ * ------------------------------------------------------------------ */
+let isWritingCss = false;
+let cssWatcher = null;
+
+function getCustomCssPath() {
+  return path.join(app.getPath('userData'), 'custom.css');
+}
+
+function watchCustomCss() {
+  const file = getCustomCssPath();
+  try {
+    if (!fs.existsSync(file)) {
+      const template = `/* ===================================================================
+ * Abbadon Client - Custom CSS (Vencord Style)
+ * Changes here take effect live in real-time.
+ * =================================================================== */
+
+/* Example: Frosted glassmorphism panels */
+/*
+aside, footer {
+  backdrop-filter: blur(24px) !important;
+  background-color: rgba(19, 19, 26, 0.65) !important;
+}
+*/
+`;
+      fs.writeFileSync(file, template, 'utf8');
+    }
+
+    if (cssWatcher) {
+      try { cssWatcher.close(); } catch {}
+      cssWatcher = null;
+    }
+
+    let debounceTimer = null;
+    cssWatcher = fs.watch(file, (eventType) => {
+      if (isWritingCss) return;
+      if (eventType === 'change' || eventType === 'rename') {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+          try {
+            if (fs.existsSync(file)) {
+              const content = fs.readFileSync(file, 'utf8');
+              BrowserWindow.getAllWindows().forEach((w) => {
+                if (!w.isDestroyed()) {
+                  w.webContents.send('css:file-changed', content);
+                }
+              });
+            }
+          } catch {
+            /* ignore transient read errors while editor writes */
+          }
+        }, 100);
+      }
+    });
+  } catch (err) {
+    console.warn('[CustomCSS] Watch error:', err);
+  }
+}
+
+ipcMain.handle('css:load', () => {
+  const file = getCustomCssPath();
+  try {
+    if (!fs.existsSync(file)) {
+      const template = `/* ===================================================================
+ * Abbadon Client - Custom CSS (Vencord Style)
+ * Changes here take effect live in real-time.
+ * =================================================================== */
+`;
+      fs.writeFileSync(file, template, 'utf8');
+      return { ok: true, content: template, path: file };
+    }
+    const content = fs.readFileSync(file, 'utf8');
+    return { ok: true, content, path: file };
+  } catch (err) {
+    return { ok: false, content: '', path: file, error: err ? err.message : 'unreadable' };
+  }
+});
+
+ipcMain.handle('css:save', (_e, content) => {
+  const file = getCustomCssPath();
+  try {
+    isWritingCss = true;
+    fs.writeFileSync(file, typeof content === 'string' ? content : '', 'utf8');
+    setTimeout(() => {
+      isWritingCss = false;
+    }, 400);
+    return { ok: true, path: file };
+  } catch (err) {
+    isWritingCss = false;
+    return { ok: false, path: file, error: err ? err.message : 'write failed' };
+  }
+});
+
+ipcMain.handle('css:open-file', async () => {
+  const file = getCustomCssPath();
+  try {
+    if (!fs.existsSync(file)) {
+      fs.writeFileSync(file, '/* Custom CSS */\n', 'utf8');
+    }
+    const err = await shell.openPath(file);
+    return { ok: !err, error: err || undefined };
+  } catch (err) {
+    return { ok: false, error: err ? err.message : 'Failed to open file' };
+  }
+});
+
+ipcMain.handle('css:open-folder', async () => {
+  const file = getCustomCssPath();
+  try {
+    if (fs.existsSync(file)) {
+      shell.showItemInFolder(file);
+      return { ok: true };
+    }
+    const err = await shell.openPath(app.getPath('userData'));
+    return { ok: !err, error: err || undefined };
+  } catch (err) {
+    return { ok: false, error: err ? err.message : 'Failed to open folder' };
+  }
+});
+
+ipcMain.handle('css:path', () => getCustomCssPath());
+
+/* ------------------------------------------------------------------ *
  * Window controls & Titlebar IPC
  * ------------------------------------------------------------------ */
 ipcMain.handle('window:minimize', () => {
@@ -1834,6 +1971,27 @@ ipcMain.handle('media:save-local-library', (_e, data) => {
 
 ipcMain.handle('media:load-local-library', () => {
   const file = path.join(app.getPath('userData'), 'local_library.json');
+  try {
+    if (!fs.existsSync(file)) return { ok: true, data: null };
+    const raw = fs.readFileSync(file, 'utf8');
+    return { ok: true, data: JSON.parse(raw) };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('artwork:save-overrides', (_e, data) => {
+  const file = path.join(app.getPath('userData'), 'playlist_artwork.json');
+  try {
+    fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf8');
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle('artwork:load-overrides', () => {
+  const file = path.join(app.getPath('userData'), 'playlist_artwork.json');
   try {
     if (!fs.existsSync(file)) return { ok: true, data: null };
     const raw = fs.readFileSync(file, 'utf8');
@@ -2563,7 +2721,11 @@ if (!gotLock) {
 }
 
 app.on('second-instance', (_event, argv) => {
-  if (!win) return;
+  if (isQuitting || isUpdating) {
+    console.log('[app] second-instance ignored because app is quitting or installing an update');
+    return;
+  }
+  if (!win || win.isDestroyed()) return;
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();
@@ -2725,6 +2887,7 @@ app.whenReady().then(async () => {
   // The default session only exists after ready, so this cannot be registered
   // at module load like the ipcMain handlers above.
   watchDownloads();
+  watchCustomCss();
   createWindow();
 
   const startupDeepLink = process.argv.find((arg) => typeof arg === 'string' && arg.startsWith('abbadon://'));
@@ -2734,11 +2897,61 @@ app.whenReady().then(async () => {
     });
   }
 
+  function prepareForUpdateInstall() {
+    console.log('[app] preparing application for update installation...');
+    isQuitting = true;
+    isUpdating = true;
+
+    // 1. Release the single-instance lock immediately so the incoming updated executable
+    // can acquire it without delay or collision.
+    try {
+      app.releaseSingleInstanceLock();
+      console.log('[app] single instance lock successfully released');
+    } catch (err) {
+      console.warn('[app] error releasing single instance lock:', err?.message);
+    }
+
+    // 2. Unregister all global shortcuts
+    try {
+      globalShortcut.unregisterAll();
+    } catch {}
+
+    // 3. Destroy tray icon
+    if (tray && !tray.isDestroyed()) {
+      try {
+        tray.destroy();
+        tray = null;
+      } catch {}
+    }
+
+    // 4. Destroy Discord RPC client socket
+    if (rpcClient) {
+      try {
+        rpcClient.destroy();
+        rpcClient = null;
+      } catch {}
+    }
+
+    // 5. Close custom CSS file watcher
+    if (cssWatcher) {
+      try {
+        cssWatcher.close();
+        cssWatcher = null;
+      } catch {}
+    }
+
+    // 6. Force-destroy all windows immediately
+    BrowserWindow.getAllWindows().forEach((w) => {
+      try {
+        w.removeAllListeners('close');
+        w.destroy();
+      } catch {}
+    });
+  }
+
   // Initialize Auto-Updater
   try {
-    initAutoUpdater(win, isDev || isLocalBuild, () => {
-      isQuitting = true;
-    });
+    initAutoUpdater(win, isDev || isLocalBuild, prepareForUpdateInstall);
   } catch (err) {
     console.log('[AutoUpdater] Initialization failed:', err.message);
   }

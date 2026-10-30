@@ -16,7 +16,12 @@ export function UpdateBanner({
   onDismiss,
   hasCustomTitleBar = false,
 }: Props) {
-  if (updateState.status !== 'available' && updateState.status !== 'downloading' && updateState.status !== 'downloaded') {
+  if (
+    updateState.status !== 'available' &&
+    updateState.status !== 'downloading' &&
+    updateState.status !== 'downloaded' &&
+    updateState.status !== 'installing'
+  ) {
     return null;
   }
 
@@ -54,11 +59,13 @@ export function UpdateBanner({
                 )}
               </div>
               <p className="text-sm font-bold text-sc-fg mt-0.5">
-                {updateState.status === 'downloaded'
-                  ? 'Update is ready to install!'
-                  : updateState.status === 'downloading'
-                    ? `Downloading update: ${updateState.progressPercent}%`
-                    : `Version ${updateState.availableVersion || ''} is available!`}
+                {updateState.status === 'installing'
+                  ? 'Installing update, restarting soon...'
+                  : updateState.status === 'downloaded'
+                    ? (updateState.isPortable ? 'Portable update is ready to download!' : 'Update is ready to install!')
+                    : updateState.status === 'downloading'
+                      ? `Downloading update: ${updateState.progressPercent}%`
+                      : `Version ${updateState.availableVersion || ''} is available!`}
               </p>
             </div>
           </div>
@@ -90,13 +97,21 @@ export function UpdateBanner({
 
         {/* Action Buttons */}
         <div className="flex items-center gap-2 pt-1">
-          {updateState.status === 'downloaded' ? (
+          {updateState.status === 'installing' ? (
+            <button
+              disabled
+              className="flex-1 py-2 rounded-xl bg-sc-orange/70 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-sc-orange/20 cursor-wait opacity-90"
+            >
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              Installing & Restarting...
+            </button>
+          ) : updateState.status === 'downloaded' ? (
             <button
               onClick={onInstall}
               className="flex-1 py-2 rounded-xl bg-sc-orange hover:bg-sc-orange/90 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-sc-orange/20 transition-all cursor-pointer active:scale-98"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              Restart & Install
+              {updateState.isPortable ? 'Download Portable .exe' : 'Restart & Install'}
             </button>
           ) : updateState.status === 'available' ? (
             <button
@@ -104,16 +119,18 @@ export function UpdateBanner({
               className="flex-1 py-2 rounded-xl bg-sc-orange hover:bg-sc-orange/90 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md shadow-sc-orange/20 transition-all cursor-pointer active:scale-98"
             >
               <Download className="w-3.5 h-3.5" />
-              Download Update
+              {updateState.isPortable ? 'Download Portable .exe' : 'Download Update'}
             </button>
           ) : null}
 
-          <button
-            onClick={onDismiss}
-            className="px-3.5 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-sc-muted hover:text-sc-fg font-semibold text-xs transition-colors cursor-pointer"
-          >
-            Later
-          </button>
+          {updateState.status !== 'installing' && (
+            <button
+              onClick={onDismiss}
+              className="px-3.5 py-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-sc-muted hover:text-sc-fg font-semibold text-xs transition-colors cursor-pointer"
+            >
+              Later
+            </button>
+          )}
         </div>
       </div>
     </div>

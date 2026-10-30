@@ -164,6 +164,10 @@ export interface Prefs {
   titleBarButtons: 'discord' | 'windows';
   /** Preferred playlist sorting mode ('default' = order, 'newest' = recent). */
   playlistSort: 'default' | 'newest';
+  /** Custom CSS master toggle. */
+  customCssEnabled: boolean;
+  /** Custom CSS stylesheet text. */
+  customCss: string;
 }
 
 const KEY = 'sc9000:prefs';
@@ -246,6 +250,8 @@ export function defaultPrefs(): Prefs {
     customTitleBar: true,
     titleBarButtons: 'discord',
     playlistSort: 'default',
+    customCssEnabled: true,
+    customCss: '',
   };
 }
 
@@ -385,6 +391,10 @@ export function loadPrefs(): Prefs {
         saved.titleBarButtons === 'windows' ? 'windows' : 'discord',
       playlistSort:
         saved.playlistSort === 'newest' ? 'newest' : 'default',
+      customCssEnabled:
+        typeof saved.customCssEnabled === 'boolean' ? saved.customCssEnabled : base.customCssEnabled,
+      customCss:
+        typeof saved.customCss === 'string' ? saved.customCss : base.customCss,
     };
   } catch {
     return base;

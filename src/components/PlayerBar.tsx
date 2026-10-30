@@ -1659,7 +1659,7 @@ export function PlayerBar(p: Props) {
         )}
       </div>
 
-      <footer ref={footerRef} className="relative z-20 shrink-0 border-t border-white/[0.08] backdrop-blur-2xl bg-sc-panel/70 shadow-[0_-12px_45px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.08)]">
+      <footer ref={footerRef} className="player-bar relative z-20 shrink-0 border-t border-white/[0.08] backdrop-blur-2xl bg-sc-panel/70 shadow-[0_-12px_45px_rgba(0,0,0,0.5),inset_0_1px_0_rgba(255,255,255,0.08)]">
         <div ref={eqWrap}>
           {eqOpen && !fullscreen && (
             <div

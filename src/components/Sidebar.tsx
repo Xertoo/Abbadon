@@ -121,7 +121,7 @@ export function Sidebar({
   };
 
   return (
-    <aside className="relative z-10 w-[268px] shrink-0 flex flex-col backdrop-blur-2xl bg-sc-panel/40 border-r border-white/[0.06] shadow-[inset_-1px_0_0_rgba(255,255,255,0.04)] select-none">
+    <aside className="sidebar relative z-10 w-[268px] shrink-0 flex flex-col backdrop-blur-2xl bg-sc-panel/40 border-r border-white/[0.06] shadow-[inset_-1px_0_0_rgba(255,255,255,0.04)] select-none">
       <div className="h-16 px-4 flex items-center gap-3 border-b border-white/[0.06] select-none">
         <img
           src={appIcon}

@@ -55,7 +55,7 @@ interface DesktopBridge {
   /** Relays an HTTP request through the main process (CORS-free, cookie-aware). */
   fetch: (
     url: string,
-    opts?: { method?: string; headers?: Record<string, string>; body?: string | null }
+    opts?: { method?: string; headers?: Record<string, string>; body?: string | Uint8Array | null }
   ) => Promise<DesktopFetchResult>;
   /** Opens the SoundCloud sign-in window and resolves once a token is captured. */
   login: () => Promise<DesktopLoginResult>;
@@ -143,16 +143,25 @@ interface DesktopBridge {
   fetchServerPlaylist?: (url: string) => Promise<{ ok: boolean; playlist?: any; error?: string }>;
   saveLocalLibrary?: (data: any) => Promise<{ ok: boolean; error?: string }>;
   loadLocalLibrary?: () => Promise<{ ok: boolean; data?: any; error?: string }>;
+  saveArtworkOverrides?: (data: Record<string, string>) => Promise<{ ok: boolean; error?: string }>;
+  loadArtworkOverrides?: () => Promise<{ ok: boolean; data?: Record<string, string> | null; error?: string }>;
   savePicture?: (payload: { url: string; filename?: string; title?: string }) => Promise<{
     ok: boolean;
     path?: string;
     filename?: string;
     error?: string;
   }>;
+  /** Custom CSS Live Customization (Vencord Style) */
+  loadCustomCss?: () => Promise<{ ok: boolean; content: string; path?: string; error?: string }>;
+  saveCustomCss?: (css: string) => Promise<{ ok: boolean; path?: string; error?: string }>;
+  openCustomCssFile?: () => Promise<{ ok: boolean; error?: string }>;
+  openCustomCssFolder?: () => Promise<{ ok: boolean; error?: string }>;
+  getCustomCssPath?: () => Promise<string>;
+  onCustomCssChange?: (cb: (content: string) => void) => () => void;
 }
 
 export interface UpdateState {
-  status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'error';
+  status: 'idle' | 'checking' | 'available' | 'not-available' | 'downloading' | 'downloaded' | 'installing' | 'error';
   currentVersion: string;
   availableVersion: string | null;
   releaseNotes?: string | null;
@@ -162,6 +171,7 @@ export interface UpdateState {
   total: number;
   error: string | null;
   feedUrl?: string | null;
+  isPortable?: boolean;
 }
 
 export interface ProxyConfig {

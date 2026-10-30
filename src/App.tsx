@@ -15,7 +15,7 @@ import { TrackContextMenu, type TrackContextMenuState } from './components/Track
 import { ArtistContextMenu, type ArtistContextMenuState } from './components/ArtistContextMenu';
 import { savePictureToDisk } from './lib/pictureSave';
 import { EditPlaylistArtworkModal } from './components/EditPlaylistArtworkModal';
-import { getPlaylistArtworkOverride, setPlaylistArtworkOverride } from './lib/playlistArtwork';
+import { getPlaylistArtworkOverride, setPlaylistArtworkOverride, initPlaylistArtworkOverrides } from './lib/playlistArtwork';
 import { loadLocalMedia, saveLocalMedia, createLocalPlaylist, parseBrowserAudioFiles } from './lib/localMedia';
 import { SearchView, LibraryView, SettingsView } from './components/Views';
 import { AtmosphereLayer } from './components/AtmosphereLayer';
@@ -63,6 +63,7 @@ import { sendLastFmNowPlaying, scrobbleLastFmTrack } from './lib/lastfm';
 import { useArtworkColor } from './lib/artworkColor';
 import { applyDynamicArtworkAccent, resetDynamicArtworkAccent } from './lib/themes';
 import { detectSilenceFromWaveform } from './lib/waveformSilence';
+import { applyCustomCss } from './lib/customCss';
 
 /** Active EQ band count. Stored apart from the curve so the two stay in sync. */
 const EQ_BAND_COUNT_KEY = 'sc9000:eqBands';
@@ -317,10 +318,15 @@ export default function App() {
   const [trackContextMenu, setTrackContextMenu] = useState<TrackContextMenuState | null>(null);
   const [artistContextMenu, setArtistContextMenu] = useState<ArtistContextMenuState | null>(null);
   const [editingArtworkPlaylist, setEditingArtworkPlaylist] = useState<Playlist | null>(null);
+  const [artworkSyncCounter, setArtworkSyncCounter] = useState(0);
   const [isWindowDragging, setIsWindowDragging] = useState(false);
 
-  // Load saved local and server media on boot
+  // Load saved local and server media on boot, and initialize persistent artwork overrides
   useEffect(() => {
+    initPlaylistArtworkOverrides().then(() => {
+      setArtworkSyncCounter((c) => c + 1);
+    });
+
     loadLocalMedia().then(({ playlists, tracks }) => {
       if (playlists?.length) {
         const withOverrides = playlists.map((pl) => {
@@ -424,6 +430,53 @@ const [visualizer, setVisualizer] = useState<VisualizerMode>('wave');
       /* ignore */
     }
   }, [themeId, themes]);
+
+  /**
+   * Custom CSS live styling (Vencord style).
+   * Injects or updates <style id="abbadon-custom-css"> instantly in real-time.
+   */
+  useEffect(() => {
+    applyCustomCss(prefs.customCss, prefs.customCssEnabled);
+  }, [prefs.customCss, prefs.customCssEnabled]);
+
+  /**
+   * Syncs custom.css file from disk and listens to external edits (e.g. from VS Code).
+   */
+  useEffect(() => {
+    const bridge = window.desktop;
+    if (!bridge?.loadCustomCss) return;
+
+    void bridge.loadCustomCss().then((res) => {
+      if (res?.ok && typeof res.content === 'string') {
+        if (res.content.trim() && res.content !== prefs.customCss) {
+          setPref('customCss', res.content);
+        } else if (!res.content.trim() && prefs.customCss.trim() && bridge.saveCustomCss) {
+          void bridge.saveCustomCss(prefs.customCss);
+        }
+      }
+    });
+
+    const cleanup = bridge.onCustomCssChange?.((content) => {
+      setPref('customCss', content);
+      notify('Custom CSS reloaded from disk');
+    });
+
+    return () => {
+      cleanup?.();
+    };
+  }, []);
+
+  /**
+   * Debounced persistence of Custom CSS to disk file.
+   */
+  useEffect(() => {
+    const bridge = window.desktop;
+    if (!bridge?.saveCustomCss) return;
+    const timer = setTimeout(() => {
+      void bridge.saveCustomCss!(prefs.customCss);
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [prefs.customCss]);
 
   /**
    * Persists the EQ so the chosen curve survives a restart. On boot the saved
@@ -1818,8 +1871,12 @@ if (typeof d.theme === 'string') {
    * on the network.
    */
   const basePlaylists = useMemo(
-    () => [...localPlaylists, ...api.accountPlaylists.slice(0, 50)],
-    [localPlaylists, api.accountPlaylists]
+    () =>
+      [...localPlaylists, ...api.accountPlaylists.slice(0, 50)].map((p) => {
+        const override = getPlaylistArtworkOverride(p.id);
+        return override ? { ...p, artwork: override } : p;
+      }),
+    [localPlaylists, api.accountPlaylists, artworkSyncCounter]
   );
 
   useEffect(() => {
@@ -2167,6 +2224,9 @@ if (typeof d.theme === 'string') {
 
   const handleUpdatePlaylistDetails = useCallback(
     async (id: string, details: { title?: string; description?: string; artwork?: string }) => {
+      if (details.artwork !== undefined) {
+        setArtworkSyncCounter((c) => c + 1);
+      }
       const isLocal = localPlaylists.some((p) => p.id === id);
       if (isLocal) {
         if (details.artwork !== undefined) {
@@ -2643,7 +2703,7 @@ if (typeof d.theme === 'string') {
         <header
           onDoubleClick={!isCustomTitleBar && Boolean(window.desktop) ? () => void window.desktop?.toggleMaximizeWindow?.() : undefined}
           className={clsx(
-            "relative z-50 h-16 shrink-0 flex items-center justify-between px-4 sm:px-6 border-b border-white/[0.06] backdrop-blur-xl bg-sc-panel/20 select-none",
+            "app-header relative z-50 h-16 shrink-0 flex items-center justify-between px-4 sm:px-6 border-b border-white/[0.06] backdrop-blur-xl bg-sc-panel/20 select-none",
             !isCustomTitleBar && Boolean(window.desktop) && "app-drag-region"
           )}
         >
@@ -2988,6 +3048,7 @@ if (typeof d.theme === 'string') {
               prefs={prefs}
               onPref={setPref}
               onResetPrefs={resetPrefs}
+              notify={notify}
               onClearCache={() => {
                 void api.clearCache();
               }}

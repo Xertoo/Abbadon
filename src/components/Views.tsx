@@ -64,12 +64,14 @@ import {
   X,
   AppWindow,
   PanelTop,
+  Code2,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAutoUpdater } from '../hooks/useAutoUpdater';
 import { playTypingSound, type SwitchType } from '../lib/typingAudio';
 import type { Playlist, Track, User } from '../types';
 import { TrackList, SectionHeader, SkeletonRows } from './TrackList';
+import { CustomCssEditor } from './CustomCssEditor';
 import {
   EqResponseCurve,
   EqPresets,
@@ -1649,14 +1651,23 @@ function SoftwareUpdatesPanel() {
         </div>
 
         <div className="flex items-center gap-2">
-          {updateState.status === 'downloaded' ? (
+          {updateState.status === 'installing' ? (
+            <button
+              type="button"
+              disabled
+              className="px-3.5 py-1.5 rounded-xl bg-sc-orange/70 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-sc-orange/25 cursor-wait opacity-90"
+            >
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+              <span>Installing & Restarting...</span>
+            </button>
+          ) : updateState.status === 'downloaded' ? (
             <button
               type="button"
               onClick={quitAndInstall}
               className="px-3.5 py-1.5 rounded-xl bg-sc-orange hover:bg-sc-orange/90 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-sc-orange/25 transition-all cursor-pointer active:scale-95"
             >
               <RefreshCw className="w-3.5 h-3.5" />
-              Restart & Install
+              <span>{updateState.isPortable ? 'Download Portable .exe' : 'Restart & Install'}</span>
             </button>
           ) : updateState.status === 'available' ? (
             <button
@@ -1665,7 +1676,7 @@ function SoftwareUpdatesPanel() {
               className="px-3.5 py-1.5 rounded-xl bg-sc-orange hover:bg-sc-orange/90 text-white font-bold text-xs flex items-center gap-1.5 shadow-md shadow-sc-orange/25 transition-all cursor-pointer active:scale-95"
             >
               <Download className="w-3.5 h-3.5" />
-              Download Update
+              <span>{updateState.isPortable ? 'Download Portable .exe' : 'Download Update'}</span>
             </button>
           ) : (
             <button
@@ -1697,17 +1708,19 @@ function SoftwareUpdatesPanel() {
             )}
           />
           <span className="text-sc-fg font-medium">
-            {updateState.status === 'downloaded'
-              ? `Version v${updateState.availableVersion || ''} is downloaded and ready to install!`
-              : updateState.status === 'downloading'
-                ? `Downloading update: ${updateState.progressPercent}% (${formatSpeed(updateState.bytesPerSecond)})`
-                : updateState.status === 'available'
-                  ? `New version available: v${updateState.availableVersion || ''}!`
-                  : updateState.status === 'checking'
-                    ? 'Connecting to update server...'
-                    : updateState.status === 'error'
-                      ? `Status: ${updateState.error || 'Failed to check for updates'}`
-                      : 'You have the latest version installed.'}
+            {updateState.status === 'installing'
+              ? 'Installing update and restarting application...'
+              : updateState.status === 'downloaded'
+                ? (updateState.isPortable ? `Version v${updateState.availableVersion || ''} is ready to download!` : `Version v${updateState.availableVersion || ''} is downloaded and ready to install!`)
+                : updateState.status === 'downloading'
+                  ? `Downloading update: ${updateState.progressPercent}% (${formatSpeed(updateState.bytesPerSecond)})`
+                  : updateState.status === 'available'
+                    ? `New version available: v${updateState.availableVersion || ''}!`
+                    : updateState.status === 'checking'
+                      ? 'Connecting to update server...'
+                      : updateState.status === 'error'
+                        ? `Status: ${updateState.error || 'Failed to check for updates'}`
+                        : 'You have the latest version installed.'}
           </span>
         </div>
       </div>
@@ -2472,6 +2485,7 @@ export function SettingsView({
   focusSection,
   accountPlaylists,
   spotify,
+  notify,
 }: {
   prefs: Prefs;
   onPref: <K extends keyof Prefs>(key: K, value: Prefs[K]) => void;
@@ -2497,10 +2511,12 @@ export function SettingsView({
   focusSection?: string;
   accountPlaylists?: Playlist[];
   spotify: SpotifyProps;
+  notify?: (msg: string) => void;
 }) {
   const bands = bandsFor(bandCount);
   const [eqOpen, setEqOpen] = useState(focusSection === 'equalizer');
   const [visOpen, setVisOpen] = useState(focusSection === 'visualizer');
+  const [cssOpen, setCssOpen] = useState(focusSection === 'custom-css');
 
   useEffect(() => {
     if (focusSection === 'equalizer') {
@@ -2516,6 +2532,15 @@ export function SettingsView({
       setVisOpen(true);
       const timer = setTimeout(() => {
         const el = document.getElementById('settings-visualizer');
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 100);
+      return () => clearTimeout(timer);
+    } else if (focusSection === 'custom-css') {
+      setCssOpen(true);
+      const timer = setTimeout(() => {
+        const el = document.getElementById('settings-custom-css');
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
@@ -2767,6 +2792,25 @@ export function SettingsView({
           >
             <div className="pt-4">
               <MiniPlayerSettingsPanel prefs={prefs} onPref={onPref} />
+            </div>
+          </Disclosure>
+
+          <Disclosure
+            id="settings-custom-css"
+            title="Custom CSS (Vencord Style)"
+            subtitle="Live client styling, preset snippets, and quickCss external file sync"
+            icon={<Code2 className="w-[18px] h-[18px] text-sc-orange" />}
+            isOpen={cssOpen}
+            onToggle={() => setCssOpen((v) => !v)}
+          >
+            <div className="pt-4">
+              <CustomCssEditor
+                enabled={prefs.customCssEnabled}
+                css={prefs.customCss}
+                onEnabledChange={(v) => onPref('customCssEnabled', v)}
+                onCssChange={(v) => onPref('customCss', v)}
+                notify={notify}
+              />
             </div>
           </Disclosure>
 

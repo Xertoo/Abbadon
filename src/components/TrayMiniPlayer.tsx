@@ -17,6 +17,7 @@ import {
 import type { Track } from '../types';
 import { resolveTheme, applyTheme, loadCustomThemes, THEME_ACTIVE_KEY } from '../lib/themes';
 import { loadPrefs, type Prefs } from '../lib/prefs';
+import { applyCustomCss } from '../lib/customCss';
 
 interface PlaybackState {
   track: Track | null;
@@ -208,6 +209,11 @@ export function TrayMiniPlayer() {
     window.addEventListener('storage', syncPrefs);
     return () => window.removeEventListener('storage', syncPrefs);
   }, []);
+
+  // Apply custom CSS
+  useEffect(() => {
+    applyCustomCss(prefs.customCss, prefs.customCssEnabled);
+  }, [prefs.customCss, prefs.customCssEnabled]);
 
   // Sync pin state from Electron main process
   useEffect(() => {

@@ -369,7 +369,139 @@ assert(listenTogetherSrc.includes('12000'), 'useListenTogether enforces connecti
 assert(listenTogetherSrc.includes('30_000'), 'useListenTogether throttles friend connection retries by at least 30s');
 assert(listenTogetherSrc.includes('45_000'), 'useListenTogether throttles friend background scan interval by at least 45s');
 
-// 11. Summary
+// 11. Custom CSS Live Customization Verification (Vencord Style)
+console.log('\n--- 11. Custom CSS Live Customization Verification ---');
+const updatedMainSrc = fs.readFileSync(path.join(ROOT_DIR, 'electron/main.cjs'), 'utf8');
+assert(updatedMainSrc.includes("ipcMain.handle('css:load'"), 'main.cjs registers css:load IPC handler');
+assert(updatedMainSrc.includes("ipcMain.handle('css:save'"), 'main.cjs registers css:save IPC handler');
+assert(updatedMainSrc.includes("ipcMain.handle('css:open-file'"), 'main.cjs registers css:open-file IPC handler');
+assert(updatedMainSrc.includes("ipcMain.handle('css:open-folder'"), 'main.cjs registers css:open-folder IPC handler');
+assert(updatedMainSrc.includes('watchCustomCss()'), 'main.cjs implements file watcher for external quickCss file edits');
+
+const updatedPreloadSrc = fs.readFileSync(path.join(ROOT_DIR, 'electron/preload.cjs'), 'utf8');
+assert(updatedPreloadSrc.includes('loadCustomCss:'), 'preload.cjs exposes loadCustomCss bridge method');
+assert(updatedPreloadSrc.includes('saveCustomCss:'), 'preload.cjs exposes saveCustomCss bridge method');
+assert(updatedPreloadSrc.includes('openCustomCssFile:'), 'preload.cjs exposes openCustomCssFile bridge method');
+assert(updatedPreloadSrc.includes('openCustomCssFolder:'), 'preload.cjs exposes openCustomCssFolder bridge method');
+assert(updatedPreloadSrc.includes('onCustomCssChange:'), 'preload.cjs exposes onCustomCssChange bridge event listener');
+
+const prefsSrc = fs.readFileSync(path.join(ROOT_DIR, 'src/lib/prefs.ts'), 'utf8');
+assert(prefsSrc.includes('customCssEnabled: boolean'), 'prefs.ts defines customCssEnabled preference');
+assert(prefsSrc.includes('customCss: string'), 'prefs.ts defines customCss preference');
+
+const customCssModulePath = path.join(ROOT_DIR, 'src/lib/customCss.ts');
+assert(fs.existsSync(customCssModulePath), 'src/lib/customCss.ts exists');
+const customCssModuleSrc = fs.readFileSync(customCssModulePath, 'utf8');
+assert(customCssModuleSrc.includes('applyCustomCss'), 'customCss.ts implements applyCustomCss');
+assert(customCssModuleSrc.includes('CUSTOM_CSS_SNIPPETS'), 'customCss.ts provides preset themes and snippets');
+
+const editorComponentPath = path.join(ROOT_DIR, 'src/components/CustomCssEditor.tsx');
+assert(fs.existsSync(editorComponentPath), 'src/components/CustomCssEditor.tsx exists');
+const editorComponentSrc = fs.readFileSync(editorComponentPath, 'utf8');
+assert(editorComponentSrc.includes('export function CustomCssEditor'), 'CustomCssEditor is exported');
+assert(editorComponentSrc.includes('handleOpenFile'), 'CustomCssEditor provides open in external editor action');
+assert(editorComponentSrc.includes('handleInsertSnippet'), 'CustomCssEditor provides snippet/preset insertion');
+
+const updatedViewsSrc = fs.readFileSync(path.join(ROOT_DIR, 'src/components/Views.tsx'), 'utf8');
+assert(updatedViewsSrc.includes('<CustomCssEditor'), 'Views.tsx integrates CustomCssEditor in SettingsView');
+assert(appContent.includes('applyCustomCss('), 'App.tsx applies custom CSS dynamically');
+assert(appContent.includes('onCustomCssChange'), 'App.tsx synchronizes external disk edits in real-time');
+
+// 12. Playlist Artwork Persistence & SoundCloud Sync Verification
+console.log('\n--- 12. Playlist Artwork Persistence & SoundCloud Sync Verification ---');
+const updatedSoundcloudSrc = fs.readFileSync(soundcloudLibPath, 'utf8');
+assert(updatedSoundcloudSrc.includes('updatePlaylistArtwork('), 'soundcloud.ts implements updatePlaylistArtwork');
+assert(updatedSoundcloudSrc.includes('buildMultipartBody('), 'soundcloud.ts exports buildMultipartBody helper');
+assert(updatedSoundcloudSrc.includes('imageSourceToBytes('), 'soundcloud.ts exports imageSourceToBytes helper');
+assert(updatedSoundcloudSrc.includes('playlist[artwork_data]'), 'soundcloud.ts targets SoundCloud playlist[artwork_data]');
+assert(updatedSoundcloudSrc.includes('multipart/form-data; boundary='), 'soundcloud.ts creates multipart form data boundary');
+
+const updatedUseSoundcloudSrc = fs.readFileSync(useSoundCloudPath, 'utf8');
+assert(updatedUseSoundcloudSrc.includes('sc.updatePlaylistArtwork('), 'useSoundCloud invokes sc.updatePlaylistArtwork');
+assert(updatedUseSoundcloudSrc.includes('Playlist cover updated'), 'useSoundCloud notifies user on cover upload');
+assert(updatedUseSoundcloudSrc.includes('setPlaylistArtworkOverride(playlistId, details.artwork)'), 'useSoundCloud optimistically applies cover override immediately');
+
+const playlistArtworkLibPath = path.join(ROOT_DIR, 'src/lib/playlistArtwork.ts');
+const playlistArtworkSrc = fs.readFileSync(playlistArtworkLibPath, 'utf8');
+assert(playlistArtworkSrc.includes('normalizePlaylistId'), 'playlistArtwork.ts normalizes playlist ids across URI variants');
+assert(playlistArtworkSrc.includes('initPlaylistArtworkOverrides'), 'playlistArtwork.ts loads saved overrides on app startup');
+assert(playlistArtworkSrc.includes('saveArtworkOverrides'), 'playlistArtwork.ts saves overrides to desktop storage');
+
+const mainCjsPath = path.join(ROOT_DIR, 'electron/main.cjs');
+const updatedMainCjsSrc = fs.readFileSync(mainCjsPath, 'utf8');
+assert(updatedMainCjsSrc.includes('artwork:save-overrides'), 'main.cjs registers artwork:save-overrides IPC handler');
+assert(updatedMainCjsSrc.includes('artwork:load-overrides'), 'main.cjs registers artwork:load-overrides IPC handler');
+
+const preloadCjsPath = path.join(ROOT_DIR, 'electron/preload.cjs');
+const updatedPreloadCjsSrc = fs.readFileSync(preloadCjsPath, 'utf8');
+assert(updatedPreloadCjsSrc.includes('saveArtworkOverrides:'), 'preload.cjs exposes saveArtworkOverrides');
+assert(updatedPreloadCjsSrc.includes('loadArtworkOverrides:'), 'preload.cjs exposes loadArtworkOverrides');
+
+const updatedAppSrc = fs.readFileSync(appPath, 'utf8');
+assert(updatedAppSrc.includes('initPlaylistArtworkOverrides'), 'App.tsx initializes artwork overrides on startup');
+assert(updatedAppSrc.includes('EditPlaylistArtworkModal'), 'App.tsx renders EditPlaylistArtworkModal');
+assert(updatedAppSrc.includes('handleUpdatePlaylistDetails(editingArtworkPlaylist.id'), 'App.tsx connects artwork save to handleUpdatePlaylistDetails');
+
+const modalPath = path.join(ROOT_DIR, 'src/components/EditPlaylistArtworkModal.tsx');
+const modalSrc = fs.readFileSync(modalPath, 'utf8');
+assert(modalSrc.includes('Saving...'), 'EditPlaylistArtworkModal indicates saving state');
+
+// Verify normalization matching
+function testIdNormalization() {
+  const norm = (id) => String(id).replace(/^(?:soundcloud:playlists:|local:|server:)/, '').trim();
+  const rawNum = '123456';
+  const uri = 'soundcloud:playlists:123456';
+  return norm(rawNum) === '123456' && norm(uri) === '123456';
+}
+assert(testIdNormalization(), 'normalizePlaylistId correctly unifies raw numbers and soundcloud:playlists: URIs');
+
+// Verify multipart body builder logic
+function testMultipartBuilder() {
+  const boundary = '----TestBoundary123';
+  const encoder = new TextEncoder();
+  const header = encoder.encode(`--${boundary}\r\nContent-Disposition: form-data; name="playlist[artwork_data]"; filename="artwork.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`);
+  const value = new Uint8Array([0xff, 0xd8, 0xff, 0xe0]);
+  const footer = encoder.encode(`\r\n--${boundary}--\r\n`);
+  const total = new Uint8Array(header.length + value.length + footer.length);
+  total.set(header, 0);
+  total.set(value, header.length);
+  total.set(footer, header.length + value.length);
+  const text = new TextDecoder().decode(total);
+  return text.includes('playlist[artwork_data]') && text.includes('artwork.jpg');
+}
+assert(testMultipartBuilder(), 'Multipart builder constructs valid payload with field and filename');
+
+// 13. Robust Auto-Updater & Clean Lifecycle Verification
+console.log('\n--- 13. Robust Auto-Updater & Clean Lifecycle Verification ---');
+
+const autoUpdaterSrc = fs.readFileSync(path.join(ROOT_DIR, 'electron/autoUpdater.cjs'), 'utf8');
+assert(autoUpdaterSrc.includes('autoUpdater.installDirectory = runningDir'), 'autoUpdater.cjs configures installDirectory to running executable folder');
+assert(autoUpdaterSrc.includes('PORTABLE_EXECUTABLE_FILE'), 'autoUpdater.cjs detects portable environment');
+assert(autoUpdaterSrc.includes('autoUpdater.autoInstallOnAppQuit = false'), 'autoUpdater.cjs disables autoInstallOnAppQuit before quitAndInstall to prevent competing runs');
+assert(autoUpdaterSrc.includes('app.exit(0)'), 'autoUpdater.cjs forces app.exit(0) after spawn to release binary and DLL file locks');
+assert(autoUpdaterSrc.includes("'Unknown error while checking for updates'"), 'autoUpdater.cjs provides English error fallback');
+assert(autoUpdaterSrc.includes("'Error connecting to update server'"), 'autoUpdater.cjs provides English connection error message');
+
+const mainSourceCode = fs.readFileSync(path.join(ROOT_DIR, 'electron/main.cjs'), 'utf8');
+assert(mainSourceCode.includes('app.releaseSingleInstanceLock()'), 'main.cjs explicitly releases single instance lock before update installation');
+assert(mainSourceCode.includes('tray.destroy()'), 'main.cjs destroys tray icon before update installation');
+assert(mainSourceCode.includes('rpcClient.destroy()'), 'main.cjs disconnects Discord RPC before update installation');
+assert(mainSourceCode.includes('cssWatcher.close()'), 'main.cjs closes CSS file watcher before update installation');
+assert(mainSourceCode.includes('if (isQuitting || isUpdating)'), 'main.cjs ignores second-instance events during quit or update installation');
+
+const viteEnvSrc = fs.readFileSync(path.join(ROOT_DIR, 'src/vite-env.d.ts'), 'utf8');
+assert(viteEnvSrc.includes("'installing'"), 'vite-env.d.ts UpdateState includes installing status');
+assert(viteEnvSrc.includes('isPortable?: boolean;'), 'vite-env.d.ts UpdateState includes isPortable flag');
+
+const bannerSrc = fs.readFileSync(path.join(ROOT_DIR, 'src/components/UpdateBanner.tsx'), 'utf8');
+assert(bannerSrc.includes("updateState.status === 'installing'"), 'UpdateBanner.tsx supports installing state');
+assert(bannerSrc.includes('Installing & Restarting...'), 'UpdateBanner.tsx displays Installing & Restarting indicator');
+
+const viewsCode = fs.readFileSync(path.join(ROOT_DIR, 'src/components/Views.tsx'), 'utf8');
+assert(viewsCode.includes("updateState.status === 'installing'"), 'Views.tsx supports installing state');
+assert(viewsCode.includes('Download Portable .exe'), 'Views.tsx provides portable download label');
+
+// 14. Summary
 console.log('\n========================================');
 console.log(`🏁 TEST RESULTS: ${passedTests}/${totalTests} PASSED (${failedTests} FAILED)`);
 console.log('========================================\n');

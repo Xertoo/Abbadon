@@ -168,5 +168,19 @@ contextBridge.exposeInMainWorld('desktop', {
   fetchServerPlaylist: (url) => ipcRenderer.invoke('media:fetch-server-playlist', url),
   saveLocalLibrary: (data) => ipcRenderer.invoke('media:save-local-library', data),
   loadLocalLibrary: () => ipcRenderer.invoke('media:load-local-library'),
+  saveArtworkOverrides: (data) => ipcRenderer.invoke('artwork:save-overrides', data),
+  loadArtworkOverrides: () => ipcRenderer.invoke('artwork:load-overrides'),
   savePicture: (data) => ipcRenderer.invoke('media:save-picture', data),
+
+  /** Custom CSS Live Customization (Vencord Style) */
+  loadCustomCss: () => ipcRenderer.invoke('css:load'),
+  saveCustomCss: (css) => ipcRenderer.invoke('css:save', css),
+  openCustomCssFile: () => ipcRenderer.invoke('css:open-file'),
+  openCustomCssFolder: () => ipcRenderer.invoke('css:open-folder'),
+  getCustomCssPath: () => ipcRenderer.invoke('css:path'),
+  onCustomCssChange: (cb) => {
+    const handler = (_e, content) => cb(content);
+    ipcRenderer.on('css:file-changed', handler);
+    return () => ipcRenderer.removeListener('css:file-changed', handler);
+  },
 });

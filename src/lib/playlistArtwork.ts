@@ -1,48 +1,107 @@
 /**
  * Utilities for managing custom playlist artworks & cover overrides.
+ * Persists locally in-memory, localStorage, and directly to desktop disk
+ * so covers are immediately and permanently preserved across app launches.
  */
 
 const STORAGE_KEY = 'sc9000:playlist_artwork_overrides';
 
-export function getPlaylistArtworkOverrides(): Record<string, string> {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : {};
-  } catch {
-    return {};
-  }
+let inMemoryOverrides: Record<string, string> | null = null;
+
+export function normalizePlaylistId(id: string | number): string {
+  if (!id) return '';
+  return String(id).replace(/^(?:soundcloud:playlists:|local:|server:)/, '').trim();
 }
 
-export function getPlaylistArtworkOverride(id: string): string | null {
+export function getPlaylistArtworkOverrides(): Record<string, string> {
+  if (inMemoryOverrides) return inMemoryOverrides;
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null;
+    inMemoryOverrides = raw ? JSON.parse(raw) : {};
+  } catch {
+    inMemoryOverrides = {};
+  }
+  return inMemoryOverrides || {};
+}
+
+export function getPlaylistArtworkOverride(id: string | number): string | null {
   if (!id) return null;
   const overrides = getPlaylistArtworkOverrides();
-  return overrides[id] || null;
+  const rawId = String(id).trim();
+  const cleanId = normalizePlaylistId(rawId);
+
+  return (
+    overrides[rawId] ||
+    overrides[cleanId] ||
+    overrides[`soundcloud:playlists:${cleanId}`] ||
+    null
+  );
 }
 
-export function setPlaylistArtworkOverride(id: string, artwork: string): void {
+export function setPlaylistArtworkOverride(id: string | number, artwork: string): void {
   if (!id) return;
-  try {
-    const overrides = getPlaylistArtworkOverrides();
-    if (artwork && artwork.trim()) {
-      overrides[id] = artwork.trim();
-    } else {
-      delete overrides[id];
+  const rawId = String(id).trim();
+  const cleanId = normalizePlaylistId(rawId);
+  const overrides = { ...getPlaylistArtworkOverrides() };
+
+  if (artwork && artwork.trim()) {
+    const val = artwork.trim();
+    overrides[rawId] = val;
+    if (cleanId) overrides[cleanId] = val;
+    if (/^\d+$/.test(cleanId)) {
+      overrides[`soundcloud:playlists:${cleanId}`] = val;
     }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
+  } else {
+    delete overrides[rawId];
+    if (cleanId) delete overrides[cleanId];
+    delete overrides[`soundcloud:playlists:${cleanId}`];
+  }
+
+  inMemoryOverrides = overrides;
+
+  try {
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
+    }
   } catch (err) {
-    console.warn('[playlistArtwork] Failed to save artwork override:', err);
+    console.warn('[playlistArtwork] Failed to save artwork override to localStorage:', err);
+  }
+
+  // Also persist to desktop disk (userData/playlist_artwork.json)
+  if (typeof window !== 'undefined' && window.desktop?.saveArtworkOverrides) {
+    window.desktop.saveArtworkOverrides(overrides).catch((err) => {
+      console.warn('[playlistArtwork] Desktop artwork override save failed:', err);
+    });
   }
 }
 
-export function removePlaylistArtworkOverride(id: string): void {
-  if (!id) return;
-  try {
-    const overrides = getPlaylistArtworkOverrides();
-    if (overrides[id]) {
-      delete overrides[id];
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(overrides));
+export function removePlaylistArtworkOverride(id: string | number): void {
+  setPlaylistArtworkOverride(id, '');
+}
+
+/**
+ * Loads artwork overrides from disk (Electron) on boot and synchronizes with localStorage.
+ */
+export async function initPlaylistArtworkOverrides(): Promise<Record<string, string>> {
+  const local = getPlaylistArtworkOverrides();
+  if (typeof window !== 'undefined' && window.desktop?.loadArtworkOverrides) {
+    try {
+      const res = await window.desktop.loadArtworkOverrides();
+      if (res?.ok && res.data && typeof res.data === 'object') {
+        const merged = { ...res.data, ...local };
+        inMemoryOverrides = merged;
+        try {
+          if (typeof localStorage !== 'undefined') {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+          }
+        } catch {}
+        return merged;
+      }
+    } catch (err) {
+      console.warn('[playlistArtwork] Desktop artwork override load failed:', err);
     }
-  } catch {}
+  }
+  return local;
 }
 
 /**

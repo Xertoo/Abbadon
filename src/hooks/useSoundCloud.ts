@@ -836,29 +836,68 @@ export function useSoundCloud(notify: (msg: string) => void): AppState {
   const updatePlaylistDetails = useCallback(
     async (playlistId: string, details: { title?: string; description?: string; artwork?: string }) => {
       try {
-        if (details.title !== undefined || details.description !== undefined) {
-          if (!meRef.current) {
-            notify('Connect SoundCloud to edit playlists');
-            return false;
-          }
-          await sc.updatePlaylistDetails(playlistId, {
-            title: details.title,
-            description: details.description,
-          });
-        }
-        if (details.artwork !== undefined) {
+        const hasArtwork = details.artwork !== undefined;
+        const hasMetadata = details.title !== undefined || details.description !== undefined;
+
+        // 1. Immediately apply optimistic UI updates and local cache so the client sees it normally
+        if (hasArtwork) {
           if (details.artwork) {
             setPlaylistArtworkOverride(playlistId, details.artwork);
           } else {
             removePlaylistArtworkOverride(playlistId);
           }
         }
+
+        const mergedUpdate = {
+          ...(details.title !== undefined ? { title: details.title } : {}),
+          ...(details.description !== undefined ? { description: details.description } : {}),
+          ...(hasArtwork ? { artwork: details.artwork || '' } : {}),
+        };
+
         setAccountPlaylists((prev) =>
-          prev.map((p) => (p.id === playlistId ? { ...p, ...details } : p))
+          prev.map((p) => (p.id === playlistId ? { ...p, ...mergedUpdate } : p))
         );
-        setCurrentPlaylist((prev) => (prev && prev.id === playlistId ? { ...prev, ...details } : prev));
+        setCurrentPlaylist((prev) => (prev && prev.id === playlistId ? { ...prev, ...mergedUpdate } : prev));
         clearPlaylistCache(playlistId);
-        notify('Playlist updated');
+
+        // 2. Perform background sync to SoundCloud without blocking the client
+        if (hasArtwork || hasMetadata) {
+          void (async () => {
+            try {
+              // Sync metadata if changed
+              if (hasMetadata && meRef.current) {
+                await sc.updatePlaylistDetails(playlistId, {
+                  title: details.title,
+                  description: details.description,
+                });
+              }
+
+              // Sync artwork to SoundCloud in background
+              if (hasArtwork) {
+                const scPl = await sc.updatePlaylistArtwork(playlistId, details.artwork || null);
+                if (scPl && scPl.artwork_url) {
+                  const remoteArtwork = scPl.artwork_url;
+                  setPlaylistArtworkOverride(playlistId, remoteArtwork);
+                  setAccountPlaylists((prev) =>
+                    prev.map((p) => (p.id === playlistId ? { ...p, artwork: remoteArtwork } : p))
+                  );
+                  setCurrentPlaylist((prev) =>
+                    prev && prev.id === playlistId ? { ...prev, artwork: remoteArtwork } : prev
+                  );
+                  clearPlaylistCache(playlistId);
+                }
+              }
+              console.log(`[SoundCloud] Background sync completed for playlist ${playlistId}`);
+            } catch (err) {
+              console.warn(
+                `[SoundCloud] Background playlist sync failed (local cover remains active):`,
+                err
+              );
+            }
+          })();
+        }
+
+        notify(hasArtwork ? 'Playlist cover updated' : 'Playlist updated');
         return true;
       } catch (err) {
         notify(describeFailure(err, 'Could not update playlist'));

@@ -289,20 +289,26 @@ async function httpSend(
   url: string,
   method: string,
   body: unknown,
-  extraHeaders: Record<string, string> = {}
+  extraHeaders: Record<string, string> = {},
+  rawBody?: Uint8Array | string
 ): Promise<RelayResponse> {
   const bridge = relay();
-  const payload = body === undefined || body === null ? null : JSON.stringify(body);
-  const headers: Record<string, string> = payload
-    ? { 'Content-Type': 'application/json', ...extraHeaders }
-    : { ...extraHeaders };
+  let payload: unknown = null;
+  let headers: Record<string, string> = { ...extraHeaders };
 
-  if (bridge) return bridge.fetch(url, { method, headers, body: payload });
+  if (rawBody !== undefined && rawBody !== null) {
+    payload = rawBody;
+  } else if (body !== undefined && body !== null) {
+    payload = JSON.stringify(body);
+    headers = { 'Content-Type': 'application/json', ...headers };
+  }
+
+  if (bridge) return bridge.fetch(url, { method, headers, body: payload as string | Uint8Array | null });
 
   const res = await fetch(url, {
     method,
     headers,
-    body: payload ?? undefined,
+    body: (payload as BodyInit | null) ?? undefined,
   });
   return {
     ok: res.ok,
@@ -361,6 +367,8 @@ const TRANSIENT_STATUSES = new Set([401, 429, 500, 502, 503, 504]);
 interface RequestOpts {
   method?: string;
   body?: unknown;
+  rawBody?: Uint8Array | string;
+  headers?: Record<string, string>;
   /** Sends the session and fails fast with `NotSignedInError` when absent. */
   auth?: boolean;
 }
@@ -392,7 +400,15 @@ async function request<T>(path: string, ttl: number, opts: RequestOpts = {}): Pr
 
     let res: RelayResponse;
     try {
-      res = await schedule(() => httpSend(url, method, opts.body, authHeaders()));
+      res = await schedule(() =>
+        httpSend(
+          url,
+          method,
+          opts.body,
+          { ...authHeaders(), ...(opts.headers || {}) },
+          opts.rawBody
+        )
+      );
     } catch (err) {
       if (attempt++ >= MAX_RETRIES) throw err;
       await sleep(500 * 2 ** attempt);
@@ -743,6 +759,93 @@ async function updatePlaylistTracks(
   }
 
   throw lastError;
+}
+
+/**
+ * Builds a valid RFC 7578 multipart/form-data body as a Uint8Array.
+ */
+export function buildMultipartBody(
+  boundary: string,
+  fields: Array<{ name: string; value: string | Uint8Array; filename?: string; contentType?: string }>
+): Uint8Array {
+  const parts: Uint8Array[] = [];
+  const encoder = new TextEncoder();
+
+  for (const field of fields) {
+    let header = `--${boundary}\r\nContent-Disposition: form-data; name="${field.name}"`;
+    if (field.filename) {
+      header += `; filename="${field.filename}"`;
+    }
+    header += '\r\n';
+    if (field.contentType) {
+      header += `Content-Type: ${field.contentType}\r\n`;
+    }
+    header += '\r\n';
+    parts.push(encoder.encode(header));
+
+    if (typeof field.value === 'string') {
+      parts.push(encoder.encode(field.value));
+    } else {
+      parts.push(field.value);
+    }
+    parts.push(encoder.encode('\r\n'));
+  }
+
+  parts.push(encoder.encode(`--${boundary}--\r\n`));
+
+  const totalLength = parts.reduce((acc, p) => acc + p.length, 0);
+  const result = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const part of parts) {
+    result.set(part, offset);
+    offset += part.length;
+  }
+  return result;
+}
+
+/**
+ * Decodes or fetches image source into raw bytes and detected MIME type.
+ */
+export async function imageSourceToBytes(
+  source: string | Blob | File | Uint8Array
+): Promise<{ bytes: Uint8Array; mimeType: string }> {
+  if (source instanceof Uint8Array) {
+    return { bytes: source, mimeType: 'image/jpeg' };
+  }
+
+  if (typeof Blob !== 'undefined' && source instanceof Blob) {
+    const arrayBuffer = await source.arrayBuffer();
+    return {
+      bytes: new Uint8Array(arrayBuffer),
+      mimeType: source.type || 'image/jpeg',
+    };
+  }
+
+  if (typeof source === 'string') {
+    if (source.startsWith('data:')) {
+      const match = source.match(/^data:([^;]+);base64,(.*)$/s);
+      if (match) {
+        const mimeType = match[1] || 'image/jpeg';
+        const binaryStr = atob(match[2]);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) {
+          bytes[i] = binaryStr.charCodeAt(i);
+        }
+        return { bytes, mimeType };
+      }
+    }
+
+    // Try fetching external URL
+    const res = await fetch(source);
+    const blob = await res.blob();
+    const arrayBuffer = await blob.arrayBuffer();
+    return {
+      bytes: new Uint8Array(arrayBuffer),
+      mimeType: blob.type || 'image/jpeg',
+    };
+  }
+
+  throw new Error('Unsupported image source type for artwork upload');
 }
 
 export const sc = {
@@ -1405,6 +1508,110 @@ export const sc = {
       auth: true,
       body: { playlist: details },
     });
+  },
+
+  /**
+   * Uploads and sets cover artwork for a playlist directly on SoundCloud.
+   * If imageSource is empty/null, clears the playlist artwork on SoundCloud.
+   */
+  async updatePlaylistArtwork(
+    playlistId: string | number,
+    imageSource: string | Blob | File | Uint8Array | null
+  ): Promise<ScPlaylist> {
+    const cleanId = String(playlistId).replace(/^soundcloud:playlists:/, '').trim();
+
+    // If clearing artwork on SoundCloud
+    if (!imageSource) {
+      clearPlaylistCache(cleanId);
+      try {
+        return await request<ScPlaylist>(`/playlists/${cleanId}`, 0, {
+          method: 'PUT',
+          auth: true,
+          body: { playlist: { artwork_data: null } },
+        });
+      } catch {
+        return await request<ScPlaylist>(`/playlists/${cleanId}`, 0, {
+          method: 'PUT',
+          auth: true,
+          body: { playlist: { artwork_url: null } },
+        });
+      }
+    }
+
+    const { bytes, mimeType } = await imageSourceToBytes(imageSource);
+    const filename = mimeType.includes('png') ? 'artwork.png' : 'artwork.jpg';
+
+    // Variations to try against SoundCloud API endpoints & parameters:
+    // 1. Standard web/v2 endpoint with playlist[artwork_data]
+    // 2. Standard web/v2 endpoint with playlist[image_data]
+    // 3. Official v1 endpoint with playlist[artwork_data]
+    // 4. Standard web/v2 endpoint with artwork_data
+    const variations: Array<{ path: string; fieldName: string; label: string }> = [
+      {
+        path: `/playlists/${cleanId}`,
+        fieldName: 'playlist[artwork_data]',
+        label: 'v2-playlist-artwork_data',
+      },
+      {
+        path: `/playlists/${cleanId}`,
+        fieldName: 'playlist[image_data]',
+        label: 'v2-playlist-image_data',
+      },
+      {
+        path: `https://api.soundcloud.com/playlists/${cleanId}`,
+        fieldName: 'playlist[artwork_data]',
+        label: 'v1-playlist-artwork_data',
+      },
+      {
+        path: `/playlists/${cleanId}`,
+        fieldName: 'artwork_data',
+        label: 'v2-artwork_data',
+      },
+    ];
+
+    let lastError: unknown = null;
+    for (let i = 0; i < variations.length; i++) {
+      const variant = variations[i];
+      try {
+        if (i > 0) {
+          await sleep(600);
+        }
+        const boundary = `----SoundCloudArtwork${Date.now()}${Math.random().toString(36).slice(2, 8)}`;
+        const rawBody = buildMultipartBody(boundary, [
+          {
+            name: variant.fieldName,
+            filename,
+            contentType: mimeType,
+            value: bytes,
+          },
+        ]);
+
+        const res = await request<ScPlaylist>(variant.path, 0, {
+          method: 'PUT',
+          auth: true,
+          headers: {
+            'Content-Type': `multipart/form-data; boundary=${boundary}`,
+          },
+          rawBody,
+        });
+
+        clearPlaylistCache(cleanId);
+        return res;
+      } catch (err: unknown) {
+        lastError = err;
+        const isClientError =
+          err instanceof BadRequestError ||
+          (err instanceof Error && (err.message.includes('400') || err.message.includes('422')));
+        if (!isClientError) {
+          throw err;
+        }
+        console.warn(
+          `[updatePlaylistArtwork] Variant ${variant.label} failed (${err instanceof Error ? err.message : String(err)}), trying next...`
+        );
+      }
+    }
+
+    throw lastError || new Error('Could not upload playlist artwork to SoundCloud');
   },
 
   /** Reorders tracks inside a playlist. */

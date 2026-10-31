@@ -1623,6 +1623,14 @@ ipcMain.handle('css:path', () => getCustomCssPath());
 /* ------------------------------------------------------------------ *
  * Window controls & Titlebar IPC
  * ------------------------------------------------------------------ */
+ipcMain.handle('app:open-external', (_e, url) => {
+  if (url && typeof url === 'string') {
+    void shell.openExternal(url);
+    return true;
+  }
+  return false;
+});
+
 ipcMain.handle('window:minimize', () => {
   if (win && !win.isDestroyed()) win.minimize();
   return true;

@@ -20,6 +20,9 @@
     <a href="https://github.com/Xertoo/Abbadon/releases/latest">
       <img src="https://img.shields.io/github/v/release/Xertoo/Abbadon?style=for-the-badge&logo=github&logoColor=white&color=FF5500&label=Download%20Abbadon" alt="Download Abbadon" />
     </a>
+    <a href="https://buycoffee.to/skcs" target="_blank">
+      <img src="https://img.shields.io/badge/☕_Buy_Me_A_Coffee-buycoffee.to%2Fskcs-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black&labelColor=1c1917" alt="Buy Me A Coffee at buycoffee.to/skcs" />
+    </a>
   </p>
 
   <p>
@@ -27,7 +30,8 @@
     <a href="#key-features">Key Features</a> •
     <a href="#quick-start">Quick Start</a> •
     <a href="#keyboard-shortcuts">Shortcuts</a> •
-    <a href="#tech-stack">Tech Stack</a>
+    <a href="#tech-stack">Tech Stack</a> •
+    <a href="#-support-the-project">Support</a>
   </p>
 </div>
 
@@ -174,6 +178,22 @@ npm run app
 - **P2P Networking:** [PeerJS](https://peerjs.com/) (WebRTC DataChannels)
 - **Lyrics Provider:** [LRCLIB](https://lrclib.net/)
 - **Packaging:** [Electron Builder](https://www.electron.build/)
+
+---
+
+## ☕ Support the Project
+
+If you love using **Abbadon** and want to support its active development, high-speed stream servers, and new features, consider buying me a coffee! Every coffee is deeply appreciated:
+
+<div align="center">
+  <br />
+  <a href="https://buycoffee.to/skcs" target="_blank">
+    <img src="https://img.shields.io/badge/☕_Buy_Me_A_Coffee-buycoffee.to%2Fskcs-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black&labelColor=1a1a1a" height="46" alt="Buy Me A Coffee at buycoffee.to/skcs" />
+  </a>
+  <br /><br />
+  <p><b>👉 Support link: <a href="https://buycoffee.to/skcs">https://buycoffee.to/skcs</a></b></p>
+  <br />
+</div>
 
 ---
 

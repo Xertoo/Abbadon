@@ -501,7 +501,27 @@ const viewsCode = fs.readFileSync(path.join(ROOT_DIR, 'src/components/Views.tsx'
 assert(viewsCode.includes("updateState.status === 'installing'"), 'Views.tsx supports installing state');
 assert(viewsCode.includes('Download Portable .exe'), 'Views.tsx provides portable download label');
 
-// 14. Summary
+// 14. Buy Me A Coffee (buycoffee.to/skcs) Integration Verification
+console.log('\n--- 14. Buy Me A Coffee (buycoffee.to/skcs) Integration Verification ---');
+
+const readmeContent = fs.readFileSync(path.join(ROOT_DIR, 'README.md'), 'utf8');
+assert(readmeContent.includes('https://buycoffee.to/skcs'), 'README.md links to buycoffee.to/skcs');
+assert(readmeContent.includes('Buy_Me_A_Coffee'), 'README.md includes prominent Buy Me A Coffee badge');
+assert(readmeContent.includes('Support the Project'), 'README.md includes dedicated Support section');
+
+const sidebarCode = fs.readFileSync(path.join(ROOT_DIR, 'src/components/Sidebar.tsx'), 'utf8');
+assert(sidebarCode.includes('https://buycoffee.to/skcs'), 'Sidebar.tsx renders buycoffee.to/skcs support link');
+assert(sidebarCode.includes('Coffee'), 'Sidebar.tsx includes Coffee button in header');
+
+const viewsCoffeeCode = fs.readFileSync(path.join(ROOT_DIR, 'src/components/Views.tsx'), 'utf8');
+assert(viewsCoffeeCode.includes('https://buycoffee.to/skcs'), 'Views.tsx renders buycoffee.to/skcs button in Settings');
+
+const fundingPath = path.join(ROOT_DIR, '.github/FUNDING.yml');
+assert(fs.existsSync(fundingPath), '.github/FUNDING.yml exists');
+const fundingContent = fs.readFileSync(fundingPath, 'utf8');
+assert(fundingContent.includes('https://buycoffee.to/skcs'), '.github/FUNDING.yml contains buycoffee.to/skcs');
+
+// 15. Summary
 console.log('\n========================================');
 console.log(`🏁 TEST RESULTS: ${passedTests}/${totalTests} PASSED (${failedTests} FAILED)`);
 console.log('========================================\n');

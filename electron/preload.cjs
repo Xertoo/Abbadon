@@ -175,6 +175,7 @@ contextBridge.exposeInMainWorld('desktop', {
   /** Custom CSS Live Customization (Vencord Style) */
   loadCustomCss: () => ipcRenderer.invoke('css:load'),
   saveCustomCss: (css) => ipcRenderer.invoke('css:save', css),
+  openExternal: (url) => ipcRenderer.invoke('app:open-external', url),
   openCustomCssFile: () => ipcRenderer.invoke('css:open-file'),
   openCustomCssFolder: () => ipcRenderer.invoke('css:open-folder'),
   getCustomCssPath: () => ipcRenderer.invoke('css:path'),

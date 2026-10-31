@@ -151,6 +151,7 @@ interface DesktopBridge {
     filename?: string;
     error?: string;
   }>;
+  openExternal?: (url: string) => Promise<boolean | void>;
   /** Custom CSS Live Customization (Vencord Style) */
   loadCustomCss?: () => Promise<{ ok: boolean; content: string; path?: string; error?: string }>;
   saveCustomCss?: (css: string) => Promise<{ ok: boolean; path?: string; error?: string }>;

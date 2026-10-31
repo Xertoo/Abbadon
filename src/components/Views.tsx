@@ -58,6 +58,7 @@ import {
   Heart,
   Shuffle,
   Repeat,
+  Coffee,
   Play,
   SkipBack,
   SkipForward,
@@ -1740,6 +1741,21 @@ function SoftwareUpdatesPanel() {
           </div>
         </div>
       )}
+
+      {/* Support development pill */}
+      <div className="pt-2 flex items-center justify-between text-[11px] text-sc-muted border-t border-white/[0.04]">
+        <span>Support development & help keep Abbadon fast & free:</span>
+        <a
+          href="https://buycoffee.to/skcs"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 border border-amber-400/25 font-bold text-[11px] shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
+          title="Buy me a coffee at buycoffee.to/skcs"
+        >
+          <Coffee className="w-3 h-3 text-amber-400" />
+          <span>buycoffee.to/skcs</span>
+        </a>
+      </div>
     </div>
   );
 }
@@ -2558,14 +2574,26 @@ export function SettingsView({
             Everything here is saved as you change it.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={onResetPrefs}
-          className="inline-flex items-center gap-1.5 rounded-full border border-sc-line px-3.5 py-1.5 text-[11.5px] font-semibold text-sc-muted hover:text-sc-fg hover:border-sc-dim transition-colors"
-        >
-          <RotateCcw className="w-3.5 h-3.5" />
-          Reset all settings
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <a
+            href="https://buycoffee.to/skcs"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-1.5 rounded-full bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 border border-amber-400/30 px-3.5 py-1.5 text-[11.5px] font-bold shadow-sm transition-all hover:scale-105 active:scale-95 cursor-pointer"
+            title="Buy me a coffee on buycoffee.to/skcs"
+          >
+            <Coffee className="w-3.5 h-3.5 text-amber-400" />
+            <span>Buy me a coffee</span>
+          </a>
+          <button
+            type="button"
+            onClick={onResetPrefs}
+            className="inline-flex items-center gap-1.5 rounded-full border border-sc-line px-3.5 py-1.5 text-[11.5px] font-semibold text-sc-muted hover:text-sc-fg hover:border-sc-dim transition-colors cursor-pointer"
+          >
+            <RotateCcw className="w-3.5 h-3.5" />
+            Reset all settings
+          </button>
+        </div>
       </div>
 
       <AuthPanel {...auth} />

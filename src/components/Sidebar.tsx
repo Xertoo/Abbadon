@@ -17,6 +17,7 @@ import {
   Plus,
   Trash2,
   MoreVertical,
+  Coffee,
 } from 'lucide-react';
 import { Artwork } from './Artwork';
 import clsx from 'clsx';
@@ -122,20 +123,40 @@ export function Sidebar({
 
   return (
     <aside className="sidebar relative z-10 w-[268px] shrink-0 flex flex-col backdrop-blur-2xl bg-sc-panel/40 border-r border-white/[0.06] shadow-[inset_-1px_0_0_rgba(255,255,255,0.04)] select-none">
-      <div className="h-16 px-4 flex items-center gap-3 border-b border-white/[0.06] select-none">
-        <img
-          src={appIcon}
-          alt="Abbadon"
-          className="w-8 h-8 rounded-lg shadow-md object-cover ring-1 ring-white/10"
-        />
-        <div className="flex flex-col">
-          <span className="text-[15px] font-extrabold tracking-wider uppercase bg-gradient-to-r from-white via-neutral-100 to-neutral-400 bg-clip-text text-transparent">
-            Abbadon
-          </span>
-          <span className="text-[10px] uppercase tracking-widest text-sc-muted font-medium">
-            SoundCloud Client
-          </span>
+      <div className="h-16 px-3.5 flex items-center justify-between gap-2 border-b border-white/[0.06] select-none">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <img
+            src={appIcon}
+            alt="Abbadon"
+            className="w-8 h-8 rounded-lg shadow-md object-cover ring-1 ring-white/10 shrink-0"
+          />
+          <div className="flex flex-col min-w-0">
+            <span className="text-[14px] font-extrabold tracking-wider uppercase bg-gradient-to-r from-white via-neutral-100 to-neutral-400 bg-clip-text text-transparent truncate">
+              Abbadon
+            </span>
+            <span className="text-[9.5px] uppercase tracking-widest text-sc-muted font-medium truncate">
+              SoundCloud Client
+            </span>
+          </div>
         </div>
+
+        <a
+          href="https://buycoffee.to/skcs"
+          target="_blank"
+          rel="noopener noreferrer"
+          title="Buy me a coffee (buycoffee.to/skcs)"
+          aria-label="Buy me a coffee"
+          onClick={(e) => {
+            if (window.desktop?.openExternal) {
+              e.preventDefault();
+              window.desktop.openExternal('https://buycoffee.to/skcs');
+            }
+          }}
+          className="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-400/10 hover:bg-amber-400/20 text-amber-300 border border-amber-400/25 text-[11px] font-bold shadow-sm transition-all duration-200 hover:scale-105 active:scale-95 cursor-pointer group"
+        >
+          <Coffee className="w-3.5 h-3.5 text-amber-400 group-hover:rotate-12 transition-transform duration-200" />
+          <span>Coffee</span>
+        </a>
       </div>
 
       <nav className="p-3 space-y-1">

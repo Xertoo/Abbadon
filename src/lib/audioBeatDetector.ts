@@ -344,6 +344,10 @@ export async function analyzeTrackAudio(
     void offlineCtx.close();
 
     const analysis = analyzeAudioBuffer(audioBuffer);
+    if (analysisCache.size > 25) {
+      const firstKey = analysisCache.keys().next().value;
+      if (firstKey) analysisCache.delete(firstKey);
+    }
     analysisCache.set(trackId, analysis);
     return analysis;
   } catch (err) {

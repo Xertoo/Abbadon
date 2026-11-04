@@ -756,31 +756,31 @@ export function useAudioEngine(): PlayerApi {
         return;
       }
 
-      const analyser = analyserRef.current;
-      if (!analyser) return;
-
-      const bins = analyser.frequencyBinCount;
-      let buf = freqBufferRef.current;
-      if (!buf || buf.length !== bins) {
-        buf = new Uint8Array(bins);
-        freqBufferRef.current = buf;
-      }
-      analyser.getByteFrequencyData(buf);
-
-      let maxAmp = 0;
-      let sumAmp = 0;
-      for (let i = 0; i < bins; i++) {
-        if (buf[i] > maxAmp) maxAmp = buf[i];
-        sumAmp += buf[i];
-      }
-      const avgAmp = sumAmp / bins;
-      // Strict dead silence: maxAmp <= 5 and avgAmp <= 2 (guards against ambient decay / quiet bridges)
-      const isSilent = maxAmp <= 5 && avgAmp <= 2;
-
       // 3. Dynamic outro silence fallback:
-      // Only check within the very end of the track (last 15s) and require at least 4.0s of continuous silence
-      // (16 consecutive checks at 250ms), ensuring breakdowns and quiet bridges are never cut.
+      // Only analyze spectrum within the very end of the track (last 15s) to avoid burning CPU with FFT on every tick.
+      // Requires at least 4.0s of continuous silence (16 consecutive checks at 250ms), ensuring quiet bridges are never cut.
       if (el.duration > 30 && el.duration - el.currentTime <= 15 && el.currentTime > 20) {
+        const analyser = analyserRef.current;
+        if (!analyser) return;
+
+        const bins = analyser.frequencyBinCount;
+        let buf = freqBufferRef.current;
+        if (!buf || buf.length !== bins) {
+          buf = new Uint8Array(bins);
+          freqBufferRef.current = buf;
+        }
+        analyser.getByteFrequencyData(buf);
+
+        let maxAmp = 0;
+        let sumAmp = 0;
+        for (let i = 0; i < bins; i++) {
+          if (buf[i] > maxAmp) maxAmp = buf[i];
+          sumAmp += buf[i];
+        }
+        const avgAmp = sumAmp / bins;
+        // Strict dead silence: maxAmp <= 5 and avgAmp <= 2
+        const isSilent = maxAmp <= 5 && avgAmp <= 2;
+
         if (isSilent) {
           silenceStreakRef.current += 1;
           if (silenceStreakRef.current >= 16) {

@@ -28,11 +28,11 @@ interface Props {
 
 /** Stars per mode before the density multiplier. */
 const STARS_PER_MODE: Record<BgMode, number> = {
-  cosmic: 130,
-  stars: 260,
-  aurora: 110,
-  particles: 160,
-  minimal: 45,
+  cosmic: 60,
+  stars: 100,
+  aurora: 50,
+  particles: 70,
+  minimal: 20,
   off: 0,
 };
 
@@ -226,11 +226,11 @@ export const AtmosphereLayer: React.FC<Props> = React.memo(
     const color2 = `hsla(${orbHues[1]}, ${artColor.sat}%, ${artColor.light}%, ${0.18 * intensity})`;
     const color3 = `hsla(${orbHues[2]}, ${artColor.sat}%, ${artColor.light}%, ${0.2 * intensity})`;
 
-    const showOrbs = mode === 'cosmic' || mode === 'aurora';
-    const showDust = mode === 'cosmic' || mode === 'particles';
+    const showOrbs = !prefs.lowResourceMode && (mode === 'cosmic' || mode === 'aurora');
+    const showDust = !prefs.lowResourceMode && (mode === 'cosmic' || mode === 'particles');
 
     // Static seeded particles for subtle spatial depth.
-    const dustCount = mode === 'particles' ? 54 : 28;
+    const dustCount = mode === 'particles' ? 24 : 12;
     const particles = useMemo(
       () =>
         Array.from({ length: dustCount }, (_, i) => ({
@@ -410,26 +410,42 @@ export const AtmosphereLayer: React.FC<Props> = React.memo(
         }
       };
 
+      let isVisible = !document.hidden;
+
       const loop = (now: number) => {
-        if (document.hidden) {
+        if (!isVisible || document.hidden) {
           raf = 0;
           return;
         }
 
-        // Frame rate limiter: cap at ~60 FPS (min 15ms interval between frames)
-        // Eliminates wasted CPU/GPU burn on 144Hz/240Hz monitors for ambient background canvas
-        if (now - last < 15) {
+        const p = prefsRef.current;
+        if (p.bgMode === 'off') {
+          ctx.clearRect(0, 0, w, h);
+          raf = 0;
+          return;
+        }
+
+        // Adaptive frame rate:
+        // - Window focused & active: ~30 FPS (32ms) - looks totally smooth for cosmic stars, saves 50% GPU/CPU vs 60 FPS
+        // - Window blurred / unfocused: ~15 FPS (65ms) - saves even more when user is in other apps
+        // - Low resource mode: ~20 FPS (focused), ~10 FPS (blurred)
+        const isFocused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+        const targetInterval = p.lowResourceMode
+          ? (isFocused ? 48 : 95)
+          : (isFocused ? 32 : 65);
+
+        if (now - last < targetInterval) {
           raf = requestAnimationFrame(loop);
           return;
         }
 
         raf = requestAnimationFrame(loop);
-        const p = prefsRef.current;
-        const sig = `${p.bgMode}|${p.bgStarDensity}|${p.bgIntensity}|${p.bgVariation}|${p.bgSpeed}|${p.bgColorSource}|${p.bgShootingStars}|${hueRef.current}`;
+        const sig = `${p.bgMode}|${p.bgStarDensity}|${p.bgIntensity}|${p.bgVariation}|${p.bgSpeed}|${p.bgColorSource}|${p.bgShootingStars}|${p.lowResourceMode}|${hueRef.current}`;
         const settingsMoved = sig !== lastSig;
         if (settingsMoved) lastSig = sig;
 
-        const count = Math.round(STARS_PER_MODE[p.bgMode] * p.bgStarDensity);
+        const densityMult = p.lowResourceMode ? p.bgStarDensity * 0.5 : p.bgStarDensity;
+        const count = Math.round(STARS_PER_MODE[p.bgMode] * densityMult);
         if (count !== wanted) {
           wanted = count;
           buildStars(count);
@@ -439,7 +455,7 @@ export const AtmosphereLayer: React.FC<Props> = React.memo(
         const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
         last = now;
 
-        if (!p.bgShootingStars) meteors = [];
+        if (!p.bgShootingStars || p.lowResourceMode) meteors = [];
 
         // Still layer: no clock, no spectrum, redraw only when something that
         // paints changed. Keeps "Animations off" honest instead of merely
@@ -454,14 +470,14 @@ export const AtmosphereLayer: React.FC<Props> = React.memo(
 
         elapsed += dt;
         let target = 0;
-        const freq = p.bgAudioReactive && playingRef.current ? getFreqRef.current?.() : null;
+        const freq = p.bgAudioReactive && playingRef.current && !p.lowResourceMode ? getFreqRef.current?.() : null;
         if (freq && freq.length) {
           const bins = Math.min(10, freq.length);
           let sum = 0;
           for (let i = 0; i < bins; i++) sum += freq[i];
           const bass = sum / bins / 255;
           target = Math.min(1, bass * 1.5 * p.bgSensitivity);
-          if (bass > 0.5 && lastBass <= 0.5 && p.bgShootingStars && meteors.length < 3) {
+          if (bass > 0.5 && lastBass <= 0.5 && p.bgShootingStars && !p.lowResourceMode && meteors.length < 3) {
             spawnMeteor(hueRef.current);
           }
           lastBass = bass;
@@ -470,7 +486,7 @@ export const AtmosphereLayer: React.FC<Props> = React.memo(
         }
         energy += (target - energy) * (target > energy ? 0.4 : 0.08);
 
-        if (p.bgShootingStars && meteors.length < 3) {
+        if (p.bgShootingStars && !p.lowResourceMode && meteors.length < 3) {
           nextMeteor -= dt;
           if (nextMeteor <= 0) {
             spawnMeteor((hueRef.current + 40) % 360);
@@ -486,18 +502,28 @@ export const AtmosphereLayer: React.FC<Props> = React.memo(
       window.addEventListener('resize', onWindowResize, { passive: true });
 
       const onVisibilityChange = () => {
-        if (!document.hidden && !raf) {
+        isVisible = !document.hidden;
+        if (isVisible && !raf) {
           last = performance.now();
           raf = requestAnimationFrame(loop);
         }
       };
       document.addEventListener('visibilitychange', onVisibilityChange);
 
+      const unbindDesktop = window.desktop?.onVisibilityChange?.((vis) => {
+        isVisible = vis && !document.hidden;
+        if (isVisible && !raf) {
+          last = performance.now();
+          raf = requestAnimationFrame(loop);
+        }
+      });
+
       raf = requestAnimationFrame(loop);
       return () => {
         cancelAnimationFrame(raf);
         window.removeEventListener('resize', onWindowResize);
         document.removeEventListener('visibilitychange', onVisibilityChange);
+        unbindDesktop?.();
       };
     }, []);
 
@@ -513,38 +539,35 @@ export const AtmosphereLayer: React.FC<Props> = React.memo(
           <>
             {/* Orb 1 - Top Left / Drift */}
             <div
-              className="absolute -top-[15%] -left-[10%] w-[75vw] h-[75vw] rounded-full mix-blend-screen"
+              className="absolute -top-[15%] -left-[10%] w-[75vw] h-[75vw] rounded-full pointer-events-none"
               style={{
                 background: `radial-gradient(circle, ${color1} 0%, transparent 68%)`,
-                filter: 'blur(130px)',
                 animation: prefs.animations ? 'orb-float-1 28s ease-in-out infinite' : 'none',
-                transition: 'background 1.5s cubic-bezier(0.2, 0.8, 0.2, 1)',
+                willChange: 'transform',
               }}
             />
 
             {/* Orb 2 - Bottom Right / Drift */}
             <div
-              className="absolute -bottom-[20%] -right-[15%] w-[80vw] h-[80vw] rounded-full mix-blend-screen"
+              className="absolute -bottom-[20%] -right-[15%] w-[80vw] h-[80vw] rounded-full pointer-events-none"
               style={{
                 background: `radial-gradient(circle, ${color2} 0%, transparent 65%)`,
-                filter: 'blur(150px)',
                 animation: prefs.animations ? 'orb-float-2 34s ease-in-out infinite' : 'none',
-                transition: 'background 1.5s cubic-bezier(0.2, 0.8, 0.2, 1)',
+                willChange: 'transform',
               }}
             />
 
             {/* Orb 3 - Center Pulse (Breathes when audio is playing) */}
             <div
-              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60vw] h-[60vw] rounded-full mix-blend-screen"
+              className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[60vw] h-[60vw] rounded-full pointer-events-none"
               style={{
                 background: `radial-gradient(circle, ${color3} 0%, transparent 70%)`,
-                filter: 'blur(140px)',
                 opacity: (isPlaying ? 0.35 : 0.15) * intensity,
                 animation:
                   isPlaying && prefs.animations
                     ? 'orb-pulse-breathe 7s ease-in-out infinite'
                     : 'none',
-                transition: 'opacity 1.2s ease, background 1.5s ease',
+                willChange: 'transform, opacity',
               }}
             />
           </>
@@ -554,14 +577,13 @@ export const AtmosphereLayer: React.FC<Props> = React.memo(
           particles.map((p, i) => (
             <div
               key={i}
-              className="absolute rounded-full bg-white"
+              className="absolute rounded-full bg-white/70 pointer-events-none"
               style={{
                 width: `${p.size}px`,
                 height: `${p.size}px`,
                 left: `${p.left}%`,
                 top: `${p.top}%`,
                 opacity: p.opacity,
-                boxShadow: `0 0 ${p.size * 2}px rgba(255, 255, 255, 0.6)`,
                 animation: prefs.animations
                   ? `orb-pulse-breathe ${p.duration}s ease-in-out ${p.delay}s infinite`
                   : 'none',

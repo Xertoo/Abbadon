@@ -159,6 +159,11 @@ contextBridge.exposeInMainWorld('desktop', {
     ipcRenderer.on('window:maximized-change', handler);
     return () => ipcRenderer.removeListener('window:maximized-change', handler);
   },
+  onVisibilityChange: (cb) => {
+    const handler = (_e, visible) => cb(visible);
+    ipcRenderer.on('window:visibility-change', handler);
+    return () => ipcRenderer.removeListener('window:visibility-change', handler);
+  },
   setCustomTitleBar: (enabled) => ipcRenderer.invoke('window:set-custom-titlebar', enabled),
 
   /** Local & Server Media Import */

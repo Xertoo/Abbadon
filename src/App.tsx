@@ -30,7 +30,7 @@ import { UpdateBanner } from './components/UpdateBanner';
 import { useAutoUpdater } from './hooks/useAutoUpdater';
 import { useSoundCloud } from './hooks/useSoundCloud';
 import { useSpotify } from './hooks/useSpotify';
-import { usePrefs, useAnimationClass, loadPrefs, defaultPrefs } from './lib/prefs';
+import { usePrefs, useAnimationClass, useLowResourceClass, loadPrefs, defaultPrefs } from './lib/prefs';
 import { applyOrder, orderFrom } from './lib/playlistOrder';
 import { searchAudius, trendingAudius, isSoundCloudTrack } from './lib/audius';
 import {
@@ -101,6 +101,7 @@ export default function App() {
   const engine = useAudioEngine();
   const { prefs, update: setPref, replace: replacePrefs } = usePrefs();
   useAnimationClass(prefs.animations);
+  useLowResourceClass(prefs.lowResourceMode);
   const autoUpdater = useAutoUpdater();
 
   const [view, setView] = useState<View>('discover');
@@ -1297,10 +1298,15 @@ if (typeof d.theme === 'string') {
       }
     };
 
+    let lastReportedTime = 0;
     const onTime = (a: HTMLAudioElement) => () => {
       if (a !== engine.getActive()) return;
       clearStallTimer();
-      setTime(a.currentTime);
+      const curTime = a.currentTime;
+      if (Math.abs(curTime - lastReportedTime) >= 0.5 || curTime < lastReportedTime) {
+        lastReportedTime = curTime;
+        setTime(curTime);
+      }
 
       // Accurate 95% listen completion tracking
       if (!hasCompletedPlayRef.current && a.duration > 8 && a.currentTime >= a.duration * 0.95) {
@@ -2703,7 +2709,7 @@ if (typeof d.theme === 'string') {
         <header
           onDoubleClick={!isCustomTitleBar && Boolean(window.desktop) ? () => void window.desktop?.toggleMaximizeWindow?.() : undefined}
           className={clsx(
-            "app-header relative z-50 h-16 shrink-0 flex items-center justify-between px-4 sm:px-6 border-b border-white/[0.06] backdrop-blur-xl bg-sc-panel/20 select-none",
+            "app-header relative z-50 h-16 shrink-0 flex items-center justify-between px-4 sm:px-6 border-b border-white/[0.06] backdrop-blur-sm bg-sc-panel/80 select-none",
             !isCustomTitleBar && Boolean(window.desktop) && "app-drag-region"
           )}
         >

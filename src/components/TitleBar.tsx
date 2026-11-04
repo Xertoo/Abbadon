@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import type { Track } from '../types';
 import appIcon from '../assets/icon.png';
 
@@ -168,7 +168,7 @@ export function WindowControls({
   );
 }
 
-export function TitleBar({
+export const TitleBar = memo(function TitleBar({
   buttonStyle = 'discord',
   currentTrack,
   isPlaying = false,
@@ -230,4 +230,4 @@ export function TitleBar({
       <WindowControls buttonStyle={buttonStyle} />
     </div>
   );
-}
+});

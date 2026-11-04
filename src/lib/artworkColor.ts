@@ -101,6 +101,10 @@ export async function extractArtworkColor(
     img.crossOrigin = 'anonymous';
 
     const finish = (result: ArtworkColor) => {
+      if (colorCache.size > 120) {
+        const firstKey = colorCache.keys().next().value;
+        if (firstKey) colorCache.delete(firstKey);
+      }
       colorCache.set(src, result);
       resolve(result);
     };

@@ -17,6 +17,8 @@ export interface Prefs {
   autodiscovery: boolean;
   /** Master animation switch. Mirrors `prefers-reduced-motion` by default. */
   animations: boolean;
+  /** Master low resource / power saver mode: disables blurs, heavy GPU effects, and lowers canvas frame rates. */
+  lowResourceMode: boolean;
   /** Reapply the last used volume on launch. */
   rememberVolume: boolean;
   volume: number;
@@ -182,6 +184,7 @@ export function defaultPrefs(): Prefs {
   return {
     autodiscovery: true,
     animations: true,
+    lowResourceMode: false,
     rememberVolume: false,
     volume: 0.55,
     compactRows: false,
@@ -275,6 +278,8 @@ export function loadPrefs(): Prefs {
     return {
       autodiscovery: typeof saved.autodiscovery === 'boolean' ? saved.autodiscovery : base.autodiscovery,
       animations: typeof saved.animations === 'boolean' ? saved.animations : base.animations,
+      lowResourceMode:
+        typeof saved.lowResourceMode === 'boolean' ? saved.lowResourceMode : base.lowResourceMode,
       rememberVolume:
         typeof saved.rememberVolume === 'boolean' ? saved.rememberVolume : base.rememberVolume,
       volume: clamp01(saved.volume, base.volume),
@@ -454,5 +459,15 @@ export function usePrefs(): {
 export function useAnimationClass(enabled: boolean): void {
   useEffect(() => {
     document.documentElement.classList.toggle('no-anim', !enabled);
+  }, [enabled]);
+}
+
+/**
+ * Applies low-resource mode to the document.
+ * Disables backdrop-filter blurs and heavy GPU shaders across all UI panels.
+ */
+export function useLowResourceClass(enabled: boolean): void {
+  useEffect(() => {
+    document.documentElement.classList.toggle('low-resource-mode', Boolean(enabled));
   }, [enabled]);
 }

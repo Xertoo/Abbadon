@@ -66,6 +66,7 @@ import {
   AppWindow,
   PanelTop,
   Code2,
+  Cpu,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAutoUpdater } from '../hooks/useAutoUpdater';
@@ -2887,6 +2888,13 @@ export function SettingsView({
               hint="Popovers, view transitions and the visualizer. Turn off for a still, instant interface."
               checked={prefs.animations}
               onChange={(v) => onPref('animations', v)}
+            />
+            <Toggle
+              icon={Cpu}
+              label="Low Resource Mode (Oszczędzanie RAM / GPU / CPU)"
+              hint="Wyłącza rozmycia tła (backdrop blur) i optymalizuje efekty wizualne, redukując obciążenie karty graficznej, procesora i pamięci RAM."
+              checked={prefs.lowResourceMode ?? false}
+              onChange={(v) => onPref('lowResourceMode', v)}
             />
             <Toggle
               icon={Volume2}

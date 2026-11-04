@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import {
   Heart,
   ListMusic,
@@ -74,7 +74,7 @@ const NAV: Array<{ id: View; label: string; icon: typeof Heart }> = [
   { id: 'stats', label: 'Statistics', icon: BarChart3 },
 ];
 
-export function Sidebar({
+export const Sidebar = memo(function Sidebar({
   view,
   onNavigate,
   playlists,
@@ -475,6 +475,6 @@ export function Sidebar({
       </div>
     </aside>
   );
-}
+});
 
 export { ListMusic };

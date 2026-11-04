@@ -135,6 +135,7 @@ interface DesktopBridge {
   closeWindow?: () => Promise<void>;
   isWindowMaximized?: () => Promise<boolean>;
   onMaximizedChange?: (cb: (isMax: boolean) => void) => () => void;
+  onVisibilityChange?: (cb: (visible: boolean) => void) => () => void;
   setCustomTitleBar?: (enabled: boolean) => Promise<{ ok: boolean }>;
   /** Local & Server Media Import */
   pickMediaFiles?: () => Promise<{ ok: boolean; canceled?: boolean; items: { songs: any[]; playlists: any[] } }>;

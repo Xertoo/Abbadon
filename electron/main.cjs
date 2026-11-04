@@ -40,10 +40,25 @@ protocol.registerSchemesAsPrivileged([
 // Silence internal Chromium/WebRTC stderr spam (e.g. STUN binding timeouts on inactive interfaces)
 app.commandLine.appendSwitch('log-level', '3');
 
-// Hardware and GPU rendering optimizations
+// Hardware and GPU rendering optimizations (low memory & low power)
 app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('enable-zero-copy');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
+
+// RAM, GPU VRAM & CPU optimizations
+app.commandLine.appendSwitch('force-color-profile', 'srgb');
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=256');
+app.commandLine.appendSwitch('renderer-process-limit', '2');
+app.commandLine.appendSwitch('disk-cache-size', '67108864'); // 64 MB
+app.commandLine.appendSwitch('media-cache-size', '33554432'); // 32 MB
+app.commandLine.appendSwitch('disable-background-networking');
+app.commandLine.appendSwitch('disable-breakpad');
+app.commandLine.appendSwitch('disable-component-update');
+app.commandLine.appendSwitch('disable-domain-reliability');
+app.commandLine.appendSwitch('disable-sync');
+app.commandLine.appendSwitch(
+  'disable-features',
+  'CalculateNativeWinOcclusion,InterestFeedContentSuggestions,MediaRouter'
+);
 
 /* ------------------------------------------------------------------ *
  * Widevine (best effort)
@@ -239,14 +254,41 @@ function createWindow() {
     if (win && !win.isDestroyed()) win.webContents.send('window:maximized-change', false);
   });
 
+  const notifyVisibility = (visible) => {
+    if (win && !win.isDestroyed() && win.webContents) {
+      win.webContents.send('window:visibility-change', visible);
+    }
+  };
+
+  win.on('hide', () => {
+    notifyVisibility(false);
+    session.defaultSession.clearCache().catch(() => {});
+  });
+  win.on('show', () => {
+    notifyVisibility(true);
+  });
+  win.on('minimize', () => {
+    notifyVisibility(false);
+    session.defaultSession.clearCache().catch(() => {});
+  });
+  win.on('restore', () => {
+    notifyVisibility(true);
+  });
+
   win.setMenu(null);
   killMenu(win);
   // Belt and braces: even if something reattaches a menu later, Alt stays inert.
   win.on('page-title-updated', () => killMenu(win));
 
+  win.webContents.on('before-input-event', (_event, input) => {
+    if (input.type === 'keyDown' && ((input.control && input.shift && input.key.toLowerCase() === 'i') || input.key === 'F12')) {
+      win.webContents.toggleDevTools();
+    }
+  });
+
   win.once('ready-to-show', () => {
     win.show();
-    if (isDev) win.webContents.openDevTools({ mode: 'detach' });
+    if (isDev && process.env.OPEN_DEVTOOLS) win.webContents.openDevTools({ mode: 'detach' });
   });
 
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -2457,9 +2499,18 @@ function createTrayWindow() {
   const url = isDev && DEV_URL ? `${DEV_URL}?mode=tray` : `file://${path.join(__dirname, '..', 'dist', 'index.html')}?mode=tray`;
   trayWin.loadURL(url);
 
+  trayWin.once('ready-to-show', () => {
+    if (trayWin && !trayWin.isDestroyed()) {
+      if (lastMiniPrefs) trayWin.webContents.send('sc:sync-mini-prefs', lastMiniPrefs);
+      trayWin.webContents.send('sc:sync-tray-player', lastPlaybackState);
+      trayWin.webContents.send('sc:sync-mini-pinned', isMiniPinned);
+    }
+  });
+
   trayWin.on('blur', () => {
     if (!isMiniPinned && trayWin && !trayWin.isDestroyed() && trayWin.isVisible()) {
-      trayWin.hide();
+      trayWin.destroy();
+      trayWin = null;
     }
   });
 
@@ -2475,9 +2526,13 @@ function createTrayWindow() {
 function toggleTrayWindow() {
   if (!trayWin || trayWin.isDestroyed()) {
     createTrayWindow();
-  }
-  if (trayWin.isVisible()) {
-    trayWin.hide();
+  } else if (trayWin.isVisible()) {
+    if (!isMiniPinned) {
+      trayWin.destroy();
+      trayWin = null;
+    } else {
+      trayWin.hide();
+    }
     return;
   }
   if (miniCustomPos && Array.isArray(miniCustomPos)) {

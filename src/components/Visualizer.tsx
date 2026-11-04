@@ -181,13 +181,25 @@ export function Spectrum({
       else if (mode === 'wave') drawWave(ctx, w, h, v, dpr, color, color2);
     };
 
+    let isVisible = !document.hidden;
     let lastDraw = 0;
     const loop = (now: number) => {
-      if (document.hidden) {
+      if (!isVisible || document.hidden) {
         raf = 0;
         return;
       }
-      if (now - lastDraw < 15) {
+
+      // If inactive and not demo: draw idle frame once and stop RAF loop completely
+      if (!active && !demo) {
+        draw();
+        raf = 0;
+        return;
+      }
+
+      const isFocused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+      const targetInterval = isFocused ? 28 : 50; // ~35 FPS focused, ~20 FPS blurred
+
+      if (now - lastDraw < targetInterval) {
         raf = requestAnimationFrame(loop);
         return;
       }
@@ -198,22 +210,34 @@ export function Spectrum({
     };
 
     const onVisibilityChange = () => {
-      if (!document.hidden && !raf) {
+      isVisible = !document.hidden;
+      if (isVisible && !raf && (active || demo)) {
+        lastDraw = performance.now();
         raf = requestAnimationFrame(loop);
       }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    // Every instance animates now. The previews are 44x32 canvases, so six of
-    // them running at once costs less than the one full-width player
-    // visualiser, and a frozen frame is useless for judging a mode.
-    raf = requestAnimationFrame(loop);
+    const unbindDesktop = window.desktop?.onVisibilityChange?.((vis) => {
+      isVisible = vis && !document.hidden;
+      if (isVisible && !raf && (active || demo)) {
+        lastDraw = performance.now();
+        raf = requestAnimationFrame(loop);
+      }
+    });
+
+    if (!active && !demo) {
+      draw();
+    } else {
+      raf = requestAnimationFrame(loop);
+    }
 
     return () => {
       cancelAnimationFrame(raf);
       cancelAnimationFrame(resizeRaf);
       ro.disconnect();
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      unbindDesktop?.();
     };
   }, [getFreq, active, bars, color, color2, mode, demo, threshold, sensitivity, smoothing]);
 
@@ -468,20 +492,32 @@ export function AudioBloom({
     let t = 0;
     const baseHue = color?.hue ?? 232;
 
+    let isVisible = !document.hidden;
     let lastBloom = 0;
     const tick = (now: number) => {
-      if (document.hidden) {
+      if (!isVisible || document.hidden) {
         raf = 0;
         return;
       }
-      if (now - lastBloom < 16) {
+
+      if (!active) {
+        el.style.setProperty('--bloom-energy', '0.12');
+        el.style.setProperty('--bloom-hue', String(baseHue));
+        raf = 0;
+        return;
+      }
+
+      const isFocused = typeof document.hasFocus === 'function' ? document.hasFocus() : true;
+      const targetInterval = isFocused ? 33 : 66; // 30 FPS focused, 15 FPS blurred
+
+      if (now - lastBloom < targetInterval) {
         raf = requestAnimationFrame(tick);
         return;
       }
       lastBloom = now;
       raf = requestAnimationFrame(tick);
-      t += 0.016;
-      const data = active ? getFreq?.() ?? null : null;
+      t += targetInterval / 1000;
+      const data = getFreq?.() ?? null;
 
       let energy = 0.12;
       let tilt = 0.5;
@@ -493,8 +529,8 @@ export function AudioBloom({
         energy = Math.min(1, bass * 0.75 + mid * 0.35);
         tilt = 0.35 + mid * 0.9;
       } else {
-        energy = 0.12 + 0.05 * Math.sin(t * 1.6);
-        tilt = 0.55 + 0.08 * Math.sin(t * 0.7);
+        energy = 0.12;
+        tilt = 0.55;
       }
 
       smooth.current += (energy - smooth.current) * (energy > smooth.current ? 0.35 : 0.09);
@@ -512,25 +548,39 @@ export function AudioBloom({
         el.style.setProperty('--bloom-hue', String(hue));
         last.current.hue = hue;
       }
-      // The ring's rotation is a CSS animation now, so the angle is only used
-      // to pick up the analyser's own phase on the very first frame.
       if (last.current.energy < 0) {
         el.style.setProperty('--bloom-spin', `${(t * 14) % 360}deg`);
       }
     };
 
     const onVisibilityChange = () => {
-      if (!document.hidden && !raf) {
+      isVisible = !document.hidden;
+      if (isVisible && !raf && active) {
+        lastBloom = performance.now();
         raf = requestAnimationFrame(tick);
       }
     };
     document.addEventListener('visibilitychange', onVisibilityChange);
 
-    raf = requestAnimationFrame(tick);
+    const unbindDesktop = window.desktop?.onVisibilityChange?.((vis) => {
+      isVisible = vis && !document.hidden;
+      if (isVisible && !raf && active) {
+        lastBloom = performance.now();
+        raf = requestAnimationFrame(tick);
+      }
+    });
+
+    if (!active) {
+      el.style.setProperty('--bloom-energy', '0.12');
+      el.style.setProperty('--bloom-hue', String(baseHue));
+    } else {
+      raf = requestAnimationFrame(tick);
+    }
 
     return () => {
       cancelAnimationFrame(raf);
       document.removeEventListener('visibilitychange', onVisibilityChange);
+      unbindDesktop?.();
     };
   }, [getFreq, active, color?.hue]);
 
